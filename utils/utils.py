@@ -1,15 +1,16 @@
 from fastapi import HTTPException, Depends, Request, status
+from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from typing import Optional
 from sqlalchemy.orm import Session
 from config import get_db
-from models.authModel import AuthUser
+from models.authModel.authModel import AuthUser
 from email.mime.text import MIMEText
 import smtplib
 SECRET_KEY = "ADMIN@1234QWER"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 RESET_PASSWORD_TOKEN_EXPIRE_MINUTES = 15
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -25,7 +26,12 @@ def decode_access_token(token: str):
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        response = JSONResponse(
+            content={"detail": "Invalid or expired token"},
+            status_code=401
+        )
+        response.delete_cookie("access_token")
+        return response
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)):
     token = request.cookies.get("access_token")

@@ -7,6 +7,10 @@ class User(BaseModel):
     password: str
     isRestricted: Optional[bool] = False
 
+class SignInUser(BaseModel):
+    email: EmailStr
+    password: str
+
 class PasswordResetRequest(BaseModel):
     email: EmailStr
 

@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form
+from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from utils.utils import create_access_token, decode_access_token, create_reset_token, send_reset_email, decode_reset_access_token, get_current_user
 from jose import JWTError, jwt
 from uuid import uuid4
 import json
-from models.authModel import AuthUser
-from schemas.authSchems import User, PasswordResetRequest, PasswordReset
+from models.authModel.authModel import AuthUser
+from schemas.authSchema.authSchema import User, SignInUser, PasswordResetRequest, PasswordReset
 from sqlalchemy.orm import Session
 from config import get_db
 
@@ -42,7 +43,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
     
 @router.post("/signin")
-async def signin(user: User, response: Response, db: Session = Depends(get_db)):
+async def signin(user: SignInUser, response: Response, db: Session = Depends(get_db)):
     try:
         email = user.email
         password = user.password
@@ -56,7 +57,8 @@ async def signin(user: User, response: Response, db: Session = Depends(get_db)):
         if not is_valid_password:
             raise HTTPException(status_code=400, detail="Incorrect email or password")
         access_token = create_access_token(data={"sub": user.email, "user_id": str(user.id)})
-        response.set_cookie(key="access_token", value=access_token, httponly=True)
+        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, 
+                            samesite="Lax", max_age=3600)
 
         return {"access_token": access_token, "token_type": "bearer"}
 
@@ -73,8 +75,10 @@ async def getme(request: Request, db: Session = Depends(get_db)):
             raise HTTPException(status_code=401, detail="Not authenticated")
 
         payload = decode_access_token(token)
-        email = payload.get("sub")
-        user = db.query(AuthUser).filter(AuthUser.email == email).first()
+        if isinstance(payload, JSONResponse):
+            return payload
+        user_id = payload.get("user_id")
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
         if not user:
             raise HTTPException(status_code=400, detail="User not found")
 

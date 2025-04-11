@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 # from auth.auth import router as auth_router
-from routes.auth import router as auth_router
-# from products.products import router as products_router
+from routes.auth.auth import router as auth_router
+from routes.chat.chat import router as chat_router
 # from products.ormProducts import router as products_orm_router
 # from cron.cron import scheduler 
 # from config import init_orm_db
@@ -25,8 +25,8 @@ app.add_middleware(
 )
 
 # orm
-app.include_router(auth_router, prefix="/api")
-# app.include_router(products_orm_router, prefix="/api/products/orm")
+app.include_router(auth_router, prefix="/api/auth")
+app.include_router(chat_router, prefix="/api/bot")
 
 @app.get("/")
 async def root():
