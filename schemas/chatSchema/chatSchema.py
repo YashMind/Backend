@@ -16,6 +16,7 @@ class ChatMessageRead(ChatMessageBase):
     id: int
     sender: str
     created_at: datetime
+    message: List
 
     class Config:
         orm_mode = True

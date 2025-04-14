@@ -6,12 +6,14 @@ from jose import JWTError, jwt
 from uuid import uuid4
 import json
 from models.authModel.authModel import AuthUser
-from schemas.authSchema.authSchema import User, SignInUser, PasswordResetRequest, PasswordReset
+from schemas.authSchema.authSchema import User, SignInUser, PasswordResetRequest, PasswordReset, UserUpdate
 from sqlalchemy.orm import Session
 from config import get_db
-
+import httpx
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 @router.post("/signup")
 async def signup(user: User, db: Session = Depends(get_db)):
@@ -65,6 +67,7 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        print("eeeeeeeee ", e)
         raise HTTPException(status_code=500, detail="Internal server error")
     
 @router.get("/me")
@@ -75,8 +78,6 @@ async def getme(request: Request, db: Session = Depends(get_db)):
             raise HTTPException(status_code=401, detail="Not authenticated")
 
         payload = decode_access_token(token)
-        if isinstance(payload, JSONResponse):
-            return payload
         user_id = payload.get("user_id")
         user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
         if not user:
@@ -85,6 +86,13 @@ async def getme(request: Request, db: Session = Depends(get_db)):
         return {"user": user, "status": 200}
 
     except HTTPException as http_exc:
+        if http_exc.status_code == 401:
+            response = JSONResponse(
+                content={"detail": "Invalid or expired token"},
+                status_code=401
+            )
+            response.delete_cookie("access_token")
+            return response
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -135,3 +143,123 @@ async def logout(response: Response):
         return {"message": "Logged out successfully"}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred during logout") from e
+
+@router.put("/update-profile")
+def update_profile(updateUser: UserUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    try:
+        user = db.query(AuthUser).filter(AuthUser.id == current_user.id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if updateUser.fullName:
+            user.fullName = updateUser.fullName
+
+        if updateUser.password:
+            hashed_pw = pwd_context.hash(updateUser.password)
+            user.password = hashed_pw
+
+        db.commit()
+        db.refresh(user)
+
+        return {
+            "message": "Profile updated successfully",
+            "user": {
+                "id": user.id,
+                "fullName": user.fullName,
+                "email": user.email,
+            },
+        }
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print("hhhhhhhhhhhhhh ", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
+
+# google login
+@router.post("/google-login")
+async def google_login(request: Request, response:Response, db: Session = Depends(get_db)):
+    try:
+        data = await request.json()
+        token = data.get("token")
+        if not token:
+            raise HTTPException(status_code=400, detail="Token missing")
+
+        async with httpx.AsyncClient() as client:
+            res = await client.get(GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {token}"})
+            if res.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to fetch user info")
+
+            user_data = res.json()
+            email = user_data.get("email")
+            name = user_data.get("name")
+            if not email:
+                raise HTTPException(status_code=400, detail="Email not found in Google response")
+            user = db.query(AuthUser).filter(AuthUser.email == email).first()
+            if not user:
+                user = AuthUser(email=email, fullName=name, password=None, provider="google")
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+
+            access_token = create_access_token(data={"sub": email, "user_id": str(user.id)})
+            response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, 
+                            samesite="Lax", max_age=3600)
+            return {"access_token": access_token, "token_type": "bearer"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
+    
+@router.post("/facebook-login")
+async def facebook_login(request: Request, response: Response, db: Session = Depends(get_db)):
+    try:
+        data = await request.json()
+        token = data.get("token")
+        if not token:
+            raise HTTPException(status_code=400, detail="Token missing")
+
+        # Facebook Graph API endpoint to get user info
+        facebook_url = "https://graph.facebook.com/me"
+        params = {
+            "fields": "id,name,email",
+            "access_token": token
+        }
+
+        async with httpx.AsyncClient() as client:
+            res = await client.get(facebook_url, params=params)
+
+        if res.status_code != 200:
+            print("Facebook error response:", res.text)
+            raise HTTPException(status_code=400, detail="Failed to fetch user info from Facebook")
+
+        user_data = res.json()
+        email = user_data.get("email")
+        name = user_data.get("name")
+
+        if not email:
+            raise HTTPException(status_code=400, detail="Email not found in Facebook response")
+
+        user = db.query(AuthUser).filter(AuthUser.email == email).first()
+        if not user:
+            user = AuthUser(email=email, fullName=name, password=None, provider="facebook")
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+        access_token = create_access_token(data={"sub": email, "user_id": str(user.id)})
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=False,
+            samesite="Lax",
+            max_age=3600
+        )
+
+        return {"access_token": access_token, "token_type": "bearer"}
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="An unexpected error occurred") from e

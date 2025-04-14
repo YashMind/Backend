@@ -26,7 +26,7 @@ app.add_middleware(
 
 # orm
 app.include_router(auth_router, prefix="/api/auth")
-app.include_router(chat_router, prefix="/api/bot")
+app.include_router(chat_router, prefix="/api/chatbot")
 
 @app.get("/")
 async def root():

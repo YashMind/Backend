@@ -9,6 +9,7 @@ class ChatSession(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     title = Column(String(255), default="New Chat")
     created_at = Column(TIMESTAMP, server_default=func.now())
+    messages = relationship("ChatMessage", back_populates="chat_session")
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -17,3 +18,4 @@ class ChatMessage(Base):
     sender = Column(Enum("user", "bot", name="sender_enum"))
     message = Column(Text)
     created_at = Column(TIMESTAMP, server_default=func.now())
+    chat_session = relationship("ChatSession", back_populates="messages")

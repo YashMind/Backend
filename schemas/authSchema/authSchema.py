@@ -17,3 +17,8 @@ class PasswordResetRequest(BaseModel):
 class PasswordReset(BaseModel):
     token: str
     new_password: str
+
+class UserUpdate(BaseModel):
+    fullName: Optional[str] = None
+    password: Optional[str] = None
+    isRestricted: Optional[bool] = False

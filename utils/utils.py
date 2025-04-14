@@ -26,12 +26,7 @@ def decode_access_token(token: str):
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except Exception as e:
-        response = JSONResponse(
-            content={"detail": "Invalid or expired token"},
-            status_code=401
-        )
-        response.delete_cookie("access_token")
-        return response
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)):
     token = request.cookies.get("access_token")
