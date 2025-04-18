@@ -13,3 +13,6 @@ class AuthUser(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     provider = Column(String(255), nullable=True)
+    googleId = Column(String(255), nullable=True)
+    facebookId = Column(String(255), nullable=True)
+    picture = Column(String(255), nullable=True)

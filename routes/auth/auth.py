@@ -67,7 +67,6 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print("eeeeeeeee ", e)
         raise HTTPException(status_code=500, detail="Internal server error")
     
 @router.get("/me")
@@ -173,7 +172,6 @@ def update_profile(updateUser: UserUpdate, db: Session = Depends(get_db), curren
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print("hhhhhhhhhhhhhh ", e)
         raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
 
 # google login
@@ -191,13 +189,18 @@ async def google_login(request: Request, response:Response, db: Session = Depend
                 raise HTTPException(status_code=400, detail="Failed to fetch user info")
 
             user_data = res.json()
+            print("user data ", user_data)
             email = user_data.get("email")
             name = user_data.get("name")
+            googleId = user_data.get("id")
+            picture = user_data.get("picture")
             if not email:
                 raise HTTPException(status_code=400, detail="Email not found in Google response")
             user = db.query(AuthUser).filter(AuthUser.email == email).first()
+            print("user ", user)
+            dummy_password = pwd_context.hash("GOOGLE_AUTH_NO_PASSWORD")
             if not user:
-                user = AuthUser(email=email, fullName=name, password=None, provider="google")
+                user = AuthUser(email=email, fullName=name, password=dummy_password, provider="google", googleId=googleId, picture=picture)
                 db.add(user)
                 db.commit()
                 db.refresh(user)
@@ -209,6 +212,7 @@ async def google_login(request: Request, response:Response, db: Session = Depend
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        print("e ", e)
         raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
     
 @router.post("/facebook-login")
@@ -222,7 +226,7 @@ async def facebook_login(request: Request, response: Response, db: Session = Dep
         # Facebook Graph API endpoint to get user info
         facebook_url = "https://graph.facebook.com/me"
         params = {
-            "fields": "id,name,email",
+            "fields": "id,name,email,picture",
             "access_token": token
         }
 
@@ -236,13 +240,16 @@ async def facebook_login(request: Request, response: Response, db: Session = Dep
         user_data = res.json()
         email = user_data.get("email")
         name = user_data.get("name")
+        facebookId = user_data.get("id")
+        picture = user_data.get("picture")
 
         if not email:
             raise HTTPException(status_code=400, detail="Email not found in Facebook response")
 
         user = db.query(AuthUser).filter(AuthUser.email == email).first()
         if not user:
-            user = AuthUser(email=email, fullName=name, password=None, provider="facebook")
+            dummy_password = pwd_context.hash("FACEBOOK_AUTH_NO_PASSWORD")
+            user = AuthUser(email=email, fullName=name, password=dummy_password, provider="facebook", facebookId=facebookId, picture=picture)
             db.add(user)
             db.commit()
             db.refresh(user)

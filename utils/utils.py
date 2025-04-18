@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 import smtplib
 SECRET_KEY = "ADMIN@1234QWER"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 20160  # 2 weeks
 RESET_PASSWORD_TOKEN_EXPIRE_MINUTES = 15
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
