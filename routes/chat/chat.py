@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form,  UploadFile, File
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from utils.utils import create_access_token, decode_access_token, create_reset_token, send_reset_email, decode_reset_access_token, get_current_user
@@ -7,10 +7,12 @@ from uuid import uuid4
 import json
 from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots
 from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot
+from schemas.authSchema.authSchema import User
 from sqlalchemy.orm import Session
 from config import get_db
 from typing import Optional, List
-
+from sqlalchemy import and_
+import os
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
 
@@ -40,11 +42,76 @@ async def create_chat(data:CreateBot, request: Request, db: Session = Depends(ge
         return new_chatbot
     
     except HTTPException as http_exc:
-        print("http_exc ", http_exc)
         raise http_exc
     except Exception as e:
-        print("e ", e)
         raise HTTPException(status_code=500, detail="Internal server error")
+# update chatbot
+@router.put("/update-bot", response_model=CreateBot)
+async def create_chat(data:CreateBot, db: Session = Depends(get_db)):
+    try:
+        chatbot = db.query(ChatBots).filter(ChatBots.id == int(data.id)).first()
+        print("chatbot ", chatbot)
+        if not chatbot:
+            raise HTTPException(status_code=404, detail="Chatbot not found")
+
+        if data.train_from:
+            chatbot.train_from = data.train_from
+
+        if data.target_link:
+            chatbot.target_link = data.target_link
+
+        if data.document_link:
+            chatbot.document_link = data.document_link
+
+        db.commit()
+        db.refresh(chatbot)
+        return chatbot
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+UPLOAD_DIRECTORY = "uploads/"
+ALLOWED_FILE_TYPES = [
+    "text/plain",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]
+@router.post("/upload-document")
+async def upload_photo(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    try:
+        # Validate file type
+        if not os.path.exists(UPLOAD_DIRECTORY):
+            os.makedirs(UPLOAD_DIRECTORY)
+
+        if file.content_type not in ALLOWED_FILE_TYPES:
+            raise HTTPException(status_code=400, detail="Invalid file type. Only image files are allowed.")
+
+        # Generate unique file name
+        file_extension = file.filename.split(".")[-1]
+        unique_filename = f"{uuid4()}.{file_extension}"
+        file_path = os.path.join(UPLOAD_DIRECTORY, unique_filename)
+
+        # Save the file
+        try:
+            with open(file_path, "wb") as buffer:
+                buffer.write(await file.read())
+        except Exception as e:
+            raise HTTPException(status_code=500, detail="Error saving file") from e
+
+        file_url = f"/{UPLOAD_DIRECTORY}{unique_filename}"
+
+        return JSONResponse(content={"url": file_url})
+
+    except HTTPException as http_exc:
+        raise http_exc
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
 
 # get all chatbots
 @router.get("/get-all", response_model=List[CreateBot])
@@ -57,10 +124,8 @@ async def get_my_bots(request: Request, db: Session = Depends(get_db)):
         bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
         return bots
     except HTTPException as http_exc:
-        print("http_exc ", http_exc)
         raise http_exc
     except Exception as e:
-        print("e ", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 # create new chat
@@ -70,7 +135,6 @@ async def create_chat(request: Request, db: Session = Depends(get_db)):
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        print("user_id ", user_id)
 
         new_chat = ChatSession(user_id=user_id)
         db.add(new_chat)
@@ -79,10 +143,8 @@ async def create_chat(request: Request, db: Session = Depends(get_db)):
         return new_chat
     
     except HTTPException as http_exc:
-        print("http_exc ", http_exc)
         raise http_exc
     except Exception as e:
-        print("e ", e)
         raise HTTPException(status_code=500, detail="Internal server error")
     
 # send message

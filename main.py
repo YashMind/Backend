@@ -15,10 +15,13 @@ app = FastAPI()
 
 # Create DB tables
 Base.metadata.create_all(bind=engine)
+origins = [
+    "https://yashraa.ai",  # No port! Because HTTPS default is 443
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # frontend origin
+    allow_origins=origins,  # frontend origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
