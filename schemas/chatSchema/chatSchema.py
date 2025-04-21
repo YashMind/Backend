@@ -37,3 +37,18 @@ class ChatSessionRead(BaseModel):
 
 class ChatSessionWithMessages(ChatSessionRead):
     messages: List[ChatMessageRead]
+
+class CreateBot(BaseModel):
+    id: int = None
+    chatbot_name: str
+    user_id: Optional[int] = None
+    train_from: Optional[str] = None
+    target_link: Optional[str] = None
+    document_link: Optional[str] = None
+    public: Optional[bool] = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+

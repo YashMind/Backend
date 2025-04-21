@@ -5,8 +5,8 @@ from utils.utils import create_access_token, decode_access_token, create_reset_t
 from jose import JWTError, jwt
 from uuid import uuid4
 import json
-from models.chatModel.chatModel import ChatSession, ChatMessage
-from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages
+from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots
+from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot
 from sqlalchemy.orm import Session
 from config import get_db
 from typing import Optional, List
@@ -17,6 +17,51 @@ from langchain.schema import HumanMessage, AIMessage
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
 router = APIRouter()
+
+# create new chatbot
+@router.post("/create-bot", response_model=CreateBot)
+async def create_chat(data:CreateBot, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        print("user_id ", user_id)
+        new_chatbot = ChatBots(
+            user_id=user_id,
+            chatbot_name=data.chatbot_name,
+            public= data.public,
+            train_from=data.train_from,
+            target_link=data.target_link,
+            document_link=data.document_link
+        )
+        db.add(new_chatbot)
+        db.commit()
+        db.refresh(new_chatbot)
+        return new_chatbot
+    
+    except HTTPException as http_exc:
+        print("http_exc ", http_exc)
+        raise http_exc
+    except Exception as e:
+        print("e ", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+# get all chatbots
+@router.get("/get-all", response_model=List[CreateBot])
+async def get_my_bots(request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+        bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+        return bots
+    except HTTPException as http_exc:
+        print("http_exc ", http_exc)
+        raise http_exc
+    except Exception as e:
+        print("e ", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # create new chat
 @router.post("/chats", response_model=ChatSessionRead)
