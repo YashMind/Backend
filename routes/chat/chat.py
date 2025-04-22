@@ -22,7 +22,7 @@ router = APIRouter()
 
 # create new chatbot
 @router.post("/create-bot", response_model=CreateBot)
-async def create_chat(data:CreateBot, request: Request, db: Session = Depends(get_db)):
+async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
@@ -47,7 +47,7 @@ async def create_chat(data:CreateBot, request: Request, db: Session = Depends(ge
         raise HTTPException(status_code=500, detail="Internal server error")
 # update chatbot
 @router.put("/update-bot", response_model=CreateBot)
-async def create_chat(data:CreateBot, db: Session = Depends(get_db)):
+async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
     try:
         chatbot = db.query(ChatBots).filter(ChatBots.id == int(data.id)).first()
         print("chatbot ", chatbot)
@@ -65,6 +65,21 @@ async def create_chat(data:CreateBot, db: Session = Depends(get_db)):
 
         db.commit()
         db.refresh(chatbot)
+        return chatbot
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+# get chatbot
+@router.get("/get-bot", response_model=CreateBot)
+async def get_chatbot(botId:int, db: Session = Depends(get_db)):
+    try:
+        chatbot = db.query(ChatBots).filter(ChatBots.id == botId).first()
+        print("chatbot ", chatbot)
+        if not chatbot:
+            raise HTTPException(status_code=404, detail="Chatbot not found")
         return chatbot
     
     except HTTPException as http_exc:
@@ -121,7 +136,7 @@ async def get_my_bots(request: Request, db: Session = Depends(get_db)):
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         
-        bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+        bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).order_by(ChatBots.created_at.desc()).all()
         return bots
     except HTTPException as http_exc:
         raise http_exc

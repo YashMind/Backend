@@ -39,7 +39,7 @@ class ChatSessionWithMessages(ChatSessionRead):
     messages: List[ChatMessageRead]
 
 class CreateBot(BaseModel):
-    id: int
+    id: Optional[int] = None
     chatbot_name: Optional[str] = None
     user_id: Optional[int] = None
     train_from: Optional[str] = None

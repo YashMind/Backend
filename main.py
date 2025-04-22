@@ -16,7 +16,8 @@ app = FastAPI()
 # Create DB tables
 Base.metadata.create_all(bind=engine)
 origins = [
-    "https://yashraa.ai",  # No port! Because HTTPS default is 443
+    "https://yashraa.ai",  # No port! Because HTTPS default is 443,
+    "http://localhost:3000"
 ]
 
 app.add_middleware(
@@ -33,7 +34,10 @@ app.include_router(chat_router, prefix="/api/chatbot")
 
 @app.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Hello World"}@app.get("/api")
+@app.get("/api")
+async def api_root():
+    return {"message": "Backend API root working!"}
 
 if __name__ == "__main__":
     import uvicorn
