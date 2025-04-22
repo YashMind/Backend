@@ -10,7 +10,7 @@ from config import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 # from routes import auth
 
-app = FastAPI()
+app = FastAPI(root_path="/api")
 # init_orm_db()
 
 # Create DB tables
