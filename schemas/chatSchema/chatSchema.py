@@ -13,10 +13,13 @@ class ChatMessageCreate(ChatMessageBase):
 
 
 class ChatMessageRead(ChatMessageBase):
-    id: int
-    sender: str
-    created_at: datetime
-    message: List
+    id: Optional[int] = None
+    chat_id: Optional[int] = None
+    bot_id: Optional[int] = None
+    user_id: Optional[int] = None
+    sender: Optional[str] = None
+    created_at: Optional[datetime] = None
+    message: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -27,9 +30,11 @@ class ChatSessionCreate(BaseModel):
 
 
 class ChatSessionRead(BaseModel):
-    id: int
-    title: str
-    created_at: datetime
+    id: Optional[int] = None
+    user_id: Optional[int] = None
+    bot_id: int
+    title: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         orm_mode = True

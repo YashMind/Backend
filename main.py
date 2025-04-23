@@ -5,7 +5,7 @@ from routes.chat.chat import router as chat_router
 from config import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(root_path="/api")
+app = FastAPI()
 # init_orm_db()
 
 # Create DB tables

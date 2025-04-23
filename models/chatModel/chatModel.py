@@ -7,6 +7,7 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
+    bot_id = Column(Integer, nullable=False)
     title = Column(String(255), default="New Chat")
     created_at = Column(TIMESTAMP, server_default=func.now())
     messages = relationship("ChatMessage", back_populates="chat_session")
@@ -15,6 +16,8 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
     id = Column(Integer, primary_key=True, index=True)
     chat_id = Column(Integer, ForeignKey("chat_sessions.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    bot_id = Column(Integer, nullable=False)
     sender = Column(Enum("user", "bot", name="sender_enum"))
     message = Column(Text)
     created_at = Column(TIMESTAMP, server_default=func.now())

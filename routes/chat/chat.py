@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form,  UploadFile, File
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
-from utils.utils import create_access_token, decode_access_token, create_reset_token, send_reset_email, decode_reset_access_token, get_current_user
+from utils.utils import create_access_token, decode_access_token, get_current_user
 from jose import JWTError, jwt
 from uuid import uuid4
 import json
@@ -15,7 +15,7 @@ from sqlalchemy import and_
 import os
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
-
+# from routes.chat.pinecone import retrieve_answers
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
 router = APIRouter()
@@ -27,7 +27,6 @@ async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        print("user_id ", user_id)
         new_chatbot = ChatBots(
             user_id=user_id,
             chatbot_name=data.chatbot_name,
@@ -144,18 +143,22 @@ async def get_my_bots(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 # create new chat
-@router.post("/chats", response_model=ChatSessionRead)
-async def create_chat(request: Request, db: Session = Depends(get_db)):
+@router.post("/chats-id", response_model=ChatSessionRead)
+async def create_chat(data: ChatSessionRead, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-
-        new_chat = ChatSession(user_id=user_id)
-        db.add(new_chat)
-        db.commit()
-        db.refresh(new_chat)
-        return new_chat
+        bot_id = data.bot_id
+        prev_chat = db.query(ChatSession).filter_by(user_id=user_id, bot_id=bot_id).first()
+        if prev_chat:
+            return prev_chat
+        else:
+            new_chat = ChatSession(user_id=user_id, bot_id=bot_id)
+            db.add(new_chat)
+            db.commit()
+            db.refresh(new_chat)
+            return new_chat
     
     except HTTPException as http_exc:
         raise http_exc
@@ -170,7 +173,9 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
+
         user_msg = data.get("message")
+        bot_id = data.get("bot_id")
         if not user_msg:
             raise HTTPException(status_code=400, detail="Message required")
 
@@ -179,29 +184,40 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
 
-        # Get message history from DB
-        messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
+        # pine cone
+        # pinecone_answer = retrieve_answers(user_msg)
+        pinecone_answer = False
+        # If Pinecone answer is found and good
+        if pinecone_answer and len(pinecone_answer.strip()) > 0:
+            response_content = pinecone_answer
+        else:
+            # Get message history from DB
+            messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
 
-        langchain_messages = [
-            HumanMessage(content=m.message) if m.sender == 'user' else AIMessage(content=m.message)
-            for m in messages
-        ]
+            langchain_messages = [
+                HumanMessage(content=m.message) if m.sender == 'user' else AIMessage(content=m.message)
+                for m in messages
+            ]
 
-        # Add current user message
-        langchain_messages.append(HumanMessage(content=user_msg))
+            # Add current user message
+            langchain_messages.append(HumanMessage(content=user_msg))
 
-        # Call LLM
-        response = llm(langchain_messages)
+            # Call LLM
+            response = llm.invoke(langchain_messages)
+            response_content = response.content if response and response.content else "No response"
 
         # Save both user and bot messages
-        db.add(ChatMessage(chat_id=chat_id, sender="user", message=user_msg))
-        db.add(ChatMessage(chat_id=chat_id, sender="bot", message=response.content))
-        db.commit()
+        user_message  = ChatMessage(user_id=user_id, bot_id=bot_id, chat_id=chat_id, sender="user", message=user_msg)
+        bot_message = ChatMessage(user_id=user_id, bot_id=bot_id, chat_id=chat_id, sender="bot", message=response_content)
 
-        return {"response": response.content}
+        db.add_all([user_message, bot_message])
+        db.commit()
+        db.refresh(bot_message)
+        return bot_message
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        print("e ", e)
         raise HTTPException(status_code=500, detail="Internal server error")
     
 # get all charts
@@ -233,6 +249,7 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
 
         messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
         return messages
+        # return [ChatMessageRead.from_orm(message) for message in messages]
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
