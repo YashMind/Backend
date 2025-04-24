@@ -57,3 +57,6 @@ class CreateBot(BaseModel):
     class Config:
         orm_mode = True
 
+class DeleteChatsRequest(BaseModel):
+    chat_ids: List[int]
+

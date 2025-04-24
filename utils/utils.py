@@ -8,6 +8,8 @@ from config import get_db
 from models.authModel.authModel import AuthUser
 from email.mime.text import MIMEText
 import smtplib
+import httpx
+
 SECRET_KEY = "ADMIN@1234QWER"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 20160  # 2 weeks
@@ -94,5 +96,20 @@ def send_reset_email(email: str, token: str):
         raise HTTPException(status_code=500, detail="Failed to send reset email") from smtp_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail="An unexpected error occurred while sending the email") from e
+
+async def get_country_from_ip(ip: str):
+    try:
+        url = f"https://ipinfo.io/{ip}/json"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url)
+            print("response country ", response)
+            if response.status_code == 200:
+                data = response.json()
+                print("data ", data)
+                return data.get("country", "Unknown")
+            return "Unknown"
+    except Exception as e:
+        print("IP API error", e)
+        return "Unknown"
 
     

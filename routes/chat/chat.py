@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form,  UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form,  UploadFile, File, Query
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from utils.utils import create_access_token, decode_access_token, get_current_user
@@ -6,15 +6,16 @@ from jose import JWTError, jwt
 from uuid import uuid4
 import json
 from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots
-from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot
+from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest
 from schemas.authSchema.authSchema import User
 from sqlalchemy.orm import Session
 from config import get_db
-from typing import Optional, List
-from sqlalchemy import and_
+from typing import Optional, Dict, List
+from collections import defaultdict
 import os
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
+from utils.utils import get_country_from_ip
 # from routes.chat.pinecone import retrieve_answers
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
@@ -150,15 +151,19 @@ async def create_chat(data: ChatSessionRead, request: Request, db: Session = Dep
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         bot_id = data.bot_id
-        prev_chat = db.query(ChatSession).filter_by(user_id=user_id, bot_id=bot_id).first()
-        if prev_chat:
-            return prev_chat
-        else:
-            new_chat = ChatSession(user_id=user_id, bot_id=bot_id)
-            db.add(new_chat)
-            db.commit()
-            db.refresh(new_chat)
-            return new_chat
+        last_chat = (db.query(ChatSession).filter_by(user_id=user_id, bot_id=bot_id).order_by(ChatSession.created_at.desc()).first())
+
+        # Step 2: Check if it has any messages
+        if last_chat:
+            has_messages = db.query(ChatMessage).filter_by(chat_id=last_chat.id).first()
+            if not has_messages:
+                return last_chat
+            
+        new_chat = ChatSession(user_id=user_id, bot_id=bot_id)
+        db.add(new_chat)
+        db.commit()
+        db.refresh(new_chat)
+        return new_chat
     
     except HTTPException as http_exc:
         raise http_exc
@@ -183,6 +188,11 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
+        
+        # Get user's country
+        ip = request.client.host
+        country = await get_country_from_ip(ip)
+        print("country ", country)
 
         # pine cone
         # pinecone_answer = retrieve_answers(user_msg)
@@ -255,19 +265,65 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.delete("/chats/{chat_id}")
-async def delete_chat(chat_id: int, request: Request, db: Session = Depends(get_db)):
+# get user chat history
+# response_model=Dict[int, List[ChatMessageRead]]
+@router.get("/chats-history/{bot_id}")
+async def get_user_chat_history(bot_id: int, request: Request, db: Session = Depends(get_db), 
+    page: int = Query(1, ge=1), limit: int = Query(2, ge=1), search: Optional[str] = None):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-        chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user_id).first()
-        if not chat:
+        session_query = db.query(ChatSession).filter_by(bot_id=bot_id, user_id=user_id)
+        if not session_query:
             raise HTTPException(status_code=404, detail="Chat not found")
+        if search:
+            session_query = session_query.filter(ChatSession.title.ilike(f"%{search}%"))
 
-        db.query(ChatMessage).filter_by(chat_id=chat_id).delete()
-        db.delete(chat)
+        total_count = session_query.count()
+        # Apply pagination
+        sessions = session_query.offset((page - 1) * limit).limit(limit).all()
+        session_ids = [s.id for s in sessions]
+        if not session_ids:
+            return {
+                "data": {},
+                "totalCount": total_count,
+                "totalPages": (total_count + limit - 1) // limit,
+                "currentPage": page
+            }
+        
+        messages = db.query(ChatMessage).filter(ChatMessage.chat_id.in_(session_ids)).order_by(ChatMessage.created_at.asc()).all()
+        # Group messages by chat_id
+        grouped_messages = defaultdict(list)
+        for message in messages:
+            grouped_messages[message.chat_id].append(message)
+        sorted_grouped = dict(sorted(grouped_messages.items(), key=lambda x: x[0], reverse=True))
+        return {
+            "data": sorted_grouped,
+            "totalCount": total_count,
+            "totalPages": (total_count + limit - 1) // limit,
+            "currentPage": page
+        }
+        # return sorted_grouped
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print("e ", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+@router.delete("/delete-chats/{bot_id}")
+async def delete_chat(bot_id: int, request_data: DeleteChatsRequest, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+        for chat_id in request_data.chat_ids:
+            chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user_id, bot_id=bot_id).first()
+            if chat:
+                db.query(ChatMessage).filter_by(chat_id=chat_id).delete()
+                db.delete(chat)
         db.commit()
         return {"message": "Chat deleted successfully"}
     except HTTPException as http_exc:
