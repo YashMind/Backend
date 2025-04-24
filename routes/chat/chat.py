@@ -269,7 +269,7 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
 # response_model=Dict[int, List[ChatMessageRead]]
 @router.get("/chats-history/{bot_id}")
 async def get_user_chat_history(bot_id: int, request: Request, db: Session = Depends(get_db), 
-    page: int = Query(1, ge=1), limit: int = Query(2, ge=1), search: Optional[str] = None):
+    page: int = Query(1, ge=1), limit: int = Query(10, ge=1), search: Optional[str] = None):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
