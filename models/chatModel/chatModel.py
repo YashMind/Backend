@@ -32,6 +32,17 @@ class ChatBots(Base):
     target_link = Column(String(255), nullable=True)
     document_link = Column(String(255), nullable=True)
     public = Column(Boolean, default=False)
+    text_content = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, onupdate=func.now())
+
+class ChatBotsFaqs(Base):
+    __tablename__ = "chat_bots_faqs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    bot_id = Column(Integer, nullable=False)
+    question = Column(String(255), nullable=True)
+    answer = Column(String(255), nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 

@@ -51,6 +51,7 @@ class CreateBot(BaseModel):
     target_link: Optional[str] = None
     document_link: Optional[str] = None
     public: Optional[bool] = False
+    text_content: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -59,4 +60,32 @@ class CreateBot(BaseModel):
 
 class DeleteChatsRequest(BaseModel):
     chat_ids: List[int]
+
+class QuestionAnswer(BaseModel):
+    id: Optional[int] = None
+    user_id: Optional[int] = None
+    bot_id: Optional[int] = None
+    question: str
+    answer: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+class CreateBotFaqs(BaseModel):
+    bot_id: int
+    questions: Optional[List[QuestionAnswer]] = None
+
+    class Config:
+        orm_mode = True
+
+class FaqResponse(BaseModel):
+    id: int
+    user_id: int
+    bot_id: int
+    question: str
+    answer: str
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    class Config:
+        orm_mode = True
 

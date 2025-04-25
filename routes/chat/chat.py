@@ -5,8 +5,8 @@ from utils.utils import create_access_token, decode_access_token, get_current_us
 from jose import JWTError, jwt
 from uuid import uuid4
 import json
-from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots
-from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest
+from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs
+from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse
 from schemas.authSchema.authSchema import User
 from sqlalchemy.orm import Session
 from config import get_db
@@ -62,6 +62,8 @@ async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
 
         if data.document_link:
             chatbot.document_link = data.document_link
+        if data.text_content:
+            chatbot.text_content = data.text_content
 
         db.commit()
         db.refresh(chatbot)
@@ -274,12 +276,12 @@ async def get_user_chat_history(bot_id: int, request: Request, db: Session = Dep
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-
+        chat_bot = db.query(ChatBots).filter_by(id=bot_id, user_id=user_id).first()
         session_query = db.query(ChatSession).filter_by(bot_id=bot_id, user_id=user_id)
         if not session_query:
             raise HTTPException(status_code=404, detail="Chat not found")
         if search:
-            session_query = session_query.filter(ChatSession.title.ilike(f"%{search}%"))
+            session_query = session_query.filter(ChatMessage.message.ilike(f"%{search}%"))
 
         total_count = session_query.count()
         # Apply pagination
@@ -290,7 +292,8 @@ async def get_user_chat_history(bot_id: int, request: Request, db: Session = Dep
                 "data": {},
                 "totalCount": total_count,
                 "totalPages": (total_count + limit - 1) // limit,
-                "currentPage": page
+                "currentPage": page,
+                "chatBot":chat_bot
             }
         
         messages = db.query(ChatMessage).filter(ChatMessage.chat_id.in_(session_ids)).order_by(ChatMessage.created_at.asc()).all()
@@ -303,7 +306,8 @@ async def get_user_chat_history(bot_id: int, request: Request, db: Session = Dep
             "data": sorted_grouped,
             "totalCount": total_count,
             "totalPages": (total_count + limit - 1) // limit,
-            "currentPage": page
+            "currentPage": page,
+            "chatBot": chat_bot
         }
         # return sorted_grouped
     except HTTPException as http_exc:
@@ -348,6 +352,86 @@ async def delete_all_chats(request: Request, db: Session = Depends(get_db)):
         return {"message": "All chats deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
+
+# create new chatbot
+@router.post("/create-bot-faqs", response_model=CreateBotFaqs)
+async def create_chatbot_faqs(data:CreateBotFaqs, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        created_faqs = []
+
+        for qa in data.questions:
+            new_chatbot_faq = ChatBotsFaqs(
+                user_id=user_id,
+                bot_id=data.bot_id,
+                question= qa.question,
+                answer=qa.answer
+            )
+            db.add(new_chatbot_faq)
+            db.commit()
+            db.refresh(new_chatbot_faq)
+            created_faqs.append(new_chatbot_faq)
+        return new_chatbot_faq
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print("e ", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+@router.get("/get-bot-faqs/{bot_id}", response_model=List[FaqResponse])
+async def create_chatbot_faqs(bot_id:int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        chatbot_faqs = db.query(ChatBotsFaqs).filter_by(bot_id=bot_id, user_id=user_id).order_by(ChatBotsFaqs.created_at.desc()).all()
+        return chatbot_faqs
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print("e ", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+@router.delete("/delete-faq/{bot_id}/{faq_id}")
+async def delete_single_faq(bot_id: int, faq_id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        faq = db.query(ChatBotsFaqs).filter_by(id=faq_id, bot_id=bot_id, user_id=user_id).first()
+        if not faq:
+            raise HTTPException(status_code=404, detail="FAQ not found")
+
+        db.delete(faq)
+        db.commit()
+
+        return {"message": "FAQ deleted successfully."}
+    except Exception as e:
+        print("Delete single FAQ error:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.delete("/delete-all-faqs/{bot_id}")
+async def delete_all_faqs(bot_id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Delete all FAQ entries for the bot and user
+        deleted = db.query(ChatBotsFaqs).filter_by(bot_id=bot_id, user_id=user_id).delete()
+        db.commit()
+
+        return {"message": f"{deleted} FAQs deleted successfully."}
+    except Exception as e:
+        print("Delete all FAQs error:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 
 
