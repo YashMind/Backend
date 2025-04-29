@@ -60,7 +60,7 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
             raise HTTPException(status_code=400, detail="Incorrect email or password")
         access_token = create_access_token(data={"sub": user.email, "user_id": str(user.id)})
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, 
-                            samesite="Lax", max_age=3600)
+                            samesite="Lax", max_age=84600)
 
         return {"access_token": access_token, "token_type": "bearer"}
 

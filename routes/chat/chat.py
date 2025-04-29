@@ -34,7 +34,8 @@ async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends
             public= data.public,
             train_from=data.train_from,
             target_link=data.target_link,
-            document_link=data.document_link
+            document_link=data.document_link,
+            creativity=0
         )
         db.add(new_chatbot)
         db.commit()
@@ -91,7 +92,7 @@ async def get_chatbot(botId:int, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error", error=e)
     
 UPLOAD_DIRECTORY = "uploads/"
 ALLOWED_FILE_TYPES = [
@@ -147,7 +148,7 @@ async def get_my_bots(request: Request, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server erro:{e}",)
 
 # create new chat
 @router.post("/chats-id", response_model=ChatSessionRead)

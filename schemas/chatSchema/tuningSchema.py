@@ -20,6 +20,10 @@ class InstructionPrompt(InstructionPromptCreate):
     class Config:
         orm_mode = True
 
+class InstructionPromptFetch(BaseModel):
+    bot_id: int
+    prompts: List[InstructionPrompt]
+
 class BotPromptsUpdate(BaseModel):
     bot_id: int
     prompts: List[InstructionPromptBase]
