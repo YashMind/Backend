@@ -67,7 +67,7 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error {e}")
     
 @router.get("/me")
 async def getme(request: Request, db: Session = Depends(get_db)):

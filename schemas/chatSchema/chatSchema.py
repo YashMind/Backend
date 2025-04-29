@@ -52,6 +52,7 @@ class CreateBot(BaseModel):
     document_link: Optional[str] = None
     public: Optional[bool] = False
     text_content: Optional[str] = None
+    creativity: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

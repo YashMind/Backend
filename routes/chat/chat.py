@@ -62,8 +62,12 @@ async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
 
         if data.document_link:
             chatbot.document_link = data.document_link
+
         if data.text_content:
             chatbot.text_content = data.text_content
+
+        if data.creativity:
+            chatbot.creativity = data.creativity
 
         db.commit()
         db.refresh(chatbot)
@@ -373,7 +377,11 @@ async def create_chatbot_faqs(data:CreateBotFaqs, request: Request, db: Session 
             db.commit()
             db.refresh(new_chatbot_faq)
             created_faqs.append(new_chatbot_faq)
-        return new_chatbot_faq
+            # return new_chatbot_faq
+
+        return {
+            'bot_id': data.bot_id,
+            'questions':created_faqs}
     
     except HTTPException as http_exc:
         raise http_exc
@@ -382,7 +390,7 @@ async def create_chatbot_faqs(data:CreateBotFaqs, request: Request, db: Session 
         raise HTTPException(status_code=500, detail="Internal server error")
     
 @router.get("/get-bot-faqs/{bot_id}", response_model=List[FaqResponse])
-async def create_chatbot_faqs(bot_id:int, request: Request, db: Session = Depends(get_db)):
+async def get_chatbot_faqs(bot_id:int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
@@ -431,7 +439,5 @@ async def delete_all_faqs(bot_id: int, request: Request, db: Session = Depends(g
     except Exception as e:
         print("Delete all FAQs error:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
 
 

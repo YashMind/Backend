@@ -33,6 +33,7 @@ class ChatBots(Base):
     document_link = Column(String(255), nullable=True)
     public = Column(Boolean, default=False)
     text_content = Column(Text, nullable=True)
+    creativity = Column(Integer , nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 

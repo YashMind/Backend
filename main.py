@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from routes.auth.auth import router as auth_router
 from routes.chat.chat import router as chat_router
+from routes.chat.tuning import router as tuning_router
 
 from config import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +34,7 @@ async def api_root():
 # orm
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(chat_router, prefix="/api/chatbot")
+app.include_router(tuning_router, prefix="/api/tuning")
 
 
 if __name__ == "__main__":
