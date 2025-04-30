@@ -31,3 +31,6 @@ pypdf
 pandas 
 numpy
 pinecone===6.0.2
+beautifulsoup4===4.13.4
+unstructured===0.17.2 
+pdfminer.six

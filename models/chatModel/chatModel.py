@@ -47,3 +47,31 @@ class ChatBotsFaqs(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 
+class ChatBotsDocLinks(Base):
+    __tablename__ = "chat_bots_doc_links"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    bot_id = Column(Integer, nullable=False)
+    chatbot_name = Column(String(255), nullable=False)
+    train_from = Column(String(255), nullable=True)
+    target_link = Column(String(255), nullable=True)
+    document_link = Column(String(255), nullable=True)
+    public = Column(Boolean, default=False)
+    text_content = Column(Text, nullable=True)
+    status = Column(String(255), nullable=False)
+    chars =  Column(Integer, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, onupdate=func.now())
+
+class ChatBotsDocChunks(Base):
+    __tablename__ = "chatbot_doc_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer)
+    bot_id = Column(Integer)
+    source = Column(String(255))
+    content = Column(Text)  # chunked text
+    metaData = Column(Text)  # JSON string, optionally
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, onupdate=func.now())
+

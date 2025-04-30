@@ -90,3 +90,25 @@ class FaqResponse(BaseModel):
     class Config:
         orm_mode = True
 
+
+class CreateBotDocLinks(BaseModel):
+    id: Optional[int] = None
+    bot_id: Optional[int] = None
+    chatbot_name: Optional[str] = None
+    user_id: Optional[int] = None
+    train_from: Optional[str] = None
+    target_link: Optional[str] = None
+    document_link: Optional[str] = None
+    public: Optional[bool] = False
+    text_content: Optional[str] = None
+    status: Optional[str] = None
+    chars: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+class DeleteDocLinksRequest(BaseModel):
+    doc_ids: List[int]
+

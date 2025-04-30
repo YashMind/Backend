@@ -4,9 +4,10 @@ from passlib.context import CryptContext
 from utils.utils import create_access_token, decode_access_token, get_current_user
 from jose import JWTError, jwt
 from uuid import uuid4
+from sqlalchemy import or_, desc, asc
 import json
-from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs
-from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse
+from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks
+from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest
 from schemas.authSchema.authSchema import User
 from sqlalchemy.orm import Session
 from config import get_db
@@ -16,6 +17,7 @@ import os
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
 from utils.utils import get_country_from_ip
+from routes.chat.pinecone import process_and_store_docs, get_fine_tuned_like_response, get_response_from_faqs
 # from routes.chat.pinecone import retrieve_answers
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
@@ -103,6 +105,7 @@ ALLOWED_FILE_TYPES = [
     "text/csv",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]
+
 @router.post("/upload-document")
 async def upload_photo(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     try:
@@ -205,8 +208,16 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         # pinecone_answer = retrieve_answers(user_msg)
         pinecone_answer = False
         # If Pinecone answer is found and good
-        if pinecone_answer and len(pinecone_answer.strip()) > 0:
+
+        response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
+        fine_tuned_response = get_fine_tuned_like_response(user_msg, bot_id, db)
+        if response_from_faqs:
+            response_content = response_from_faqs.answer
+        elif pinecone_answer and len(pinecone_answer.strip()) > 0:
             response_content = pinecone_answer
+        elif fine_tuned_response:
+            print("fine_tuned_response 111111 ", fine_tuned_response)
+            response_content = fine_tuned_response
         else:
             # Get message history from DB
             messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
@@ -440,5 +451,124 @@ async def delete_all_faqs(bot_id: int, request: Request, db: Session = Depends(g
     except Exception as e:
         print("Delete all FAQs error:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
+    
+# create new chatbot
+@router.post("/create-bot-doc-links", response_model=CreateBotDocLinks)
+async def create_chatbot(data:CreateBotDocLinks, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        new_chatbot_doc_links = ChatBotsDocLinks(
+            user_id=user_id,
+            bot_id=int(data.bot_id),
+            chatbot_name=data.chatbot_name,
+            train_from=data.train_from,
+            target_link=data.target_link,
+            document_link=data.document_link,
+            public= data.public,
+            status=data.status or "Indexed",
+            chars=data.chars
+
+        )
+        db.add(new_chatbot_doc_links)
+        db.commit()
+        db.refresh(new_chatbot_doc_links)
+
+        process_and_store_docs(data=new_chatbot_doc_links, db=db)
+        return new_chatbot_doc_links
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+@router.get("/get-bot-doc-links/{bot_id}")
+async def get_bot_doc_links(
+    bot_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, description="Search by document_link or target_link"),
+    sort_by: str = Query("created_at", description="Field to sort by"),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        query = db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.user_id == user_id, ChatBotsDocLinks.bot_id==bot_id)
+
+        # Apply search
+        if search:
+            query = query.filter(
+                or_(
+                    ChatBotsDocLinks.document_link.ilike(f"%{search}%"),
+                    ChatBotsDocLinks.target_link.ilike(f"%{search}%"),
+                )
+            )
+
+        # Sorting
+        sort_column = getattr(ChatBotsDocLinks, sort_by, ChatBotsDocLinks.created_at)
+        sort_column = desc(sort_column) if sort_order == "desc" else asc(sort_column)
+        query = query.order_by(sort_column)
+
+        # Pagination
+        total_count = query.count()
+        total_pages = (total_count + limit - 1) // limit
+        results = query.offset((page - 1) * limit).limit(limit).all()
+
+        # tets
+        jsonl = db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.user_id==user_id, ChatBotsDocChunks.bot_id==bot_id).all()
+
+        return {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "data": results,
+            "jsonl": jsonl
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+@router.delete("/delete-doc-links/{bot_id}")
+async def delete_doc_links(bot_id: int, request_data: DeleteDocLinksRequest, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+        for doc_id in request_data.doc_ids:
+            doc = db.query(ChatBotsDocLinks).filter_by(id=doc_id, user_id=user_id, bot_id=bot_id).first()
+            if doc:
+                db.delete(doc)
+        db.commit()
+        return {"message": "Chat deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# import json
+
+# def export_chunks_to_jsonl(bot_id, db: Session, file_path="output.jsonl"):
+#     chunks = db.query(ChatBotsDocChunks).filter_by(bot_id=bot_id).all()
+#     with open(file_path, "w", encoding="utf-8") as f:
+#         for chunk in chunks:
+#             json.dump({
+#                 "prompt": "",  # optional if preparing for fine-tuning
+#                 "completion": chunk.content
+#             }, f)
+#             f.write("\n")
+
+
+
+  
 
 
