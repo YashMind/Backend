@@ -24,13 +24,12 @@ openai===1.72.0
 langchain_community===0.3.21
 langchain-community===1.0.0
 
-unstructured
+
 tiktoken===0.9.0
-pinecone-client
-pypdf
-pandas 
-numpy
+pypdf==5.4.0
 pinecone===6.0.2
+pinecone-plugin-interface==0.0.7
 beautifulsoup4===4.13.4
 unstructured===0.17.2 
-pdfminer.six
+pdfminer.sixnumpy==2.2.4
+numpy==2.2.4

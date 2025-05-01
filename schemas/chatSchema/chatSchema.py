@@ -53,6 +53,7 @@ class CreateBot(BaseModel):
     public: Optional[bool] = False
     text_content: Optional[str] = None
     creativity: Optional[int] = None
+    token: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

@@ -34,6 +34,7 @@ class ChatBots(Base):
     public = Column(Boolean, default=False)
     text_content = Column(Text, nullable=True)
     creativity = Column(Integer , default=0, nullable=True)
+    token = Column(String(255), nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 

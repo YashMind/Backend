@@ -18,6 +18,8 @@ from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
 from utils.utils import get_country_from_ip
 from routes.chat.pinecone import process_and_store_docs, get_docs_tuned_like_response, get_response_from_faqs
+import secrets
+import string
 # from routes.chat.pinecone import retrieve_answers
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
@@ -30,6 +32,8 @@ async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
+        generated_token = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(25))
+
         new_chatbot = ChatBots(
             user_id=user_id,
             chatbot_name=data.chatbot_name,
@@ -37,7 +41,8 @@ async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends
             train_from=data.train_from,
             target_link=data.target_link,
             document_link=data.document_link,
-            creativity=0
+            creativity=0,
+            token=generated_token
         )
         db.add(new_chatbot)
         db.commit()
