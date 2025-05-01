@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, APIRouter
+from fastapi import Depends, HTTPException, APIRouter, Request
 from config import get_db
 from models.chatModel.appearance import ChatSettings
 from schemas.chatSchema.appearanceSchema import ChatSettingsBase,ChatSettingsCreate,ChatSettingsRead,ChatSettingsUpdate
@@ -8,7 +8,7 @@ router = APIRouter()
 # CRUD operations
 class CRUDChatSettings:
     def create(self, db: get_db, obj_in: ChatSettingsCreate) -> ChatSettings:
-        db_obj = ChatSettings(**obj_in.dict())
+        db_obj = ChatSettings(**obj_in.model_dump())
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
@@ -18,6 +18,7 @@ class CRUDChatSettings:
         return db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).first()
 
     def update(self, db: get_db, bot_id: int, obj_in: ChatSettingsUpdate) -> ChatSettings:
+        print('Update', obj_in)
         db_obj = db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).first()
         if not db_obj:
             raise HTTPException(status_code=404, detail="Settings not found")
@@ -54,7 +55,7 @@ def read_settings(bot_id: int, db: get_db = Depends(get_db)):
 
 @router.put("/settings/{id}", response_model=ChatSettingsRead)
 def update_settings(id: int, settings: ChatSettingsUpdate, db: get_db = Depends(get_db)):
-    return crud.update(db, id, settings)
+    return crud.update(db, id, obj_in=settings)
 
 @router.delete("/settings/{id}", response_model=ChatSettingsRead)
 def delete_settings(id: int, db: get_db = Depends(get_db)):
