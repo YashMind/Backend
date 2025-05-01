@@ -20,6 +20,7 @@ from langchain.schema import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 from typing import Optional
+import string
 load_dotenv()
 
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
@@ -148,10 +149,12 @@ def get_docs_tuned_like_response(user_msg: str, bot_id: int, db: Session) ->  Op
     try:
         response = llm(messages)
         answer = response.content.strip()
-        if answer.lower() == "i don't know":
+        normalized_answer = answer.lower().strip().strip(string.punctuation)
+        if normalized_answer == "i don't know":
             return None
-        print("ans ", answer)
-        return answer
+        else:
+            print("ans ", answer)
+            return answer
     except Exception as e:
         print("LangChain/OpenAI error:", e)
         return None

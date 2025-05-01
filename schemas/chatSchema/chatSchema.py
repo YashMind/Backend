@@ -32,8 +32,9 @@ class ChatSessionCreate(BaseModel):
 class ChatSessionRead(BaseModel):
     id: Optional[int] = None
     user_id: Optional[int] = None
-    bot_id: int
+    bot_id: Optional[int] = None
     title: Optional[str] = None
+    token: Optional[str] = None
     created_at: Optional[datetime] = None
 
     class Config:

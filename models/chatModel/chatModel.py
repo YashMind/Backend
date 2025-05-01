@@ -10,6 +10,7 @@ class ChatSession(Base):
     bot_id = Column(Integer, nullable=False)
     title = Column(String(255), default="New Chat")
     created_at = Column(TIMESTAMP, server_default=func.now())
+    token = Column(String(255), nullable=True)
     messages = relationship("ChatMessage", back_populates="chat_session")
 
 class ChatMessage(Base):

@@ -183,7 +183,31 @@ async def create_chat(data: ChatSessionRead, request: Request, db: Session = Dep
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/chats-id-token", response_model=ChatSessionRead)
+async def create_chat(data: ChatSessionRead, db: Session = Depends(get_db)):
+    try:
+        last_chat = db.query(ChatSession).filter_by(token=data.token).first()
+
+        # Step 2: Check if it has any messages
+        if last_chat:
+            return last_chat
+        
+        chat_bot = db.query(ChatBots).filter_by(token=data.token).first()
+        if not chat_bot:
+            raise HTTPException(status_code=404, detail="ChatBot not found with given token")
+
+        new_chat = ChatSession(token=data.token, bot_id=chat_bot.id)
+        db.add(new_chat)
+        db.commit()
+        db.refresh(new_chat)
+        return new_chat
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     
 # send message
 @router.post("/chats/{chat_id}/message", response_model=ChatMessageRead)
@@ -200,7 +224,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
             raise HTTPException(status_code=400, detail="Message required")
 
         # Verify chat belongs to user
-        chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user_id).first()
+        chat = db.query(ChatSession).filter_by(id=chat_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
         
@@ -221,7 +245,6 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         elif pinecone_answer and len(pinecone_answer.strip()) > 0:
             response_content = pinecone_answer
         elif docs_tuned_response:
-            print("fine_tuned_response 111111 ", docs_tuned_response)
             response_content = docs_tuned_response
         else:
             # Get message history from DB
@@ -250,8 +273,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print("e ", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 # get all charts
 @router.get("/chats", response_model=List[ChatSessionWithMessages])
@@ -276,7 +298,7 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-        chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user_id).first()
+        chat = db.query(ChatSession).filter_by(id=chat_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
 
@@ -552,6 +574,23 @@ async def delete_doc_links(bot_id: int, request_data: DeleteDocLinksRequest, req
             doc = db.query(ChatBotsDocLinks).filter_by(id=doc_id, user_id=user_id, bot_id=bot_id).first()
             if doc:
                 db.delete(doc)
+        db.commit()
+        return {"message": "Chat deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+@router.delete("/chats-delete-token/{token}")
+async def delete_chat(token: str, db: Session = Depends(get_db)):
+    try:
+        chat_session = db.query(ChatSession).filter(ChatSession.token==token).first()
+        if not chat_session:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+
+        # Delete all messages related to this chat
+        db.query(ChatMessage).filter(ChatMessage.chat_id == chat_session.id).delete()
+
         db.commit()
         return {"message": "Chat deleted successfully"}
     except HTTPException as http_exc:
