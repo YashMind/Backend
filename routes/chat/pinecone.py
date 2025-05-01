@@ -121,7 +121,7 @@ def get_response_from_faqs(user_msg: str, bot_id: int, db: Session):
     ).first()
     return faq if faq else None
 
-def get_fine_tuned_like_response(user_msg: str, bot_id: int, db: Session) -> str | None:
+def get_docs_tuned_like_response(user_msg: str, bot_id: int, db: Session) -> str | None:
     # Fetch relevant document chunks
     chunks = db.query(ChatBotsDocChunks).filter_by(bot_id=bot_id).all()
     if not chunks:

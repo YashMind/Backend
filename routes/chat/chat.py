@@ -17,7 +17,7 @@ import os
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
 from utils.utils import get_country_from_ip
-from routes.chat.pinecone import process_and_store_docs, get_fine_tuned_like_response, get_response_from_faqs
+from routes.chat.pinecone import process_and_store_docs, get_docs_tuned_like_response, get_response_from_faqs
 # from routes.chat.pinecone import retrieve_answers
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
@@ -210,14 +210,14 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         # If Pinecone answer is found and good
 
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
-        fine_tuned_response = get_fine_tuned_like_response(user_msg, bot_id, db)
+        docs_tuned_response = get_docs_tuned_like_response(user_msg, bot_id, db)
         if response_from_faqs:
             response_content = response_from_faqs.answer
         elif pinecone_answer and len(pinecone_answer.strip()) > 0:
             response_content = pinecone_answer
-        elif fine_tuned_response:
-            print("fine_tuned_response 111111 ", fine_tuned_response)
-            response_content = fine_tuned_response
+        elif docs_tuned_response:
+            print("fine_tuned_response 111111 ", docs_tuned_response)
+            response_content = docs_tuned_response
         else:
             # Get message history from DB
             messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
@@ -553,19 +553,6 @@ async def delete_doc_links(bot_id: int, request_data: DeleteDocLinksRequest, req
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
-# import json
-
-# def export_chunks_to_jsonl(bot_id, db: Session, file_path="output.jsonl"):
-#     chunks = db.query(ChatBotsDocChunks).filter_by(bot_id=bot_id).all()
-#     with open(file_path, "w", encoding="utf-8") as f:
-#         for chunk in chunks:
-#             json.dump({
-#                 "prompt": "",  # optional if preparing for fine-tuning
-#                 "completion": chunk.content
-#             }, f)
-#             f.write("\n")
 
 
 
