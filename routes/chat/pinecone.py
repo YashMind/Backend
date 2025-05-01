@@ -19,6 +19,7 @@ from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
+from typing import Optional
 load_dotenv()
 
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
@@ -121,7 +122,7 @@ def get_response_from_faqs(user_msg: str, bot_id: int, db: Session):
     ).first()
     return faq if faq else None
 
-def get_docs_tuned_like_response(user_msg: str, bot_id: int, db: Session) -> str | None:
+def get_docs_tuned_like_response(user_msg: str, bot_id: int, db: Session) ->  Optional[str]:
     # Fetch relevant document chunks
     chunks = db.query(ChatBotsDocChunks).filter_by(bot_id=bot_id).all()
     if not chunks:
