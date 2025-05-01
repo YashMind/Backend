@@ -102,6 +102,9 @@ ALLOWED_FILE_TYPES = [
     "application/msword",
     "text/csv",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
 ]
 @router.post("/upload-document")
 async def upload_photo(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
