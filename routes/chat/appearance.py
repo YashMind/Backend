@@ -18,7 +18,6 @@ class CRUDChatSettings:
         return db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).first()
 
     def update(self, db: get_db, bot_id: int, obj_in: ChatSettingsUpdate) -> ChatSettings:
-        print('Update', obj_in)
         db_obj = db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).first()
         if not db_obj:
             raise HTTPException(status_code=404, detail="Settings not found")

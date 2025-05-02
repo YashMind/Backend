@@ -36,8 +36,25 @@ class ChatSettings(Base):
     dots_color = Column(String(10))
     message_bg = Column(String(10))
     live_message_bg = Column(String(10))
+    
+    # lead collection fields
+    name_lead_gen=Column(String(30))
+    is_name_lead_gen= Column(Boolean)
+    required_name_lead_gen= Column(Boolean)
+    mail_lead_gen= Column(String(30))
+    is_mail_lead_gen= Column(Boolean)
+    required_mail_lead_gen= Column(Boolean)
+    phone_lead_gen= Column(String(30))
+    is_phone_lead_gen= Column(Boolean)
+    required_phone_lead_gen=Column(Boolean)
+    message_lead_gen= Column(String(30))
+    is_message_lead_gen= Column(Boolean)
+    required_message_lead_gen= Column(Boolean)
+    submission_message_heading_lead_gen=Column(String(30))
+    sumbission_message_lead_gen=Column(String(30))
+    submit_text_lead_gen= Column(String(30))
+    submit_button_color_lead_gen=Column(String(30))
 
-    # bot = relationship("ChatBots", backref="settings")
     class Config:
         orm_mode =True
 
