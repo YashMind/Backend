@@ -8,6 +8,8 @@ from sqlalchemy import or_, desc, asc
 import json
 from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks
 from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest
+from models.chatModel.appearance import ChatSettings
+from models.chatModel.tuning import DBInstructionPrompt
 from schemas.authSchema.authSchema import User
 from sqlalchemy.orm import Session
 from config import get_db
@@ -18,6 +20,7 @@ from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
 from utils.utils import get_country_from_ip
 from routes.chat.pinecone import process_and_store_docs, get_docs_tuned_like_response, get_response_from_faqs
+from sqlalchemy import func, distinct, and_
 import secrets
 import string
 # from routes.chat.pinecone import retrieve_answers
@@ -76,6 +79,12 @@ async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
 
         if data.creativity:
             chatbot.creativity = data.creativity
+
+        if data.chatbot_name:
+            chatbot.chatbot_name = data.chatbot_name
+
+        if data.public:
+            chatbot.public = data.public
 
         db.commit()
         db.refresh(chatbot)
@@ -489,7 +498,10 @@ async def create_chatbot(data:CreateBotDocLinks, request: Request, db: Session =
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        new_chatbot_doc_links = ChatBotsDocLinks(
+        new_chatbot_doc_links = data
+        new_chatbot_doc_links.user_id = user_id
+        chars_count =  process_and_store_docs(data=new_chatbot_doc_links, db=db)
+        new_doc = ChatBotsDocLinks(
             user_id=user_id,
             bot_id=int(data.bot_id),
             chatbot_name=data.chatbot_name,
@@ -498,20 +510,19 @@ async def create_chatbot(data:CreateBotDocLinks, request: Request, db: Session =
             document_link=data.document_link,
             public= data.public,
             status=data.status or "Indexed",
-            chars=data.chars
+            chars=chars_count
 
         )
-        db.add(new_chatbot_doc_links)
+        db.add(new_doc)
         db.commit()
-        db.refresh(new_chatbot_doc_links)
+        db.refresh(new_doc)
 
-        process_and_store_docs(data=new_chatbot_doc_links, db=db)
-        return new_chatbot_doc_links
+        return new_doc
     
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/get-bot-doc-links/{bot_id}")
 async def get_bot_doc_links(
@@ -530,6 +541,50 @@ async def get_bot_doc_links(
         user_id = int(payload.get("user_id"))
 
         query = db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.user_id == user_id, ChatBotsDocLinks.bot_id==bot_id)
+
+        total_target_links = db.query(ChatBotsDocLinks)\
+        .filter(
+            ChatBotsDocLinks.user_id == user_id,
+            ChatBotsDocLinks.bot_id == bot_id,
+            and_(
+                ChatBotsDocLinks.target_link.isnot(None),
+                ChatBotsDocLinks.target_link != ""
+            )
+        ).count()
+
+        # Count where document_link is not null and not empty
+        total_document_links = db.query(ChatBotsDocLinks)\
+            .filter(
+                ChatBotsDocLinks.user_id == user_id,
+                ChatBotsDocLinks.bot_id == bot_id,
+                and_(
+                    ChatBotsDocLinks.document_link.isnot(None),
+                    ChatBotsDocLinks.document_link != ""
+                )
+            ).count()
+        
+        total_chars = db.query(func.sum(ChatBotsDocLinks.chars))\
+        .filter_by(user_id=user_id, bot_id=bot_id)\
+        .scalar() or 0
+
+        
+        pending_count = db.query(func.count(ChatBotsDocLinks.id))\
+        .filter(ChatBotsDocLinks.user_id == user_id,
+                ChatBotsDocLinks.bot_id == bot_id,
+                ChatBotsDocLinks.status == "Pending")\
+        .scalar()
+
+        failed_count = db.query(func.count(ChatBotsDocLinks.id))\
+            .filter(ChatBotsDocLinks.user_id == user_id,
+                    ChatBotsDocLinks.bot_id == bot_id,
+                    ChatBotsDocLinks.status == "Failed")\
+            .scalar()
+
+        indexed_count = db.query(func.count(ChatBotsDocLinks.id))\
+            .filter(ChatBotsDocLinks.user_id == user_id,
+                    ChatBotsDocLinks.bot_id == bot_id,
+                    ChatBotsDocLinks.status == "Indexed")\
+            .scalar()
 
         # Apply search
         if search:
@@ -551,14 +606,20 @@ async def get_bot_doc_links(
         results = query.offset((page - 1) * limit).limit(limit).all()
 
         # tets
-        jsonl = db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.user_id==user_id, ChatBotsDocChunks.bot_id==bot_id).all()
+        # jsonl = db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.user_id==user_id, ChatBotsDocChunks.bot_id==bot_id).all()
 
         return {
             "current_page": page,
             "total_pages": total_pages,
             "total_count": total_count,
             "data": results,
-            "jsonl": jsonl
+            "Indexed": 2,
+            "total_target_links":total_target_links,
+            "total_document_links":total_document_links,
+            "pending_count":pending_count,
+            "failed_count":failed_count,
+            "indexed_count": indexed_count,
+            "total_chars": total_chars
         }
 
     except HTTPException as http_exc:
@@ -596,6 +657,30 @@ async def delete_chat(token: str, db: Session = Depends(get_db)):
 
         db.commit()
         return {"message": "Chat deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.delete("/delete-bot/{bot_id}")
+async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Delete in correct order if not using ON DELETE CASCADE
+        db.query(ChatBotsFaqs).filter(ChatBotsFaqs.bot_id == bot_id).delete(synchronize_session=False)
+        db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.bot_id == bot_id).delete(synchronize_session=False)
+        db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.bot_id == bot_id).delete(synchronize_session=False)
+        db.query(DBInstructionPrompt).filter(DBInstructionPrompt.bot_id == bot_id).delete(synchronize_session=False)
+        db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).delete(synchronize_session=False)
+        db.query(ChatMessage).filter(ChatMessage.bot_id == bot_id).delete(synchronize_session=False)
+        db.query(ChatSession).filter(ChatSession.bot_id == bot_id).delete(synchronize_session=False)
+        
+        db.query(ChatBots).filter(ChatBots.id == bot_id, ChatBots.user_id == user_id).delete(synchronize_session=False)
+        db.commit()
+        return {"message": "Chatbot with all data deleted successfully"}
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:

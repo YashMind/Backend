@@ -102,7 +102,9 @@ def process_and_store_docs(data, db: Session):
     split_docs = splitter.split_documents(documents)
 
     # 4. Store each chunk as row in DB
+    count=0
     for doc in split_docs:
+        count+=len(doc.page_content)
         db_chunk = ChatBotsDocChunks(
             bot_id=data.bot_id,
             user_id=data.user_id,
@@ -113,6 +115,7 @@ def process_and_store_docs(data, db: Session):
         db.add(db_chunk)
     
     db.commit()
+    return  count
 
 def get_response_from_faqs(user_msg: str, bot_id: int, db: Session):
     cleaned_msg = user_msg.lower().strip().replace('?', '')
