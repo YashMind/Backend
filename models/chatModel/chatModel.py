@@ -36,6 +36,9 @@ class ChatBots(Base):
     text_content = Column(Text, nullable=True)
     creativity = Column(Integer , default=0, nullable=True)
     token = Column(String(255), nullable=True)
+    domains = Column(Text, nullable=True)
+    limit_to = Column(Integer, nullable=True)
+    every_minutes = Column(Integer, nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 

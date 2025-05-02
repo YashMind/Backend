@@ -55,6 +55,9 @@ class CreateBot(BaseModel):
     text_content: Optional[str] = None
     creativity: Optional[int] = None
     token: Optional[str] = None
+    domains: Optional[str] = None
+    limit_to: Optional[int] = None
+    every_minutes: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

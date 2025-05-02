@@ -86,6 +86,13 @@ async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
         if data.public:
             chatbot.public = data.public
 
+        if data.domains:
+            chatbot.domains = data.domains
+        if data.limit_to:
+            chatbot.limit_to = data.limit_to
+        if data.every_minutes:
+            chatbot.every_minutes = data.every_minutes
+
         db.commit()
         db.refresh(chatbot)
         return chatbot
