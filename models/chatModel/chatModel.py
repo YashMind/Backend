@@ -80,3 +80,18 @@ class ChatBotsDocChunks(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 
+class ChatBotLeadsModel(Base):
+    __tablename__ = "chatbot_leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True)
+    bot_id = Column(Integer)
+    chat_id = Column(Integer)
+    name = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    contact = Column(String(255), nullable=True)
+    message = Column(Text, nullable=True)
+    type = Column(String(255), nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, onupdate=func.now())
+

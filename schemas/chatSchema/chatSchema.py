@@ -116,4 +116,22 @@ class CreateBotDocLinks(BaseModel):
 
 class DeleteDocLinksRequest(BaseModel):
     doc_ids: List[int]
+class DeleteChatbotLeadsRequest(BaseModel):
+    lead_ids: List[int]
+
+class ChatbotLeads(BaseModel):
+    id: Optional[int] = None
+    user_id: Optional[int] = None
+    bot_id: Optional[int] = None
+    chat_id: Optional[int] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+    contact: Optional[str] = None
+    message: Optional[str] = None
+    type: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
 

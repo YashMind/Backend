@@ -6,8 +6,8 @@ from jose import JWTError, jwt
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
-from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks
-from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest
+from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks, ChatBotLeadsModel
+from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest
 from models.chatModel.appearance import ChatSettings
 from models.chatModel.tuning import DBInstructionPrompt
 from schemas.authSchema.authSchema import User
@@ -55,7 +55,7 @@ async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
 # update chatbot
 @router.put("/update-bot", response_model=CreateBot)
 async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
@@ -100,7 +100,7 @@ async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 # get chatbot
 @router.get("/get-bot", response_model=CreateBot)
@@ -115,7 +115,7 @@ async def get_chatbot(botId:int, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error", error=e)
+        raise HTTPException(status_code=500, detail=str(e), error=e)
     
 UPLOAD_DIRECTORY = "uploads/"
 ALLOWED_FILE_TYPES = [
@@ -160,7 +160,7 @@ async def upload_photo(file: UploadFile = File(...), current_user: dict = Depend
         raise http_exc
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 # get all chatbots
 @router.get("/get-all", response_model=List[CreateBot])
@@ -175,7 +175,7 @@ async def get_my_bots(request: Request, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server erro:{e}",)
+        raise HTTPException(status_code=500, detail=str(e))
 
 # create new chat
 @router.post("/chats-id", response_model=ChatSessionRead)
@@ -307,7 +307,7 @@ async def list_chats(request: Request, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 # load chat history
 @router.get("/chats/{chat_id}", response_model=List[ChatMessageRead])
@@ -327,7 +327,7 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # get user chat history
 # response_model=Dict[int, List[ChatMessageRead]]
@@ -376,7 +376,7 @@ async def get_user_chat_history(bot_id: int, request: Request, db: Session = Dep
         raise http_exc
     except Exception as e:
         print("e ", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/delete-chats/{bot_id}")
 async def delete_chat(bot_id: int, request_data: DeleteChatsRequest, request: Request, db: Session = Depends(get_db)):
@@ -395,7 +395,7 @@ async def delete_chat(bot_id: int, request_data: DeleteChatsRequest, request: Re
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/chats")
@@ -413,7 +413,7 @@ async def delete_all_chats(request: Request, db: Session = Depends(get_db)):
         db.commit()
         return {"message": "All chats deleted successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # create new chatbot
 @router.post("/create-bot-faqs", response_model=CreateBotFaqs)
@@ -445,7 +445,7 @@ async def create_chatbot_faqs(data:CreateBotFaqs, request: Request, db: Session 
         raise http_exc
     except Exception as e:
         print("e ", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/get-bot-faqs/{bot_id}", response_model=List[FaqResponse])
 async def get_chatbot_faqs(bot_id:int, request: Request, db: Session = Depends(get_db)):
@@ -461,7 +461,7 @@ async def get_chatbot_faqs(bot_id:int, request: Request, db: Session = Depends(g
         raise http_exc
     except Exception as e:
         print("e ", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/delete-faq/{bot_id}/{faq_id}")
 async def delete_single_faq(bot_id: int, faq_id: int, request: Request, db: Session = Depends(get_db)):
@@ -480,7 +480,7 @@ async def delete_single_faq(bot_id: int, faq_id: int, request: Request, db: Sess
         return {"message": "FAQ deleted successfully."}
     except Exception as e:
         print("Delete single FAQ error:", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/delete-all-faqs/{bot_id}")
 async def delete_all_faqs(bot_id: int, request: Request, db: Session = Depends(get_db)):
@@ -496,7 +496,7 @@ async def delete_all_faqs(bot_id: int, request: Request, db: Session = Depends(g
         return {"message": f"{deleted} FAQs deleted successfully."}
     except Exception as e:
         print("Delete all FAQs error:", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 # create new chatbot
 @router.post("/create-bot-doc-links", response_model=CreateBotDocLinks)
@@ -612,8 +612,6 @@ async def get_bot_doc_links(
         total_pages = (total_count + limit - 1) // limit
         results = query.offset((page - 1) * limit).limit(limit).all()
 
-        # tets
-        # jsonl = db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.user_id==user_id, ChatBotsDocChunks.bot_id==bot_id).all()
 
         return {
             "current_page": page,
@@ -632,7 +630,7 @@ async def get_bot_doc_links(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/delete-doc-links/{bot_id}")
 async def delete_doc_links(bot_id: int, request_data: DeleteDocLinksRequest, request: Request, db: Session = Depends(get_db)):
@@ -650,10 +648,10 @@ async def delete_doc_links(bot_id: int, request_data: DeleteDocLinksRequest, req
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/chats-delete-token/{token}")
-async def delete_chat(token: str, db: Session = Depends(get_db)):
+async def delete_token_chat(token: str, db: Session = Depends(get_db)):
     try:
         chat_session = db.query(ChatSession).filter(ChatSession.token==token).first()
         if not chat_session:
@@ -662,6 +660,18 @@ async def delete_chat(token: str, db: Session = Depends(get_db)):
         # Delete all messages related to this chat
         db.query(ChatMessage).filter(ChatMessage.chat_id == chat_session.id).delete()
 
+        db.commit()
+        return {"message": "Chat deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.delete("/user-chats-delete/{chat_id}")
+async def delete_user_chats(chat_id: int, db: Session = Depends(get_db)):
+    try:
+        # Delete all messages related to this chat
+        db.query(ChatMessage).filter(ChatMessage.chat_id == chat_id).delete()
         db.commit()
         return {"message": "Chat deleted successfully"}
     except HTTPException as http_exc:
@@ -691,10 +701,117 @@ async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_d
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+# create new chatbot
+@router.post("/create-bot-leads", response_model=ChatbotLeads)
+async def create_chatbot_leads(data:ChatbotLeads, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        new_chatbot_lead = ChatBotLeadsModel(
+            user_id=user_id,
+            bot_id=data.bot_id,
+            chat_id=data.chat_id,
+            name= data.name,
+            email=data.email,
+            contact=data.contact,
+            message=data.message,
+            type=data.type
+        )
+        db.add(new_chatbot_lead)
+        db.commit()
+        db.refresh(new_chatbot_lead)
+        return new_chatbot_lead
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/get-chatbot-leads/{bot_id}")
+async def get_chatbot_leads(
+    bot_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, description="Search by document_link or target_link"),
+    sort_by: str = Query("created_at", description="Field to sort by"),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        query = db.query(ChatBotLeadsModel).filter(ChatBotLeadsModel.user_id == user_id, ChatBotLeadsModel.bot_id==bot_id)
+
+        # Apply search
+        if search:
+            query = query.filter(
+                or_(
+                    ChatBotLeadsModel.name.ilike(f"%{search}%"),
+                    ChatBotLeadsModel.email.ilike(f"%{search}%"),
+                )
+            )
+
+        # Sorting
+        sort_column = getattr(ChatBotLeadsModel, sort_by, ChatBotLeadsModel.created_at)
+        sort_column = desc(sort_column) if sort_order == "desc" else asc(sort_column)
+        query = query.order_by(sort_column)
+
+        # Pagination
+        total_count = query.count()
+        total_pages = (total_count + limit - 1) // limit
+        results = query.offset((page - 1) * limit).limit(limit).all()
 
 
+        return {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "data": results
+        }
 
-  
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.delete("/delete-chatbot-leads/{bot_id}")
+async def delete_doc_links(bot_id: int, request_data: DeleteChatbotLeadsRequest, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+        for lead_id in request_data.lead_ids:
+            doc = db.query(ChatBotLeadsModel).filter_by(id=lead_id, user_id=user_id, bot_id=bot_id).first()
+            if doc:
+                db.delete(doc)
+        db.commit()
+        return {"message": "Chatbot leads deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/leads/{chat_id}/messages", response_model=List[ChatMessageRead])
+async def chat_lead_messages(chat_id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
 
-
+        messages = db.query(ChatMessage).filter(ChatMessage.chat_id==chat_id, ChatMessage.user_id==user_id).order_by(ChatMessage.created_at.asc()).all()
+        print("messages ", messages)
+        return messages
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print(str(e))
+        raise HTTPException(status_code=500, detail=str(e))
