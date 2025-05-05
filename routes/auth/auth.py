@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form, Query
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from utils.utils import create_access_token, decode_access_token, create_reset_token, send_reset_email, decode_reset_access_token, get_current_user
@@ -9,6 +9,8 @@ from models.authModel.authModel import AuthUser
 from schemas.authSchema.authSchema import User, SignInUser, PasswordResetRequest, PasswordReset, UserUpdate
 from sqlalchemy.orm import Session
 from config import get_db
+from typing import Optional, Dict, List
+from sqlalchemy import or_, desc, asc
 import httpx
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -42,7 +44,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
     
 @router.post("/signin")
 async def signin(user: SignInUser, response: Response, db: Session = Depends(get_db)):
@@ -61,6 +63,7 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
         access_token = create_access_token(data={"sub": user.email, "user_id": str(user.id)})
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, 
                             samesite="Lax", max_age=84600)
+        response.set_cookie(key="role", value=user.role, httponly=False, secure=False,samesite="Lax",max_age=84600)
 
         return {"access_token": access_token, "token_type": "bearer"}
 
@@ -94,7 +97,7 @@ async def getme(request: Request, db: Session = Depends(get_db)):
             return response
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/forget-password")
 async def forget_password(request: PasswordResetRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
@@ -111,7 +114,7 @@ async def forget_password(request: PasswordResetRequest, background_tasks: Backg
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 @router.post("/reset-password")
 async def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
@@ -132,13 +135,14 @@ async def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Token decoding error") from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 # current_user: dict = Depends(get_current_user)
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout(response: Response):
     try:
         response.delete_cookie(key="access_token")
+        response.delete_cookie(key="role")
         return {"message": "Logged out successfully"}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred during logout") from e
@@ -172,7 +176,7 @@ def update_profile(updateUser: UserUpdate, db: Session = Depends(get_db), curren
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 # google login
 @router.post("/google-login")
@@ -213,7 +217,7 @@ async def google_login(request: Request, response:Response, db: Session = Depend
         raise http_exc
     except Exception as e:
         print("e ", e)
-        raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
     
 @router.post("/facebook-login")
 async def facebook_login(request: Request, response: Response, db: Session = Depends(get_db)):
@@ -269,4 +273,4 @@ async def facebook_login(request: Request, response: Response, db: Session = Dep
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="An unexpected error occurred") from e
+        raise HTTPException(status_code=500, detail=str(e)) from e

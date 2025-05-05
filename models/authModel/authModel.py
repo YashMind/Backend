@@ -16,3 +16,8 @@ class AuthUser(Base):
     googleId = Column(String(255), nullable=True)
     facebookId = Column(String(255), nullable=True)
     picture = Column(String(255), nullable=True)
+    role = Column(String(100), nullable=True)
+    status = Column(String(100), nullable=True)
+    plan = Column(String(100), nullable=True)
+    tokenUsed = Column(Integer, nullable=True)
+
