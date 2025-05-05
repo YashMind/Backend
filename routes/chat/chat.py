@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
 from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks, ChatBotLeadsModel
-from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest
+from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens
 from models.chatModel.appearance import ChatSettings
 from models.chatModel.tuning import DBInstructionPrompt
 from schemas.authSchema.authSchema import User
@@ -23,6 +23,9 @@ from routes.chat.pinecone import process_and_store_docs, get_docs_tuned_like_res
 from sqlalchemy import func, distinct, and_
 import secrets
 import string
+from datetime import datetime
+
+
 # from routes.chat.pinecone import retrieve_answers
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
@@ -810,6 +813,73 @@ async def chat_lead_messages(chat_id: int, request: Request, db: Session = Depen
         messages = db.query(ChatMessage).filter(ChatMessage.chat_id==chat_id, ChatMessage.user_id==user_id).order_by(ChatMessage.created_at.asc()).all()
         print("messages ", messages)
         return messages
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print(str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tokens", response_model=ChatMessageTokens)
+async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Access token missing")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+        bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+        
+        bot_tokens_list = []
+        total_tokens = 0
+
+        for bot in bots:
+            messages = db.query(ChatMessage).filter(
+                ChatMessage.bot_id == bot.id,
+                ChatMessage.user_id == user_id,
+                ChatMessage.sender == 'user'
+            ).all()
+
+            # Get current date info
+            now = datetime.utcnow()
+            today = now.date()
+            first_of_month = today.replace(day=1)
+
+            # Initialize counters
+            total_token_count = 0
+            today_token_count = 0
+            monthly_token_count = 0
+
+            for msg in messages:
+                if not msg.message:
+                    continue
+
+                word_count = len(msg.message.strip().split())
+                total_token_count += word_count
+
+                # Ensure message.created_at is a datetime
+                created_at = msg.created_at.date() if hasattr(msg, "created_at") else None
+                if created_at:
+                    if created_at == today:
+                        today_token_count += word_count
+                    if created_at >= first_of_month:
+                        monthly_token_count += word_count
+
+            bot_tokens_list.append(BotTokens(
+                bot_id=str(bot.id),
+                tokens=total_token_count,
+                token_today=today_token_count,
+                token_monthly=monthly_token_count,
+                messages=len(messages)
+            ))
+            total_tokens += total_token_count
+
+        return ChatMessageTokens(
+            total_tokens=total_tokens,
+            bots=bot_tokens_list
+        )
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
