@@ -64,7 +64,6 @@ async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends
 async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
     try:
         chatbot = db.query(ChatBots).filter(ChatBots.id == int(data.id)).first()
-        print("chatbot ", chatbot)
         if not chatbot:
             raise HTTPException(status_code=404, detail="Chatbot not found")
 
@@ -338,7 +337,6 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
         raise HTTPException(status_code=500, detail=str(e))
 
 # get user chat history
-# response_model=Dict[int, List[ChatMessageRead]]
 @router.get("/chats-history/{bot_id}")
 async def get_user_chat_history(bot_id: int, request: Request, db: Session = Depends(get_db), 
     page: int = Query(1, ge=1), limit: int = Query(10, ge=1), search: Optional[str] = None):

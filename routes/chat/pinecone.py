@@ -1,7 +1,7 @@
 import os
 import openai
 import langchain
-import pinecone 
+from pinecone import Pinecone 
 from langchain.document_loaders import PyPDFDirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -21,9 +21,15 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 from typing import Optional
 import string
+import uuid
 load_dotenv()
 
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
+# pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+# index = pc.index("yashraa-ai")  # Use your index name
+
+# # Initialize OpenAI Embeddings
+# embedding_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
 
 # def read_doc(directory):
 #     file_loader=PyPDFDirectoryLoader(directory)
@@ -51,13 +57,13 @@ llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
 # #     api_key="923d5299-ab4c-4407-bfe6-7f439d9a9cb9",
 # #     environment="gcp-starter"
 # # )
-# index_name="langchainvector"
+# index_name="yashraa-ai"
 
 # # index=Pinecone.from_documents(doc,embeddings,index_name=index_name)
 # pc = Pinecone(
 #     api_key=os.getenv("PINECONE_API_KEY"),
 # )
-# index = pc.Index(index_name)
+# index = pc.index(index_name)
 
 # def retrieve_query(query,k=2):
 #     matching_results=index.similarity_search(query,k=k)
@@ -102,6 +108,8 @@ def process_and_store_docs(data, db: Session):
     split_docs = splitter.split_documents(documents)
 
     # 4. Store each chunk as row in DB
+    # 4. Embed and upsert to Pinecone
+    pinecone_vectors = []
     count=0
     for doc in split_docs:
         count+=len(doc.page_content)
@@ -113,6 +121,41 @@ def process_and_store_docs(data, db: Session):
             metaData=str(doc.metadata)
         )
         db.add(db_chunk)
+        # text = doc.page_content
+        # metadata = {
+        #     "bot_id": str(data.bot_id),
+        #     "user_id": str(data.user_id),
+        #     "source": data.target_link or data.document_link
+        # }
+
+        # try:
+        #     embedding = embedding_model.embed_query(text)
+        #     vector_id = str(uuid.uuid4())  # unique ID for each chunk
+
+        #     # Add to Pinecone batch
+        #     pinecone_vectors.append({
+        #         "id": vector_id,
+        #         "values": embedding,
+        #         "metadata": metadata
+        #     })
+
+        #     # Optionally store in your own DB too
+        #     db_chunk = ChatBotsDocChunks(
+        #         bot_id=data.bot_id,
+        #         user_id=data.user_id,
+        #         source=metadata["source"],
+        #         content=text,
+        #         metaData=str(doc.metadata)
+        #     )
+        #     db.add(db_chunk)
+        #     count += len(text)
+
+        # except Exception as e:
+        #     print("Embedding error:", e)
+
+    # Upsert all vectors to Pinecone
+    # if pinecone_vectors:
+    #     index.upsert(vectors=pinecone_vectors, namespace="bot_" + str(data.bot_id))     
     
     db.commit()
     return  count
