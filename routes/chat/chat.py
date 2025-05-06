@@ -269,7 +269,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         # If Pinecone answer is found and good
 
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
-        docs_tuned_response = get_docs_tuned_like_response(user_msg, bot_id, db)
+        docs_tuned_response = False #get_docs_tuned_like_response(user_msg, bot_id, db)
         if response_from_faqs:
             response_content = response_from_faqs.answer
         elif pinecone_answer and len(pinecone_answer.strip()) > 0:
