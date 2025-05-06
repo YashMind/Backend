@@ -211,7 +211,8 @@ async def google_login(request: Request, response:Response, db: Session = Depend
 
             access_token = create_access_token(data={"sub": email, "user_id": str(user.id)})
             response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, 
-                            samesite="Lax", max_age=3600)
+                            samesite="Lax", max_age=84600)
+            response.set_cookie(key="role", value=user.role, httponly=False, secure=False,samesite="Lax",max_age=84600)
             return {"access_token": access_token, "token_type": "bearer"}
     except HTTPException as http_exc:
         raise http_exc
