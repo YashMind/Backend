@@ -86,7 +86,7 @@ async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
         if data.chatbot_name:
             chatbot.chatbot_name = data.chatbot_name
 
-        if data.public:
+        if data.public is not None:
             chatbot.public = data.public
 
         if data.domains:
@@ -110,7 +110,7 @@ async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
 async def get_chatbot(botId:int, db: Session = Depends(get_db)):
     try:
         chatbot = db.query(ChatBots).filter(ChatBots.id == botId).first()
-        print("chatbot ", chatbot)
+
         if not chatbot:
             raise HTTPException(status_code=404, detail="Chatbot not found")
         return chatbot
@@ -707,12 +707,28 @@ async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_d
 @router.post("/create-bot-leads", response_model=ChatbotLeads)
 async def create_chatbot_leads(data:ChatbotLeads, request: Request, db: Session = Depends(get_db)):
     try:
-        token = request.cookies.get("access_token")
-        payload = decode_access_token(token)
-        user_id = int(payload.get("user_id"))
+        chatbot = db.query(ChatBots).filter(ChatBots.id == data.bot_id).first()
+        if not chatbot:
+            raise HTTPException(status_code=404,detail="Chatbot not found")
+        
+        user_id=None
+        
+        # Require auth if chatbot is NOT public
+        if not chatbot.public:
+            token = request.cookies.get("access_token")
+            if not token:
+                raise HTTPException(status_code=401, detail="Unauthorized: Token missing")
+
+            payload = decode_access_token(token)
+            if not payload or "user_id" not in payload:
+                raise HTTPException(status_code=401, detail="Unauthorized: Invalid token")
+
+            user_id = int(payload["user_id"])
+        else:
+            user_id = None
 
         new_chatbot_lead = ChatBotLeadsModel(
-            user_id=user_id,
+            user_id=user_id or None,
             bot_id=data.bot_id,
             chat_id=data.chat_id,
             name= data.name,
@@ -747,7 +763,7 @@ async def get_chatbot_leads(
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-        query = db.query(ChatBotLeadsModel).filter(ChatBotLeadsModel.user_id == user_id, ChatBotLeadsModel.bot_id==bot_id)
+        query = db.query(ChatBotLeadsModel).filter( ChatBotLeadsModel.bot_id==bot_id)
 
         # Apply search
         if search:
@@ -806,7 +822,7 @@ async def chat_lead_messages(chat_id: int, request: Request, db: Session = Depen
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-        messages = db.query(ChatMessage).filter(ChatMessage.chat_id==chat_id, ChatMessage.user_id==user_id).order_by(ChatMessage.created_at.asc()).all()
+        messages = db.query(ChatMessage).filter(ChatMessage.chat_id==chat_id).order_by(ChatMessage.created_at.asc()).all()
         print("messages ", messages)
         return messages
     except HTTPException as http_exc:
