@@ -236,10 +236,10 @@ async def create_chat(data: ChatSessionRead, db: Session = Depends(get_db)):
 async def chat_message(chat_id: int, data: dict, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
-        payload = decode_access_token(token)
-        user_id = int(payload.get("user_id"))
-
-
+        user_id = None
+        if token:
+            payload = decode_access_token(token)
+            user_id = int(payload.get("user_id"))
         user_msg = data.get("message")
         bot_id = data.get("bot_id")
         if not user_msg:
@@ -316,10 +316,6 @@ async def list_chats(request: Request, db: Session = Depends(get_db)):
 @router.get("/chats/{chat_id}", response_model=List[ChatMessageRead])
 async def get_chat_history(chat_id: int, request: Request, db: Session = Depends(get_db)):
     try:
-        token = request.cookies.get("access_token")
-        payload = decode_access_token(token)
-        user_id = int(payload.get("user_id"))
-
         chat = db.query(ChatSession).filter_by(id=chat_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
