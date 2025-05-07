@@ -21,7 +21,13 @@ class Settings:
 
     # JWT config
     SECRET_KEY = os.getenv("SECRET_KEY")
-    JWT_ALGORITHM = os.getenv("DB_ALGORITHM", "HS512")  # default from your config
+    JWT_ALGORITHM = os.getenv("DB_ALGORITHM", "HS512") # default from your config
+    
+    # Slack tokens
+    SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
+    SLACK_SIGNING_SECRET = os.getenv('SLACK_SIGNING_SECRET')
+    SLACK_CLIENT_ID= os.getenv('SLACK_CLIENT_ID')
+    SLACK_CLIENT_SECRET= os.getenv('SLACK_CLIENT_SECRET')
 
 settings = Settings()
 

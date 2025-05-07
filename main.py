@@ -3,6 +3,7 @@ from routes.auth.auth import router as auth_router
 from routes.chat.chat import router as chat_router
 from routes.chat.tuning import router as tuning_router
 from routes.chat.appearance import router as appearance_router
+from routes.chat.slack import router as slack_router
 from routes.admin.admin import router as admin_router
 from fastapi.staticfiles import StaticFiles
 
@@ -42,6 +43,7 @@ app.include_router(chat_router, prefix="/api/chatbot")
 app.include_router(tuning_router, prefix="/api/tuning")
 app.include_router(appearance_router, prefix="/api/appearance")
 app.include_router(admin_router, prefix="/api/admin")
+app.include_router(slack_router, prefix="/api/slack")
 
 
 if __name__ == "__main__":
