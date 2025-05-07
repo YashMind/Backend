@@ -11,6 +11,7 @@ class User(BaseModel):
     status: Optional[str] = None
     plan: Optional[str] = None
     tokenUsed: Optional[int] = None
+    last_active: Optional[datetime] = None
 
 class SignInUser(BaseModel):
     email: EmailStr
@@ -25,6 +26,10 @@ class PasswordReset(BaseModel):
     new_password: str
 
 class UserUpdate(BaseModel):
+    id: Optional[int] = None
     fullName: Optional[str] = None
     password: Optional[str] = None
     isRestricted: Optional[bool] = False
+    email: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None

@@ -7,7 +7,7 @@ from uuid import uuid4
 import json
 from models.authModel.authModel import AuthUser
 from models.adminModel.adminModel import SubscriptionPlans, TokenBots, BotProducts
-from schemas.authSchema.authSchema import User
+from schemas.authSchema.authSchema import User, UserUpdate
 from schemas.adminSchema.adminSchema import PlansSchema, TokenBotsSchema, BotProductSchema
 from sqlalchemy.orm import Session
 from config import get_db
@@ -16,6 +16,8 @@ from sqlalchemy import or_, desc, asc
 import httpx
 from datetime import datetime
 router = APIRouter()
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 @router.get("/get-all-users")
 async def get_all_users(
@@ -81,8 +83,19 @@ async def update_chatbot(data:User, db: Session = Depends(get_db)):
 
         if data.status:
             user.status = data.status
+
         if data.tokenUsed==0:
             user.tokenUsed = int(data.tokenUsed)
+
+        if data.fullName:
+            user.fullName = data.fullName
+
+        if data.role:
+            user.role = data.role
+
+        if data.plan:
+            user.plan = data.plan
+            
         db.commit()
         db.refresh(user)
         return user
@@ -423,4 +436,78 @@ async def get_bot_products(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/get-admin-users", response_model=List[User])
+async def get_top_consumption_users(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        # get top 10 most token consumption users
+        admins = ["Super Admin", "Billing Admin"]
+        admin_users = (
+            db.query(AuthUser).filter(AuthUser.role.in_(admins)).all()
+            )
+
+        return admin_users
+    except HTTPException as http_exc:
+        print("http_exc ", http_exc)
+        raise http_exc
+    except Exception as e:
+        print("e ", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.put("/update-admin-user", response_model=UserUpdate)
+async def update_admin_user(data:UserUpdate, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        if not data.id:
+            raise HTTPException(status_code=404, detail="user id is required")
+        existing_user = db.query(AuthUser).filter(AuthUser.id == data.id).first()
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="Plan not found")
+            
+        if data.password:
+            hashed_pw = pwd_context.hash(data.password)
+            existing_user.password = hashed_pw
+
+        existing_user.fullName = data.fullName
+        existing_user.email = data.email
+        existing_user.role = data.role
+        existing_user.status = data.status
+
+        db.commit()
+        db.refresh(existing_user)
+        return existing_user
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.delete("/delete-admin-user/{id}")
+async def delete_admin_user(id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+
+        adminUser = db.query(AuthUser).filter(AuthUser.id==id).first()
+        if adminUser:
+            db.delete(adminUser)
+            db.commit()
+        return {"message": "Plan deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+ 
