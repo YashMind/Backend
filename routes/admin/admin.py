@@ -1,19 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form, Query
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
-from utils.utils import create_access_token, decode_access_token, create_reset_token, send_reset_email, decode_reset_access_token, get_current_user
+from utils.utils import decode_access_token, get_current_user
 from jose import JWTError, jwt
 from uuid import uuid4
 import json
 from models.authModel.authModel import AuthUser
-from models.adminModel.adminModel import SubscriptionPlans
+from models.adminModel.adminModel import SubscriptionPlans, TokenBots, BotProducts
 from schemas.authSchema.authSchema import User
-from schemas.adminSchema.adminSchema import PlansSchema
+from schemas.adminSchema.adminSchema import PlansSchema, TokenBotsSchema, BotProductSchema
 from sqlalchemy.orm import Session
 from config import get_db
 from typing import Optional, Dict, List
 from sqlalchemy import or_, desc, asc
 import httpx
+from datetime import datetime
 router = APIRouter()
 
 @router.get("/get-all-users")
@@ -31,6 +32,10 @@ async def get_all_users(
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
+        now = datetime.utcnow()
+        start_of_month = datetime(now.year, now.month, 1)
+
+        total_signups = db.query(AuthUser).filter(AuthUser.created_at >= start_of_month).count()
         query = db.query(AuthUser).filter()
 
         # Apply search
@@ -57,7 +62,8 @@ async def get_all_users(
             "current_page": page,
             "total_pages": total_pages,
             "total_count": total_count,
-            "data": results
+            "data": results,
+            "total_signups": total_signups
         }
 
     except HTTPException as http_exc:
@@ -86,7 +92,7 @@ async def update_chatbot(data:User, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-# create new chatbot
+# create new subscription plan
 @router.post("/create-subscription-plans", response_model=PlansSchema)
 async def create_subscription_plans(data:PlansSchema, request: Request, db: Session = Depends(get_db)):
     try:
@@ -176,7 +182,7 @@ async def get_all_subscription_plans(
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/delete-subscription-plan/{plan_id}")
-async def delete_chat(plan_id: int, request: Request, db: Session = Depends(get_db)):
+async def delete_subscription_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
@@ -192,3 +198,229 @@ async def delete_chat(plan_id: int, request: Request, db: Session = Depends(get_
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+# create new subscription plan
+@router.post("/create-token-bots", response_model=TokenBotsSchema)
+async def create_subscription_plans(data:TokenBotsSchema, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        id = data.id
+        if id:
+            existing_plan = db.query(TokenBots).filter(TokenBots.id == data.id).first()
+            if not existing_plan:
+                raise HTTPException(status_code=404, detail="Plan not found")
+
+            existing_plan.name = data.name
+            existing_plan.pricing = data.pricing
+            existing_plan.token_limits = data.token_limits
+
+            db.commit()
+            db.refresh(existing_plan)
+            return existing_plan
+        else:
+            new_botToken = TokenBots(
+                name=data.name,
+                pricing=data.pricing,
+                token_limits=data.token_limits,
+            )
+            db.add(new_botToken)
+            db.commit()
+            db.refresh(new_botToken)
+            return new_botToken
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/get-all-token-bots")
+async def get_all_token_bots(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, description="Search by document_link or target_link"),
+    sort_by: str = Query("created_at", description="Field to sort by"),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        query = db.query(TokenBots).filter()
+
+        # Apply search
+        if search:
+            query = query.filter(
+                or_(
+                    TokenBots.name.ilike(f"%{search}%"),
+                    TokenBots.features.ilike(f"%{search}%"),
+                )
+            )
+
+        # Sorting
+        sort_column = getattr(TokenBots, sort_by, TokenBots.created_at)
+        sort_column = desc(sort_column) if sort_order == "desc" else asc(sort_column)
+        query = query.order_by(sort_column)
+
+        # Pagination
+        total_count = query.count()
+        total_pages = (total_count + limit - 1) // limit
+        results = query.offset((page - 1) * limit).limit(limit).all()
+
+
+        return {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "data": results
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.delete("/delete-token-bot/{token_bot_id}")
+async def delete_token_bots(token_bot_id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+
+        token_bot = db.query(TokenBots).filter(TokenBots.id==token_bot_id).first()
+        if token_bot:
+            db.delete(token_bot)
+            db.commit()
+        return {"message": "Token bot deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/get-top-consumption-users", response_model=List[User])
+async def get_top_consumption_users(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        # get top 10 most token consumption users
+        top_users = (
+            db.query(AuthUser).filter(AuthUser.tokenUsed != None)
+            .order_by(desc(AuthUser.tokenUsed)).limit(10).all()
+            )
+
+        return top_users
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# update token bot
+@router.put("/update-bot-token", response_model=TokenBotsSchema)
+async def update_chatbot(data:TokenBotsSchema, db: Session = Depends(get_db)):
+    try:
+        token_bot = db.query(TokenBots).filter(TokenBots.id == int(data.id)).first()
+        if not token_bot:
+            raise HTTPException(status_code=404, detail="token bot not found")
+
+        token_bot.active = data.active
+        db.commit()
+        db.refresh(token_bot)
+        return token_bot
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# create update bot product
+@router.post("/create-update-bot-product", response_model=BotProductSchema)
+async def create_update_bot_product(data:BotProductSchema, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        id = data.id
+        if id:
+            existing_product = db.query(BotProducts).filter(BotProducts.id == data.id).first()
+            if not existing_product:
+                raise HTTPException(status_code=404, detail="Product not found")
+
+            existing_product.active = data.active
+
+            db.commit()
+            db.refresh(existing_product)
+            return existing_product
+        else:
+            new_bot_product = BotProducts(
+                product_name=data.product_name,
+                active=data.active
+            )
+            db.add(new_bot_product)
+            db.commit()
+            db.refresh(new_bot_product)
+            return new_bot_product
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/get-bot-products")
+async def get_bot_products(
+    request: Request,
+    db: Session = Depends(get_db),
+    search: Optional[str] = Query(None, description="Search by document_link or target_link"),
+    sort_by: str = Query("created_at", description="Field to sort by"),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        query = db.query(BotProducts).filter()
+
+        # Apply search
+        if search:
+            query = query.filter(
+                or_(
+                    BotProducts.name.ilike(f"%{search}%"),
+                    BotProducts.features.ilike(f"%{search}%"),
+                )
+            )
+
+        # Sorting
+        sort_column = getattr(BotProducts, sort_by, BotProducts.created_at)
+        sort_column = desc(sort_column) if sort_order == "desc" else asc(sort_column)
+        query = query.order_by(sort_column)
+
+        # Pagination
+        total_count = query.count()
+        total_pages = (total_count + limit - 1) // limit
+        results = query.offset((page - 1) * limit).limit(limit).all()
+
+
+        return {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "data": results
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) 
