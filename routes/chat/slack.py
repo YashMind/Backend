@@ -28,54 +28,81 @@ verifier = SignatureVerifier(SLACK_SIGNING_SECRET)
 async def slack_events(request: Request,
                        x_slack_signature: str = Header(None),
                        x_slack_request_timestamp: str = Header(None),
-                       db : Session = Depends(get_db)):
+                       db: Session = Depends(get_db)):
     try:
+        print("Start processing Slack event")
         body = await request.body()
+        print(f"Raw body: {body}")
+
         headers = {
             "X-Slack-Signature": x_slack_signature,
             "X-Slack-Request-Timestamp": x_slack_request_timestamp
         }
+        print(f"Headers received: {headers}")
 
+        print("Verifying Slack request")
         if not verifier.is_valid_request(body, headers):
+            print("Slack signature invalid")
+            await asyncio.to_thread(client.chat_postMessage, channel="general", text="Invalid Slack signature")  # Replace 'channel' with a valid fallback
             raise HTTPException(status_code=403, detail="Invalid Slack signature")
 
+        print("Parsing event JSON")
         event_data = await request.json()
-        
-        
+        print(f"Event data: {event_data}")
 
         # URL verification challenge from Slack
         if "challenge" in event_data:
+            print("Received challenge")
             return {"challenge": event_data["challenge"]}
 
         if "event" in event_data:
+            print("Processing event block")
             event = event_data["event"]
             text = event.get("text", "")
             user = event.get("user")
-            team_id = event_data.get("team_id")  
-            
+            team_id = event_data.get("team_id")
+            print(f"Event type: {event.get('type')}, User: {user}, Team ID: {team_id}, Text: {text}")
+
             bot_installation = db.query(SlackInstallation).filter_by(team_id=team_id).first()
-            
+            print(f"Bot installation found: {bot_installation is not None}")
+
             if not bot_installation:
+                print("Bot installation not found")
+                await asyncio.to_thread(client.chat_postMessage, channel="general", text="Bot not found for this team")  # Fallback channel
                 raise HTTPException(status_code=404, detail="Bot not found for this team")
-            
+
             channel = event.get("channel")
+            print(f"Channel: {channel}")
+
             if event.get("subtype") == "bot_message" or event.get("bot_id"):
+                print("Skipping bot message")
                 return {"ok": True}
+
             if event.get("type") in ["app_mention", "message"]:
-                # Optional filtering for DMs only if needed:
                 if event.get("channel_type") in ["im", "channel"]:
                     try:
-                        response =  get_response_from_chatbot(data={'message':text,'bot_id':bot_installation.bot_id, 'token':team_id},platform="slack", db=db)
+                        print("Generating chatbot response")
+                        response = get_response_from_chatbot(
+                            data={'message': text, 'bot_id': bot_installation.bot_id, 'token': team_id},
+                            platform="slack",
+                            db=db
+                        )
+                        print(f"Response from chatbot: {response}")
                     except Exception as e:
-                        print("Error while generating response: ",e)
-                        raise 
+                        print("Error while generating response:", e)
+                        await asyncio.to_thread(client.chat_postMessage, channel=channel, text=str(e))
+                        raise
                     await asyncio.to_thread(client.chat_postMessage, channel=channel, text=response)
 
+        print("Event processed successfully")
         return {"ok": True}
     except HTTPException as http_exc:
+        print(f"HTTPException: {http_exc.detail}")
         raise http_exc
     except Exception as e:
+        print(f"Unhandled exception: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
     
     
 # handle slack commands
