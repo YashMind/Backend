@@ -18,6 +18,8 @@ class ChatMessageRead(ChatMessageBase):
     bot_id: Optional[int] = None
     user_id: Optional[int] = None
     sender: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int]= None
     created_at: Optional[datetime] = None
     message: Optional[str] = None
 

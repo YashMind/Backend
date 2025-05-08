@@ -258,9 +258,6 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
         
-        # Get user's country
-        ip = request.client.host
-        country = await get_country_from_ip(ip)
 
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
         # fallback to Pinecone if no FAQ match found
@@ -291,6 +288,8 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         db.add_all([user_message, bot_message])
         db.commit()
         db.refresh(bot_message)
+        bot_message.input_tokens = len(user_msg.strip().split())
+        bot_message.output_tokens = len(response_content.strip().split())
         return bot_message
     except HTTPException as http_exc:
         raise http_exc
