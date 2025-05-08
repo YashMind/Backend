@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import timedelta, datetime
 class User(BaseModel):
     id: Optional[int] = None
@@ -12,6 +12,7 @@ class User(BaseModel):
     plan: Optional[str] = None
     tokenUsed: Optional[int] = None
     last_active: Optional[datetime] = None
+    role_permissions: Optional[List[str]] = None
 
 class SignInUser(BaseModel):
     email: EmailStr
@@ -33,3 +34,4 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
+    role_permissions: Optional[List[str]] = None

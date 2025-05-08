@@ -26,6 +26,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
         password = user.password
         role = user.role
         status = user.status if user.status else None
+        role_permissions = user.role_permissions if user.role_permissions else None
         if not fullName or not email or not password:
             raise HTTPException(status_code=400, detail="email and password are required")
         hashed_password = pwd_context.hash(user.password)
@@ -38,7 +39,8 @@ async def signup(user: User, db: Session = Depends(get_db)):
             email=email,
             password=hashed_password,
             role=role,
-            status=status
+            status=status,
+            role_permissions=role_permissions
         )
         db.add(new_user)
         db.commit()

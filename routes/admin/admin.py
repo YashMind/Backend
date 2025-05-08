@@ -450,17 +450,15 @@ async def get_top_consumption_users(
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         # get top 10 most token consumption users
-        admins = ["Super Admin", "Billing Admin"]
+        admins = ["Super Admin", "Billing Admin", "Product Admin", "Support Admin"]
         admin_users = (
             db.query(AuthUser).filter(AuthUser.role.in_(admins)).all()
             )
 
         return admin_users
     except HTTPException as http_exc:
-        print("http_exc ", http_exc)
         raise http_exc
     except Exception as e:
-        print("e ", e)
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.put("/update-admin-user", response_model=UserUpdate)
@@ -483,6 +481,7 @@ async def update_admin_user(data:UserUpdate, request: Request, db: Session = Dep
         existing_user.email = data.email
         existing_user.role = data.role
         existing_user.status = data.status
+        existing_user.role_permissions = data.role_permissions
 
         db.commit()
         db.refresh(existing_user)
@@ -506,6 +505,48 @@ async def delete_admin_user(id: int, request: Request, db: Session = Depends(get
             db.delete(adminUser)
             db.commit()
         return {"message": "Plan deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/get-admins-logs-activity")
+async def get_admin_logs_activity(
+    request: Request,
+    db: Session = Depends(get_db),
+    date_filter: Optional[str] = Query(None, description="Filter up to this date (YYYY-MM-DD)")
+):
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        admins = ["Super Admin", "Billing Admin", "Product Admin", "Support Admin"]
+        
+        # last_added_admin = db.query(AuthUser).filter(AuthUser.role.in_(admins)).order_by(desc(AuthUser.created_at)).first()
+
+        # last_role_updated = db.query(AuthUser).filter(AuthUser.role.in_(admins)).order_by(desc(AuthUser.updated_at)).first()
+
+        # last_suspended_admin = db.query(AuthUser).filter(AuthUser.role.in_(admins), AuthUser.status == "Suspend").order_by(desc(AuthUser.updated_at)).first()
+
+
+        query = db.query(AuthUser).filter(AuthUser.role.in_(admins))
+
+        if date_filter:
+            try:
+                parsed_date = datetime.strptime(date_filter, "%Y-%m-%d")
+                query = query.filter(AuthUser.created_at <= parsed_date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        last_added_admin = query.order_by(AuthUser.created_at.desc()).first()
+        last_role_updated = query.order_by(AuthUser.updated_at.desc()).first()
+        last_suspended_admin = query.filter(AuthUser.status == "Suspend").order_by(AuthUser.updated_at.desc()).first()
+
+        results = {"last_added_admin":last_added_admin, "last_role_updated":last_role_updated, "last_suspended_admin":last_suspended_admin}
+       
+        return results
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
