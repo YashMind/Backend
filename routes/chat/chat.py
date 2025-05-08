@@ -259,9 +259,9 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
             raise HTTPException(status_code=404, detail="Chat not found")
         
         # Get user's country
-        ip = request.client.host
-        country = await get_country_from_ip(ip)
-        print("country ", country)
+        # ip = request.client.host
+        # country = await get_country_from_ip(ip)
+        # print("country ", country)
 
         # pine cone
         # pinecone_answer = retrieve_answers(user_msg)
