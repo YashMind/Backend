@@ -120,7 +120,7 @@ async def slack_commands(
         if not bot_installation:
             raise HTTPException(status_code=404, detail="Bot not found for this team")
         
-        if command == "/yashraa":
+        if command == "/ask_yashraa":
             response = get_response_from_chatbot(data={'message':text,'bot_id':bot_installation.bot_id, 'token':team_id},platform="slack", db=db)
 
             # Respond to the user asynchronously
