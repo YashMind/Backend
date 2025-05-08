@@ -20,4 +20,6 @@ class AuthUser(Base):
     status = Column(String(100), nullable=True)
     plan = Column(String(100), nullable=True)
     tokenUsed = Column(Integer, nullable=True)
+    last_active = Column(DateTime(timezone=True), onupdate=func.now())
+
 
