@@ -30,6 +30,7 @@ pinecone===6.0.2
 pinecone-plugin-interface==0.0.7
 beautifulsoup4===4.13.4
 unstructured===0.17.2 
-pdfminer.sixnumpy==2.2.4
+pdfminer.six
+numpy==2.2.4
 numpy==2.2.4
 slack_sdk==3.35.0

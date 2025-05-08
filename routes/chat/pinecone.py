@@ -48,7 +48,8 @@ def retrieve_answers(query:str, bot_id:int):
     # Step 3: Process the results
     best_matches = results.get("matches", [])
     if not best_matches:
-        return "No relevant information found."
+        return None
+        # return "No relevant information found."
 
     # Step 4: Extract the best result (or combine top-k)
     top_result = best_matches[0]
