@@ -37,6 +37,7 @@ async def slack_events(request: Request,
         }
 
         if not verifier.is_valid_request(body, headers):
+            await asyncio.to_thread(client.chat_postMessage, channel=channel, text="Invalid Slack signature")
             raise HTTPException(status_code=403, detail="Invalid Slack signature")
 
         event_data = await request.json()
@@ -56,6 +57,7 @@ async def slack_events(request: Request,
             bot_installation = db.query(SlackInstallation).filter_by(team_id=team_id).first()
             
             if not bot_installation:
+                await asyncio.to_thread(client.chat_postMessage, channel=channel, text="Bot not found for this team")
                 raise HTTPException(status_code=404, detail="Bot not found for this team")
             
             channel = event.get("channel")
@@ -68,6 +70,7 @@ async def slack_events(request: Request,
                         response =  get_response_from_chatbot(data={'message':text,'bot_id':bot_installation.bot_id, 'token':team_id},platform="slack", db=db)
                     except Exception as e:
                         print("Error while generating response: ",e)
+                        await asyncio.to_thread(client.chat_postMessage, channel=channel, text=e)
                         raise 
                     await asyncio.to_thread(client.chat_postMessage, channel=channel, text=response)
 
