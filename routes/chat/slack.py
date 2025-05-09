@@ -9,6 +9,7 @@ import httpx
 from datetime import datetime
 from models.chatModel.integrations import SlackInstallation
 from datetime import datetime
+from utils.utils import get_response_from_chatbot
 
 router = APIRouter()
 
@@ -18,7 +19,7 @@ SLACK_SIGNING_SECRET = Settings.SLACK_SIGNING_SECRET
 
 SLACK_CLIENT_ID = Settings.SLACK_CLIENT_ID
 SLACK_CLIENT_SECRET = Settings.SLACK_CLIENT_SECRET
-SLACK_REDIRECT_URI = "https://20d2-122-176-88-30.ngrok-free.app/api/slack/oauth/callback"
+SLACK_REDIRECT_URI = Settings.SLACK_REDIRECT_URI
 
 client = WebClient(token=SLACK_BOT_TOKEN)
 verifier = SignatureVerifier(SLACK_SIGNING_SECRET)
@@ -26,39 +27,82 @@ verifier = SignatureVerifier(SLACK_SIGNING_SECRET)
 @router.post("/events")
 async def slack_events(request: Request,
                        x_slack_signature: str = Header(None),
-                       x_slack_request_timestamp: str = Header(None)):
-    body = await request.body()
-    headers = {
-        "X-Slack-Signature": x_slack_signature,
-        "X-Slack-Request-Timestamp": x_slack_request_timestamp
-    }
+                       x_slack_request_timestamp: str = Header(None),
+                       db: Session = Depends(get_db)):
+    try:
+        print("Start processing Slack event")
+        body = await request.body()
+        print(f"Raw body: {body}")
 
-    if not verifier.is_valid_request(body, headers):
-        raise HTTPException(status_code=403, detail="Invalid Slack signature")
+        headers = {
+            "X-Slack-Signature": x_slack_signature,
+            "X-Slack-Request-Timestamp": x_slack_request_timestamp
+        }
+        print(f"Headers received: {headers}")
 
-    event_data = await request.json()
-    
-    
+        print("Verifying Slack request")
+        if not verifier.is_valid_request(body, headers):
+            print("Slack signature invalid")
+            await asyncio.to_thread(client.chat_postMessage, channel="general", text="Invalid Slack signature")  # Replace 'channel' with a valid fallback
+            raise HTTPException(status_code=403, detail="Invalid Slack signature")
 
-    # URL verification challenge from Slack
-    if "challenge" in event_data:
-        return {"challenge": event_data["challenge"]}
+        print("Parsing event JSON")
+        event_data = await request.json()
+        print(f"Event data: {event_data}")
 
-    if "event" in event_data:
-        event = event_data["event"]
-        text = event.get("text", "")
-        user = event.get("user")
-        channel = event.get("channel")
-        print("EVENT TYPE: ",event.get('type'), event.get('subtype'))
-        if event.get("subtype") == "bot_message" or event.get("bot_id"):
-            return {"ok": True}
-        if event.get("type") in ["app_mention", "message"]:
-            # Optional filtering for DMs only if needed:
-            if event.get("channel_type") in ["im", "channel"]:
-                # response = your_ai_bot_logic(text)
-                await asyncio.to_thread(client.chat_postMessage, channel=channel, text="this is testing from events")
+        # URL verification challenge from Slack
+        if "challenge" in event_data:
+            print("Received challenge")
+            return {"challenge": event_data["challenge"]}
 
-    return {"ok": True}
+        if "event" in event_data:
+            print("Processing event block")
+            event = event_data["event"]
+            text = event.get("text", "")
+            user = event.get("user")
+            team_id = event_data.get("team_id")
+            print(f"Event type: {event.get('type')}, User: {user}, Team ID: {team_id}, Text: {text}")
+
+            bot_installation = db.query(SlackInstallation).filter_by(team_id=team_id).first()
+            print(f"Bot installation found: {bot_installation is not None}")
+
+            if not bot_installation:
+                print("Bot installation not found")
+                await asyncio.to_thread(client.chat_postMessage, channel="general", text="Bot not found for this team")  # Fallback channel
+                raise HTTPException(status_code=404, detail="Bot not found for this team")
+
+            channel = event.get("channel")
+            print(f"Channel: {channel}")
+
+            if event.get("subtype") == "bot_message" or event.get("bot_id"):
+                print("Skipping bot message")
+                return {"ok": True}
+
+            if event.get("type") in ["app_mention", "message"]:
+                if event.get("channel_type") in ["im", "channel"]:
+                    try:
+                        print("Generating chatbot response")
+                        response = get_response_from_chatbot(
+                            data={'message': text, 'bot_id': bot_installation.bot_id, 'token': team_id},
+                            platform="slack",
+                            db=db
+                        )
+                        print(f"Response from chatbot: {response}")
+                    except Exception as e:
+                        print("Error while generating response:", e)
+                        await asyncio.to_thread(client.chat_postMessage, channel=channel, text=str(e))
+                        raise
+                    await asyncio.to_thread(client.chat_postMessage, channel=channel, text=response)
+
+        print("Event processed successfully")
+        return {"ok": True}
+    except HTTPException as http_exc:
+        print(f"HTTPException: {http_exc.detail}")
+        raise http_exc
+    except Exception as e:
+        print(f"Unhandled exception: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
     
     
 # handle slack commands
@@ -67,18 +111,28 @@ async def slack_commands(
     command: str = Form(...),
     text: str = Form(...),
     user_id: str = Form(...),
-    response_url: str = Form(...)
+    response_url: str = Form(...),
+    team_id: str = Form(...),
+    db : Session = Depends(get_db)
 ):
-    if command == "/yashraa":
-        # response = your_ai_bot_logic(text)
-        response = f"You said: {text}"
+    try:
+        bot_installation = db.query(SlackInstallation).filter_by(team_id=team_id).first()
+        if not bot_installation:
+            raise HTTPException(status_code=404, detail="Bot not found for this team")
+        
+        if command == "/ask_yashraa":
+            response = get_response_from_chatbot(data={'message':text,'bot_id':bot_installation.bot_id, 'token':team_id},platform="slack", db=db)
 
-        # Respond to the user asynchronously
-        async with httpx.AsyncClient() as client_http:
-            await client_http.post(response_url, json={"text": response})
+            # Respond to the user asynchronously
+            async with httpx.AsyncClient() as client_http:
+                await client_http.post(response_url, json={"text": response})
 
-    # Return 200 OK immediately with no message body
-    return Response(status_code=204)
+        # Return 200 OK immediately with no message body
+        return Response(status_code=204)
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def save_installation(data: dict, db: Session):

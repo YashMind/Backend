@@ -28,6 +28,7 @@ class Settings:
     SLACK_SIGNING_SECRET = os.getenv('SLACK_SIGNING_SECRET')
     SLACK_CLIENT_ID= os.getenv('SLACK_CLIENT_ID')
     SLACK_CLIENT_SECRET= os.getenv('SLACK_CLIENT_SECRET')
+    SLACK_REDIRECT_URI= os.getenv('SLACK_REDIRECT_URI')
 
 settings = Settings()
 

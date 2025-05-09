@@ -26,7 +26,7 @@ import string
 from datetime import datetime
 
 
-# from routes.chat.pinecone import retrieve_answers
+from routes.chat.pinecone import retrieve_answers
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
 router = APIRouter()
@@ -258,24 +258,13 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
         
-        # Get user's country
-        ip = request.client.host
-        country = await get_country_from_ip(ip)
-        print("country ", country)
-
-        # pine cone
-        # pinecone_answer = retrieve_answers(user_msg)
-        pinecone_answer = False
-        # If Pinecone answer is found and good
 
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
-        docs_tuned_response = False # get_docs_tuned_like_response(user_msg, bot_id, db)
-        if response_from_faqs:
-            response_content = response_from_faqs.answer
-        elif pinecone_answer and len(pinecone_answer.strip()) > 0:
-            response_content = pinecone_answer
-        elif docs_tuned_response:
-            response_content = docs_tuned_response
+        # fallback to Pinecone if no FAQ match found
+        final_answer = response_from_faqs.answer if response_from_faqs else retrieve_answers(user_msg, bot_id)
+
+        if final_answer:
+            response_content = final_answer
         else:
             # Get message history from DB
             messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
@@ -299,6 +288,8 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         db.add_all([user_message, bot_message])
         db.commit()
         db.refresh(bot_message)
+        bot_message.input_tokens = len(user_msg.strip().split())
+        bot_message.output_tokens = len(response_content.strip().split())
         return bot_message
     except HTTPException as http_exc:
         raise http_exc

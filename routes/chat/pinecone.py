@@ -1,7 +1,7 @@
 import os
 import openai
 import langchain
-from pinecone import Pinecone 
+# from pinecone import Pinecone 
 from langchain.document_loaders import PyPDFDirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -22,86 +22,82 @@ from dotenv import load_dotenv
 from typing import Optional
 import string
 import uuid
+import pinecone
 load_dotenv()
 
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
-# pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-# index = pc.index("yashraa-ai")  # Use your index name
+pc = pinecone.Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+index = pc.Index("yashraa-ai")  # Use your index name
 
 # # Initialize OpenAI Embeddings
-# embedding_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
+embedding_model = OpenAIEmbeddings(model="text-embedding-3-small", dimensions=1024, openai_api_key=os.getenv("OPENAI_API_KEY"))
 
-# def read_doc(directory):
-#     file_loader=PyPDFDirectoryLoader(directory)
-#     documents=file_loader.load()
-#     return documents
+# from vector database
+def retrieve_answers(query:str, bot_id:int):
+    query_vector = embedding_model.embed_query(query)
 
-# doc=read_doc('documents/')
-# len(doc)
+    # Step 2: Search Pinecone with the embedded vector
+    results = index.query(
+        vector=query_vector,
+        top_k=5,
+        namespace=f"bot_{bot_id}",
+        include_metadata=True
+    )
+    print("result 2", results)
 
-# def chunk_data(docs,chunk_size=800,chunk_overlap=50):
-#     text_splitter=RecursiveCharacterTextSplitter(chunk_size=chunk_size,chunk_overlap=chunk_overlap)
-#     doc=text_splitter.split_documents(docs)
-#     return doc
+    # Step 3: Process the results
+    best_matches = results.get("matches", [])
+    if not best_matches:
+        return None
+        # return "No relevant information found."
 
-# documents=chunk_data(docs=doc)
-# # len(documents)
+    # Step 4: Extract the best result (or combine top-k)
+    top_result = best_matches[0]
+    score = top_result.get("score", 0)
 
-# embeddings=OpenAIEmbeddings(api_key=os.getenv('OPENAI_API_KEY'))
-# # embeddings
+    if score < 0.60:
+        return None
+    answer = top_result["metadata"].get("content") or top_result["metadata"].get("text") or "No content found."
 
-# vectors=embeddings.embed_query("How are you?")
-# # len(vectors)
+    return answer
 
-# # pinecone.init(
-# #     api_key="923d5299-ab4c-4407-bfe6-7f439d9a9cb9",
-# #     environment="gcp-starter"
-# # )
-# index_name="yashraa-ai"
-
-# # index=Pinecone.from_documents(doc,embeddings,index_name=index_name)
-# pc = Pinecone(
-#     api_key=os.getenv("PINECONE_API_KEY"),
-# )
-# index = pc.index(index_name)
-
-# def retrieve_query(query,k=2):
-#     matching_results=index.similarity_search(query,k=k)
-#     return matching_results
-
-# llm=OpenAI(model_name="text-davinci-003",temperature=0.5)
-# chain=load_qa_chain(llm,chain_type="stuff")
-
-# # from vector database
-# def retrieve_answers(query):
-#     doc_search=retrieve_query(query)
-#     if not doc_search:
-#         return ""
-#     response=chain.run(input_documents=doc_search,question=query)
-#     return response
-
-# fine tuning
+# store data for pine coning
 def process_and_store_docs(data, db: Session):
     documents = []
 
-    # 1. Load from target link
-    if data.target_link:
-        loader = WebBaseLoader(data.target_link)
-        documents = loader.load()
-
     # 2. Load from uploaded document
-    elif data.document_link:
-        url_path = data.document_link.lstrip("/")
-        file_path = os.path.join(url_path)
-        try:
+    try:
+        # 1. Load from target link
+        if data.target_link:
+            loader = WebBaseLoader(data.target_link)
+            documents = loader.load()
+        elif data.document_link:
+            url_path = data.document_link.lstrip("/")
+            file_path = os.path.join(url_path)
             loader = PyPDFLoader(str(file_path))
             documents = loader.load()
-        except Exception as e:
-            print(f"Error loading PDF: {e}")
-            raise
+        else:
+            raise ValueError("Either target_link or document_link must be provided.")
+    except Exception as e:
+        print(f"Error loading PDF: {e}")
+        raise
 
     if not documents:
         raise ValueError("No data loaded from link or file")
+    
+    # Create a dense index with integrated embedding
+    index_name = "yashraa-ai"
+    if not pc.has_index(index_name):
+        pc.create_index_for_model(
+            name=index_name,
+            cloud="aws",
+            region="us-east-1",
+            embed={
+                "model":"llama-text-embed-v2",
+                "field_map":{"text": "chunk_text"}
+            }
+        )
+
 
     # 3. Split documents into chunks
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -112,62 +108,63 @@ def process_and_store_docs(data, db: Session):
     pinecone_vectors = []
     count=0
     for doc in split_docs:
-        count+=len(doc.page_content)
-        db_chunk = ChatBotsDocChunks(
-            bot_id=data.bot_id,
-            user_id=data.user_id,
-            source=data.target_link or data.document_link,
-            content=doc.page_content,
-            metaData=str(doc.metadata)
-        )
-        db.add(db_chunk)
-        # text = doc.page_content
-        # metadata = {
-        #     "bot_id": str(data.bot_id),
-        #     "user_id": str(data.user_id),
-        #     "source": data.target_link or data.document_link
-        # }
 
-        # try:
-        #     embedding = embedding_model.embed_query(text)
-        #     vector_id = str(uuid.uuid4())  # unique ID for each chunk
+        text = doc.page_content
+        metadata = {
+            "bot_id": str(data.bot_id),
+            "user_id": str(data.user_id),
+            "source": data.target_link or data.document_link,
+            "content": text
+        }
 
-        #     # Add to Pinecone batch
-        #     pinecone_vectors.append({
-        #         "id": vector_id,
-        #         "values": embedding,
-        #         "metadata": metadata
-        #     })
+        try:
+            embedding = embedding_model.embed_query(text)
+            vector_id = str(uuid.uuid4())  # unique ID for each chunk
 
-        #     # Optionally store in your own DB too
-        #     db_chunk = ChatBotsDocChunks(
-        #         bot_id=data.bot_id,
-        #         user_id=data.user_id,
-        #         source=metadata["source"],
-        #         content=text,
-        #         metaData=str(doc.metadata)
-        #     )
-        #     db.add(db_chunk)
-        #     count += len(text)
+            # Add to Pinecone batch
+            pinecone_vectors.append({
+                "id": vector_id,
+                "values": embedding,
+                "metadata": metadata
+            })
 
-        # except Exception as e:
-        #     print("Embedding error:", e)
+            # Optionally store in your own DB too
+            db_chunk = ChatBotsDocChunks(
+                bot_id=data.bot_id,
+                user_id=data.user_id,
+                source=metadata["source"],
+                content=text,
+                metaData=str(doc.metadata)
+            )
+            db.add(db_chunk)
+            count += len(text)
+
+        except Exception as e:
+            print("Embedding error:", e)
 
     # Upsert all vectors to Pinecone
-    # if pinecone_vectors:
-    #     index.upsert(vectors=pinecone_vectors, namespace="bot_" + str(data.bot_id))     
+    if pinecone_vectors:
+        try:
+            dense_index = pc.Index(index_name)
+            dense_index.upsert(vectors=pinecone_vectors, namespace="bot_" + str(data.bot_id))
+        except Exception as e:
+            print("e ", e)
+            raise     
     
     db.commit()
     return  count
 
 def get_response_from_faqs(user_msg: str, bot_id: int, db: Session):
-    cleaned_msg = user_msg.lower().strip().replace('?', '')
-    pattern = f"%{cleaned_msg}%"
-    faq = db.query(ChatBotsFaqs).filter(
-        ChatBotsFaqs.bot_id == bot_id,
-        func.lower(ChatBotsFaqs.question).like(pattern)
-    ).first()
-    return faq if faq else None
+    try:
+        cleaned_msg = user_msg.lower().strip().replace('?', '')
+        pattern = f"%{cleaned_msg}%"
+        faq = db.query(ChatBotsFaqs).filter(
+            ChatBotsFaqs.bot_id == bot_id,
+            func.lower(ChatBotsFaqs.question).like(pattern)
+        ).first()
+        return faq if faq else None
+    except Exception as e:
+        return None
 
 def get_docs_tuned_like_response(user_msg: str, bot_id: int, db: Session) ->  Optional[str]:
     # Fetch relevant document chunks
