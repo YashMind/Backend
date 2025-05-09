@@ -32,3 +32,13 @@ class BotProducts(Base):
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class PaymentGateway(Base):
+    __tablename__ = "payment_gateway"
+
+    id = Column(Integer, primary_key=True, index=True)
+    payment_name = Column(String(255), nullable=True)
+    status = Column(String(255), nullable=True)
+    api_key = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

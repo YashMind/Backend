@@ -6,9 +6,9 @@ from jose import JWTError, jwt
 from uuid import uuid4
 import json
 from models.authModel.authModel import AuthUser
-from models.adminModel.adminModel import SubscriptionPlans, TokenBots, BotProducts
+from models.adminModel.adminModel import SubscriptionPlans, TokenBots, PaymentGateway
 from schemas.authSchema.authSchema import User, UserUpdate
-from schemas.adminSchema.adminSchema import PlansSchema, TokenBotsSchema, BotProductSchema
+from schemas.adminSchema.adminSchema import PlansSchema, TokenBotsSchema, BotProductSchema, PaymentGatewaySchema
 from sqlalchemy.orm import Session
 from config import get_db
 from typing import Optional, Dict, List
@@ -547,6 +547,78 @@ async def get_admin_logs_activity(
         results = {"last_added_admin":last_added_admin, "last_role_updated":last_role_updated, "last_suspended_admin":last_suspended_admin}
        
         return results
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+# create update payment gateway
+@router.post("/create-update-payment-gateway", response_model=PaymentGatewaySchema)
+async def create_update_payment_gateway(data:PaymentGatewaySchema, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        id = data.id
+        if id:
+            existing_payment = db.query(PaymentGateway).filter(PaymentGateway.id == data.id).first()
+            if not existing_payment:
+                raise HTTPException(status_code=404, detail="Product not found")
+
+            if data.payment_name:
+                existing_payment.payment_name = data.payment_name
+            if data.status:
+                existing_payment.status = data.status
+            if data.api_key:
+                existing_payment.api_key = data.api_key
+
+            db.commit()
+            db.refresh(existing_payment)
+            return existing_payment
+        else:
+            new_payment_gateway = PaymentGateway(
+                payment_name=data.payment_name,
+                status=data.status,
+                api_key=data.api_key
+            )
+            db.add(new_payment_gateway)
+            db.commit()
+            db.refresh(new_payment_gateway)
+            return new_payment_gateway
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+# get payment gateway
+@router.get("/get-payments-gateway", response_model=List[PaymentGatewaySchema])
+async def get_payments_gateway(request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        payments_gateway = db.query(PaymentGateway).filter()
+        return payments_gateway
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+# delete payment gateway
+@router.delete("/delete-payments-gateway/{id}")
+async def delete_payments_gateway(id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        payment_gateway = db.query(PaymentGateway).filter(PaymentGateway.id==id).first()
+        if payment_gateway:
+            db.delete(payment_gateway)
+            db.commit()
+        return {"message": "Payment gateway deleted successfully!"}
+    
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:

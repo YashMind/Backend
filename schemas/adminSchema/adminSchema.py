@@ -20,3 +20,9 @@ class BotProductSchema(BaseModel):
     id: Optional[int] = None
     product_name: Optional[str] = None
     active: Optional[bool] = None
+
+class PaymentGatewaySchema(BaseModel):
+    id: Optional[int] = None
+    payment_name: Optional[str] = None
+    status: Optional[str] = None
+    api_key: Optional[str] = None
