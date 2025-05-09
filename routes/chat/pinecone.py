@@ -53,6 +53,10 @@ def retrieve_answers(query:str, bot_id:int):
 
     # Step 4: Extract the best result (or combine top-k)
     top_result = best_matches[0]
+    score = top_result.get("score", 0)
+
+    if score < 0.60:
+        return None
     answer = top_result["metadata"].get("content") or top_result["metadata"].get("text") or "No content found."
 
     return answer
