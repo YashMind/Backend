@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, func
+from sqlalchemy import Column, Integer, Text, String, Boolean, DateTime, func, JSON
 from config import Base
 
 class AuthUser(Base):
@@ -20,4 +20,7 @@ class AuthUser(Base):
     status = Column(String(100), nullable=True)
     plan = Column(String(100), nullable=True)
     tokenUsed = Column(Integer, nullable=True)
+    last_active = Column(DateTime(timezone=True), nullable=True)
+    role_permissions = Column(JSON, nullable=True)
+
 

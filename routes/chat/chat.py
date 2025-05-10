@@ -26,7 +26,7 @@ import string
 from datetime import datetime
 
 
-# from routes.chat.pinecone import retrieve_answers
+from routes.chat.pinecone import retrieve_answers
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
 router = APIRouter()
@@ -64,7 +64,6 @@ async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends
 async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
     try:
         chatbot = db.query(ChatBots).filter(ChatBots.id == int(data.id)).first()
-        print("chatbot ", chatbot)
         if not chatbot:
             raise HTTPException(status_code=404, detail="Chatbot not found")
 
@@ -208,29 +207,38 @@ async def create_chat(data: ChatSessionRead, request: Request, db: Session = Dep
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.post("/chats-id-token", response_model=ChatSessionRead)
-async def create_chat(data: ChatSessionRead, db: Session = Depends(get_db)):
+async def create_chat_token_session(data: ChatSessionRead, request: Request, db: Session = Depends(get_db)):
     try:
-        last_chat = db.query(ChatSession).filter_by(token=data.token).first()
-
-        # Step 2: Check if it has any messages
-        if last_chat:
-            return last_chat
-        
         chat_bot = db.query(ChatBots).filter_by(token=data.token).first()
         if not chat_bot:
             raise HTTPException(status_code=404, detail="ChatBot not found with given token")
-
+        if not chat_bot.public:
+        # Step 2: Check if it has any messages
+            token = request.cookies.get("access_token")
+            if not token:
+                raise HTTPException(status_code=401, detail="Authentication required for private chatbot")
+            payload = decode_access_token(token)
+            user_id = int(payload.get("user_id"))
+            existing_chat = db.query(ChatSession).filter_by(bot_id=chat_bot.id, user_id=user_id).first()
+            if existing_chat:
+                return existing_chat
+            
+            new_chat = ChatSession(token=data.token, bot_id=chat_bot.id, user_id=user_id)
+            db.add(new_chat)
+            db.commit()
+            db.refresh(new_chat)
+            return new_chat
+        
         new_chat = ChatSession(token=data.token, bot_id=chat_bot.id)
         db.add(new_chat)
         db.commit()
         db.refresh(new_chat)
-        return new_chat
-    
+        return new_chat  
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+      
 # send message
 @router.post("/chats/{chat_id}/message", response_model=ChatMessageRead)
 async def chat_message(chat_id: int, data: dict, request: Request, db: Session = Depends(get_db)):
@@ -250,24 +258,13 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
         
-        # Get user's country
-        ip = request.client.host
-        country = await get_country_from_ip(ip)
-        print("country ", country)
-
-        # pine cone
-        # pinecone_answer = retrieve_answers(user_msg)
-        pinecone_answer = False
-        # If Pinecone answer is found and good
 
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
-        docs_tuned_response = get_docs_tuned_like_response(user_msg, bot_id, db)
-        if response_from_faqs:
-            response_content = response_from_faqs.answer
-        elif pinecone_answer and len(pinecone_answer.strip()) > 0:
-            response_content = pinecone_answer
-        elif docs_tuned_response:
-            response_content = docs_tuned_response
+        # fallback to Pinecone if no FAQ match found
+        final_answer = response_from_faqs.answer if response_from_faqs else retrieve_answers(user_msg, bot_id)
+
+        if final_answer:
+            response_content = final_answer
         else:
             # Get message history from DB
             messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
@@ -291,6 +288,8 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         db.add_all([user_message, bot_message])
         db.commit()
         db.refresh(bot_message)
+        bot_message.input_tokens = len(user_msg.strip().split())
+        bot_message.output_tokens = len(response_content.strip().split())
         return bot_message
     except HTTPException as http_exc:
         raise http_exc
@@ -329,7 +328,6 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
         raise HTTPException(status_code=500, detail=str(e))
 
 # get user chat history
-# response_model=Dict[int, List[ChatMessageRead]]
 @router.get("/chats-history/{bot_id}")
 async def get_user_chat_history(bot_id: int, request: Request, db: Session = Depends(get_db), 
     page: int = Query(1, ge=1), limit: int = Query(10, ge=1), search: Optional[str] = None):

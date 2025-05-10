@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from config import get_db
 from typing import Optional, Dict, List
 from sqlalchemy import or_, desc, asc
+from datetime import datetime
 import httpx
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -23,6 +24,9 @@ async def signup(user: User, db: Session = Depends(get_db)):
         fullName = user.fullName
         email = user.email
         password = user.password
+        role = user.role
+        status = user.status if user.status else None
+        role_permissions = user.role_permissions if user.role_permissions else None
         if not fullName or not email or not password:
             raise HTTPException(status_code=400, detail="email and password are required")
         hashed_password = pwd_context.hash(user.password)
@@ -33,7 +37,10 @@ async def signup(user: User, db: Session = Depends(get_db)):
         new_user = AuthUser(
             fullName=fullName,
             email=email,
-            password=hashed_password
+            password=hashed_password,
+            role=role,
+            status=status,
+            role_permissions=role_permissions
         )
         db.add(new_user)
         db.commit()
@@ -84,6 +91,11 @@ async def getme(request: Request, db: Session = Depends(get_db)):
         user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
         if not user:
             raise HTTPException(status_code=400, detail="User not found")
+
+        user.last_active = datetime.utcnow()
+
+        db.commit()
+        db.refresh(user)
 
         return {"user": user, "status": 200}
 
