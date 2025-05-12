@@ -14,9 +14,10 @@ import os
 # Find your Account SID and Auth Token at twilio.com/console
 # and set the environment variables. See http://twil.io/secure
 account_sid = os.getenv('TWILIO_ACCOUNT_SID')
-print(account_sid, "=====ahjgfyuasgfsygjau")
 auth_token = Settings.TWILIO_AUTH_TOKEN
 twilio_number = Settings.TWILIO_NUMBER
+
+twilio_client = Client(account_sid, auth_token)
 
 
 router = APIRouter()
@@ -36,8 +37,12 @@ async def register_whatsapp_user(
 ):
     
     data = await request.json()
+    if 'bot_id' not in data or 'whatsapp_number' not in data:
+        raise HTTPException(status_code=400, detail="Incomplete request data: bot_id and phone number are required")
+    
     bot_id = data.get('bot_id')
     whatsapp_number = data.get('whatsapp_number')
+
     # Validate WhatsApp number format (basic check)
     if not whatsapp_number.startswith("+"):
         raise HTTPException(status_code=400, detail="WhatsApp number must include country code (e.g., +1234567890)")
@@ -57,8 +62,8 @@ async def register_whatsapp_user(
 
     # Send welcome message
     try:
-        print(account_sid, auth_token)
-        twilio_client = Client(account_sid, auth_token)
+        # print(account_sid, auth_token)
+        # twilio_client = Client(account_sid, auth_token)
         
         twilio_client.messages.create(
             body="🚀 Welcome to the bot! You're now registered. Send a message to start chatting.",
@@ -81,9 +86,6 @@ async def handle_whatsapp_message(
     Body: str = Form(...),  # Message content
     db: Session = Depends(get_db)
 ):
-    
-    print("From: ",From)
-    print("Body: ",Body)
     try:
         # Check if the sender is registered
         user = db.query(WhatsAppUser).filter_by(whatsapp_number=From.split(":")[1]).first()
@@ -102,8 +104,6 @@ async def handle_whatsapp_message(
             db=db
         )
         
-        print(account_sid, auth_token)
-        twilio_client = Client(account_sid, auth_token)
 
         # Send reply
         twilio_client.messages.create(
@@ -114,5 +114,4 @@ async def handle_whatsapp_message(
 
         return Response(status_code=200)
     except Exception as e:
-        print(e)
-        raise e | "Some error occured"
+        raise  HTTPException(status_code=500, detail="Some error occured")
