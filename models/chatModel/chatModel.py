@@ -77,6 +77,7 @@ class ChatBotsDocChunks(Base):
     bot_id = Column(Integer)
     source = Column(String(255))
     content = Column(Text)  # chunked text
+    chunk_index = Column(Integer)
     metaData = Column(Text)  # JSON string, optionally
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
