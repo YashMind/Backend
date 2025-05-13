@@ -12,17 +12,23 @@ class ChatSettingsBase(BaseModel):
     suggestions_is_active: Optional[bool]= None
     placeholder_value: Optional[str] = None
     placeholder_is_active: Optional[bool]= None
-    lead_collection: Optional[bool]= None
-    chat_window_bg: Optional[str] = None
-    send_button_color: Optional[str] = None
+    
+    
+    image: Optional[str] = None
     chat_icon: Optional[str] = None
     chat_icon_color: Optional[str] = None
+    
+    chat_window_bg: Optional[str] = None
+    send_button_color: Optional[str] = None
     user_message_bg: Optional[str] = None
-    image: Optional[str] = None
     dots_color: Optional[str] = None
     message_bg: Optional[str] = None
     live_message_bg: Optional[str] = None
+    user_message_color: Optional[str]= None
+    message_color:Optional[str] = None
+    live_message_color: Optional[str] = None
     
+    lead_collection: Optional[bool]= None
     name_lead_gen:Optional[str]=None,
     is_name_lead_gen: Optional[bool]=None
     required_name_lead_gen: Optional[bool]=None
@@ -59,16 +65,21 @@ class ChatSettingsRead(ChatSettingsBase):
     suggestions_is_active: Optional[bool]= None
     placeholder_value: Optional[str] = None
     placeholder_is_active: Optional[bool]= None
-    lead_collection: Optional[bool]= None
+    
     chat_window_bg: Optional[str] = None
     send_button_color: Optional[str] = None
     chat_icon: Optional[str] = None
     chat_icon_color: Optional[str] = None
     user_message_bg: Optional[str] = None
+    user_message_color: Optional[str]= None
     image: Optional[str] = None
     dots_color: Optional[str] = None
     message_bg: Optional[str] = None
+    message_color:Optional[str] = None
     live_message_bg: Optional[str] = None
+    live_message_color: Optional[str] = None
+    
+    lead_collection: Optional[bool]= None
     name_lead_gen: Optional[str]=None,
     is_name_lead_gen: Optional[bool]=None
     required_name_lead_gen: Optional[bool]=None

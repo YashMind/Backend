@@ -21,6 +21,7 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 @router.post("/signup")
 async def signup(user: User, db: Session = Depends(get_db)):
     try:
+        print("hello")
         fullName = user.fullName
         email = user.email
         password = user.password
