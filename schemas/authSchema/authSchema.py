@@ -31,6 +31,8 @@ class UserUpdate(BaseModel):
     fullName: Optional[str] = None
     password: Optional[str] = None
     isRestricted: Optional[bool] = False
+    picture: Optional[str] = None
+    tokenUsed: Optional[int] = None
     email: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
