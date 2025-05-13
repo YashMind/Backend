@@ -104,6 +104,37 @@ async def update_chatbot(data:User, db: Session = Depends(get_db)):
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/update-client-admin", response_model=User)
+async def update_chatbot(data:User, db: Session = Depends(get_db)):
+    try:
+        user = db.query(AuthUser).filter(AuthUser.id == int(data.id)).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Chatbot not found")
+
+        if data.status:
+            user.status = data.status
+
+        if data.tokenUsed==0:
+            user.tokenUsed = int(data.tokenUsed)
+
+        if data.fullName:
+            user.fullName = data.fullName
+
+        if data.role:
+            user.role = data.role
+
+        if data.plan:
+            user.plan = data.plan
+            
+        db.commit()
+        db.refresh(user)
+        return user
+    
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))       
     
 # create new subscription plan
 @router.post("/create-subscription-plans", response_model=PlansSchema)
@@ -460,6 +491,36 @@ async def get_top_consumption_users(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/get-client-users", response_model=List[User])
+async def get_non_admin_users(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Define admin roles
+        admins = ["Admin","Super Admin", "Billing Admin", "Product Admin", "Support Admin"]
+
+        # Query users with no role or role not in admin list
+        non_admin_users = (
+            db.query(AuthUser)
+            .filter(~AuthUser.role.in_(admins) | (AuthUser.role == None))
+            .all()
+        )
+
+        return non_admin_users
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
     
 @router.put("/update-admin-user", response_model=UserUpdate)
 async def update_admin_user(data:UserUpdate, request: Request, db: Session = Depends(get_db)):
@@ -491,6 +552,46 @@ async def update_admin_user(data:UserUpdate, request: Request, db: Session = Dep
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/update-client-user", response_model=UserUpdate)
+async def update_client_user(data: UserUpdate, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        if not data.id:
+            raise HTTPException(status_code=404, detail="user id is required")
+
+        existing_user = db.query(AuthUser).filter(AuthUser.id == data.id).first()
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if data.password:
+            hashed_pw = pwd_context.hash(data.password)
+            existing_user.password = hashed_pw
+
+        existing_user.fullName = data.fullName
+        existing_user.email = data.email
+
+        # Only apply these fields if role is admin
+        if data.role and data.role.lower().endswith("admin"):
+            existing_user.role = data.role
+            existing_user.status = data.status or "Active"
+            existing_user.role_permissions = data.role_permissions
+        else:
+            # For client user, just keep role field
+            existing_user.role = data.role
+
+        db.commit()
+        db.refresh(existing_user)
+        return existing_user
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
     
 @router.delete("/delete-admin-user/{id}")
 async def delete_admin_user(id: int, request: Request, db: Session = Depends(get_db)):
@@ -509,6 +610,25 @@ async def delete_admin_user(id: int, request: Request, db: Session = Depends(get
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/delete-client-user/{id}")
+async def delete_client_user(id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+
+        clientUser = db.query(AuthUser).filter(AuthUser.id==id).first()
+        if clientUser:
+            db.delete(clientUser)
+            db.commit()
+        return {"message": "Plan deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
     
 @router.get("/get-admins-logs-activity")
 async def get_admin_logs_activity(

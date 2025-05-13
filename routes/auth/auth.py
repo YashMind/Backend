@@ -56,6 +56,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
 @router.post("/signin")
 async def signin(user: SignInUser, response: Response, db: Session = Depends(get_db)):
     try:
+
         email = user.email
         password = user.password
         if not email or not password:

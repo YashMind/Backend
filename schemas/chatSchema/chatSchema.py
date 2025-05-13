@@ -2,15 +2,27 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
+from enum import Enum as PyEnum
 
-# Chat Message Schema
+
+
+
+class PlanEnum(str, PyEnum):
+    basic = "basic"
+    pro = "pro"
+    ent = "ent"
+
+class ChatTotalTokenCreate(BaseModel):
+    user_id: int
+    bot_id: int
+    total_token: int
+    token_consumed: int
+    plan: PlanEnum
+
 class ChatMessageBase(BaseModel):
+    chat_id: int
     message: str
-
-
-class ChatMessageCreate(ChatMessageBase):
-    sender: str  # "user" or "bot"
-
+    sender: str
 
 class ChatMessageRead(ChatMessageBase):
     id: Optional[int] = None

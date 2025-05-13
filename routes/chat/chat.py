@@ -6,8 +6,8 @@ from jose import JWTError, jwt
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
-from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks, ChatBotLeadsModel
-from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageCreate, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens
+from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks, ChatBotLeadsModel, ChatTotalToken
+from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens, ChatTotalTokenCreate
 from models.chatModel.appearance import ChatSettings
 from models.chatModel.tuning import DBInstructionPrompt
 from schemas.authSchema.authSchema import User
@@ -131,6 +131,14 @@ ALLOWED_FILE_TYPES = [
     "image/png",
     "image/webp",
 ]
+
+@router.post("/chat-tokens")
+def create_chat_token(data: ChatTotalTokenCreate, db: Session = Depends(get_db)):
+    new_token = ChatTotalToken(**data.dict())
+    db.add(new_token)
+    db.commit()
+    db.refresh(new_token)
+    return new_token
 
 @router.post("/upload-document")
 async def upload_photo(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
@@ -263,33 +271,52 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         # fallback to Pinecone if no FAQ match found
         final_answer = response_from_faqs.answer if response_from_faqs else retrieve_answers(user_msg, bot_id)
 
+        # Set response_content
         if final_answer:
             response_content = final_answer
         else:
             # Get message history from DB
             messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
-
             langchain_messages = [
                 HumanMessage(content=m.message) if m.sender == 'user' else AIMessage(content=m.message)
                 for m in messages
             ]
-
-            # Add current user message
             langchain_messages.append(HumanMessage(content=user_msg))
-
-            # Call LLM
             response = llm.invoke(langchain_messages)
             response_content = response.content if response and response.content else "No response"
 
-        # Save both user and bot messages
-        user_message  = ChatMessage(user_id=user_id, bot_id=bot_id, chat_id=chat_id, sender="user", message=user_msg)
+        # ✅ Always compute tokens after final response is ready
+        input_tokens = len(user_msg.strip().split())
+        output_tokens = len(response_content.strip().split())
+
+        # Save user and bot messages
+        user_message = ChatMessage(user_id=user_id, bot_id=bot_id, chat_id=chat_id, sender="user", message=user_msg)
         bot_message = ChatMessage(user_id=user_id, bot_id=bot_id, chat_id=chat_id, sender="bot", message=response_content)
 
         db.add_all([user_message, bot_message])
         db.commit()
         db.refresh(bot_message)
-        bot_message.input_tokens = len(user_msg.strip().split())
-        bot_message.output_tokens = len(response_content.strip().split())
+
+        bot_message.input_tokens = input_tokens
+        bot_message.output_tokens = output_tokens
+
+        # ✅ Update ChatTotalToken
+        token_record = db.query(ChatTotalToken).filter_by(user_id=user_id, bot_id=bot_id).first()
+        if token_record:
+            token_record.token_consumed += input_tokens
+            token_record.updated_at = func.now()
+        else:
+            token_record = ChatTotalToken(
+                user_id=user_id,
+                bot_id=bot_id,
+                total_token=10000,  # default total
+                token_consumed=input_tokens,
+                plan="basic"  # default plan
+            )
+            db.add(token_record)
+
+        db.commit()
+
         return bot_message
     except HTTPException as http_exc:
         raise http_exc
