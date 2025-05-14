@@ -29,6 +29,11 @@ class Settings:
     SLACK_CLIENT_ID= os.getenv('SLACK_CLIENT_ID')
     SLACK_CLIENT_SECRET= os.getenv('SLACK_CLIENT_SECRET')
     SLACK_REDIRECT_URI= os.getenv('SLACK_REDIRECT_URI')
+    
+    
+    TWILIO_ACCOUNT_SID=os.getenv('TWILIO_ACCOUNT_SID')
+    TWILIO_AUTH_TOKEN=os.getenv('TWILIO_AUTH_TOKEN')
+    TWILIO_NUMBER=os.getenv('TWILIO_NUMBER')
 
 settings = Settings()
 

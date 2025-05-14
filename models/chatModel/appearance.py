@@ -30,12 +30,15 @@ class ChatSettings(Base):
     chat_icon = Column(String(100))
     chat_icon_color = Column(String(10))
     user_message_bg = Column(String(10))
+    user_message_color = Column(String(10))
     
     # Chatbot config fields
     image = Column(String(100))
     dots_color = Column(String(10))
     message_bg = Column(String(10))
+    message_color = Column(String(10))
     live_message_bg = Column(String(10))
+    live_message_color = Column(String(10))
     
     # lead collection fields
     name_lead_gen=Column(String(30))

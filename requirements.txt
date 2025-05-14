@@ -32,6 +32,5 @@ beautifulsoup4===4.13.4
 unstructured===0.17.2 
 pdfminer.six
 numpy==2.2.4
-
-
+twilio==9.6.0
 slack_sdk==3.35.0
