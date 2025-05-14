@@ -10,7 +10,7 @@ from models.adminModel.adminModel import SubscriptionPlans, TokenBots, BotProduc
 from models.adminModel.roles_and_permission import RolePermission
 
 from schemas.authSchema.authSchema import User, UserUpdate
-from schemas.adminSchema.adminSchema import PlansSchema, TokenBotsSchema, BotProductSchema,RolePermissionInput, RolePermissionResponse
+from schemas.adminSchema.adminSchema import PaymentGatewaySchema, PlansSchema, TokenBotsSchema, BotProductSchema,RolePermissionInput, RolePermissionResponse
 from sqlalchemy.orm import Session
 from config import get_db
 from typing import Optional, Dict, List
@@ -80,7 +80,7 @@ async def get_all_users(
     
 # update user
 @router.put("/update-user-admin", response_model=User)
-async def update_chatbot(data:User, db: Session = Depends(get_db)):
+async def update_chatbot(data:User, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
     try:
         user = db.query(AuthUser).filter(AuthUser.id == int(data.id)).first()
         if not user:
@@ -103,6 +103,15 @@ async def update_chatbot(data:User, db: Session = Depends(get_db)):
             
         db.commit()
         db.refresh(user)
+        log_entry = ActivityLog(
+        user_id=current_user.id,
+        username=current_user.fullName,
+        role=current_user.role,
+        action=f"{data.status}", 
+        log_activity=f"Account status updated to {data.status}",
+        )
+        db.add(log_entry)
+        db.commit()
         return user
     
     except HTTPException as http_exc:
@@ -569,7 +578,7 @@ async def update_admin_user(data: UserUpdate, request: Request, db: Session = De
             user_id=user_id,
             username=username,
             role=role,
-            action="update_user",
+            action="update",
             log_activity="Updated admin user details."
         )
         db.add(log_entry)
@@ -624,22 +633,41 @@ async def update_client_user(data: UserUpdate, request: Request, db: Session = D
 
     
 @router.delete("/delete-admin-user/{id}")
-async def delete_admin_user(id: int, request: Request, db: Session = Depends(get_db)):
+async def delete_admin_user(
+    id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        
 
-        adminUser = db.query(AuthUser).filter(AuthUser.id==id).first()
+        adminUser = db.query(AuthUser).filter(AuthUser.id == id).first()
         if adminUser:
             db.delete(adminUser)
             db.commit()
-        return {"message": "Plan deleted successfully"}
+
+            log_entry = ActivityLog(
+                user_id=current_user.id,
+                username=current_user.fullName,
+                role=current_user.role,
+                action="delete",
+                log_activity=f"Deleted user email {adminUser.email}"
+            )
+            db.add(log_entry)
+            db.commit()
+
+            return {"message": "Admin user deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Admin user not found")
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.delete("/delete-client-user/{id}")
 async def delete_client_user(id: int, request: Request, db: Session = Depends(get_db)):
@@ -776,8 +804,9 @@ async def delete_payments_gateway(id: int, request: Request, db: Session = Depen
  
 
 @router.post("/assign", response_model=RolePermissionResponse)
-def assign_custom_permissions(data: RolePermissionInput, db: Session = Depends(get_db)):
-    print("Route reached!") 
+def assign_custom_permissions(data: RolePermissionInput, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    print("User object:", current_user)
+    print("User fields:", current_user.__dict__)
     
     # Check if role exists
     role_obj = db.query(RolePermission).filter_by(role=data.role).first()
@@ -792,11 +821,21 @@ def assign_custom_permissions(data: RolePermissionInput, db: Session = Depends(g
     
     db.commit()
     db.refresh(role_obj)
-
+    log_entry = ActivityLog(
+            user_id=current_user.id,
+            username=current_user.fullName,
+            role=current_user.role,
+            action="role_updated",
+            log_activity="Updated Permissions for role " + data.role
+        )
+    db.add(log_entry)
+    db.commit()
     return {
         "role": role_obj.role,
         "permissions": role_obj.permissions
     }
+
+    
 @router.get("/get", response_model=RolePermissionResponse)
 def get_role_permissions(role: str, db: Session = Depends(get_db)):
     role_obj = db.query(RolePermission).filter_by(role=role).first()
