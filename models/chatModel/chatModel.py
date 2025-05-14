@@ -43,6 +43,18 @@ class ChatBots(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 
+
+class ChatTotalToken(Base):
+    __tablename__ = "chat_total_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    bot_id = Column(Integer, nullable=False)
+    total_token = Column(Integer, nullable=False)
+    token_consumed = Column(Integer, nullable=False)
+    plan=Column(Enum("basic", "pro","ent", name="plan_enum"), nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, onupdate=func.now())
+
 class ChatBotsFaqs(Base):
     __tablename__ = "chat_bots_faqs"
     id = Column(Integer, primary_key=True, index=True)

@@ -57,40 +57,64 @@ async def signup(user: User, db: Session = Depends(get_db)):
 @router.post("/signin")
 async def signin(user: SignInUser, response: Response, db: Session = Depends(get_db)):
     try:
-        email = user.email
-        password = user.password
-        if not email or not password:
+        if not user.email or not user.password:
             raise HTTPException(status_code=400, detail="Email and password are required")
 
-        user = db.query(AuthUser).filter(AuthUser.email == email).first()
-        if not user:
+        db_user = db.query(AuthUser).filter(AuthUser.email == user.email).first()
+        if not db_user or not pwd_context.verify(user.password, db_user.password):
             raise HTTPException(status_code=400, detail="Incorrect email or password")
-        is_valid_password = pwd_context.verify(password, user.password)
-        if not is_valid_password:
-            raise HTTPException(status_code=400, detail="Incorrect email or password")
-        access_token = create_access_token(data={"sub": user.email, "user_id": str(user.id)})
-        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, 
-                            samesite="Lax", max_age=84600)
-        response.set_cookie(key="role", value=user.role, httponly=False, secure=False,samesite="Lax",max_age=84600)
+
+        # ✅ Make sure fullName and role exist
+        print(db_user,"==db_user")
+        if not db_user.fullName or not db_user.role:
+            raise HTTPException(status_code=400, detail="Incomplete user data")
+
+        access_token = create_access_token(data={
+            "sub": db_user.email,
+            "user_id": str(db_user.id),
+            "username": db_user.fullName,
+            "role": db_user.role
+        })
+
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=False,
+            samesite="Lax",
+            max_age=84600
+        )
+        response.set_cookie(
+            key="role",
+            value=db_user.role,
+            httponly=False,
+            secure=False,
+            samesite="Lax",
+            max_age=84600
+        )
 
         return {"access_token": access_token, "token_type": "bearer"}
 
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error {e}")
-    
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+
 @router.get("/me")
-async def getme(request: Request, db: Session = Depends(get_db)):
+async def getme(request: Request,response: Response, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         if not token:
+            response.delete_cookie("access_token")
+            response.delete_cookie("role")
             raise HTTPException(status_code=401, detail="Not authenticated")
 
         payload = decode_access_token(token)
         user_id = payload.get("user_id")
         user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
         if not user:
+            response.delete_cookie("access_token")
+            response.delete_cookie("role")
             raise HTTPException(status_code=400, detail="User not found")
 
         user.last_active = datetime.utcnow()
@@ -101,16 +125,15 @@ async def getme(request: Request, db: Session = Depends(get_db)):
         return {"user": user, "status": 200}
 
     except HTTPException as http_exc:
-        if http_exc.status_code == 401:
-            response = JSONResponse(
-                content={"detail": "Invalid or expired token"},
-                status_code=401
-            )
-            response.delete_cookie("access_token")
-            return response
-        raise http_exc
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_response = JSONResponse(
+            content={"detail": http_exc.detail},
+            status_code=http_exc.status_code
+        )
+        error_response.delete_cookie("access_token")
+        error_response.delete_cookie("role")
+        return error_response
+
+  
 
 @router.post("/forget-password")
 async def forget_password(request: PasswordResetRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):

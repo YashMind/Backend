@@ -7,6 +7,7 @@ from routes.chat.slack import router as slack_router
 from routes.chat.whatsapp import router as whatsapp_router
 from routes.admin.admin import router as admin_router
 from fastapi.staticfiles import StaticFiles
+from routes.activitylog.activitylog import router as activity_log_router
 
 from config import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +46,7 @@ app.include_router(tuning_router, prefix="/api/tuning")
 app.include_router(appearance_router, prefix="/api/appearance")
 app.include_router(admin_router, prefix="/api/admin")
 app.include_router(slack_router, prefix="/api/slack")
+# app.include_router(activity_log_router, prefix="/api/activity")
 app.include_router(whatsapp_router, prefix="/api/whatsapp")
 
 
