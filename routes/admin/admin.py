@@ -7,16 +7,21 @@ from uuid import uuid4
 import json
 from models.authModel.authModel import AuthUser
 from models.adminModel.adminModel import SubscriptionPlans, TokenBots, BotProducts
+from models.adminModel.roles_and_permission import RolePermission
+
 from schemas.authSchema.authSchema import User, UserUpdate
-from schemas.adminSchema.adminSchema import PlansSchema, TokenBotsSchema, BotProductSchema
+from schemas.adminSchema.adminSchema import PlansSchema, TokenBotsSchema, BotProductSchema,RolePermissionInput, RolePermissionResponse
 from sqlalchemy.orm import Session
 from config import get_db
 from typing import Optional, Dict, List
 from sqlalchemy import or_, desc, asc
 import httpx
 from datetime import datetime
+
+
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from models.activityLogModel.activityLogModel import ActivityLog
 
 
 @router.get("/get-all-users")
@@ -523,17 +528,30 @@ async def get_non_admin_users(
 
     
 @router.put("/update-admin-user", response_model=UserUpdate)
-async def update_admin_user(data:UserUpdate, request: Request, db: Session = Depends(get_db)):
+async def update_admin_user(data: UserUpdate, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Missing access token")
+
         payload = decode_access_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
         user_id = int(payload.get("user_id"))
+        username = payload.get("username")
+        role = payload.get("role")
+
+        if not username or not role:
+            raise HTTPException(status_code=401, detail="Incomplete token payload")
+
         if not data.id:
-            raise HTTPException(status_code=404, detail="user id is required")
+            raise HTTPException(status_code=404, detail="User ID is required")
+
         existing_user = db.query(AuthUser).filter(AuthUser.id == data.id).first()
         if not existing_user:
-            raise HTTPException(status_code=404, detail="Plan not found")
-            
+            raise HTTPException(status_code=404, detail="User not found")
+
         if data.password:
             hashed_pw = pwd_context.hash(data.password)
             existing_user.password = hashed_pw
@@ -542,16 +560,28 @@ async def update_admin_user(data:UserUpdate, request: Request, db: Session = Dep
         existing_user.email = data.email
         existing_user.role = data.role
         existing_user.status = data.status
-        existing_user.role_permissions = data.role_permissions
+        # Skipping role_permissions update
 
         db.commit()
         db.refresh(existing_user)
+
+        log_entry = ActivityLog(
+            user_id=user_id,
+            username=username,
+            role=role,
+            action="update_user",
+            log_activity="Updated admin user details."
+        )
+        db.add(log_entry)
+        db.commit()
+
         return existing_user
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.put("/update-client-user", response_model=UserUpdate)
 async def update_client_user(data: UserUpdate, request: Request, db: Session = Depends(get_db)):
@@ -672,3 +702,60 @@ async def get_admin_logs_activity(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
  
+
+@router.post("/assign", response_model=RolePermissionResponse)
+def assign_custom_permissions(data: RolePermissionInput, db: Session = Depends(get_db)):
+    print("Route reached!") 
+    
+    # Check if role exists
+    role_obj = db.query(RolePermission).filter_by(role=data.role).first()
+    
+    if role_obj:
+        # Update permissions if role exists
+        role_obj.permissions = data.permissions
+    else:
+        # Create new role with permissions
+        role_obj = RolePermission(role=data.role, permissions=data.permissions)
+        db.add(role_obj)
+    
+    db.commit()
+    db.refresh(role_obj)
+
+    return {
+        "role": role_obj.role,
+        "permissions": role_obj.permissions
+    }
+@router.get("/get", response_model=RolePermissionResponse)
+def get_role_permissions(role: str, db: Session = Depends(get_db)):
+    role_obj = db.query(RolePermission).filter_by(role=role).first()
+
+    # Predefined system roles that should not throw 404 even if not in DB
+    system_roles = {"Super Admin", "Billing Admin", "Product Admin", "Support Admin"}
+
+    if not role_obj:
+        if role in system_roles:
+            return {
+                "role": role,
+                "permissions": []  # Return empty by default if not found
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Role not found")
+
+    return {
+        "role": role_obj.role,
+        "permissions": role_obj.permissions
+    }
+
+
+# @router.get("/get", response_model=RolePermissionResponse)
+# def get_role_permissions(role: str, db: Session = Depends(get_db)):
+#     role_obj = db.query(RolePermission).filter_by(role=role).first()
+
+#     if not role_obj:
+#         raise HTTPException(status_code=404, detail="Role not found")
+
+#     return {
+#         "role": role_obj.role,
+#         "permissions": role_obj.permissions
+#     }
+
