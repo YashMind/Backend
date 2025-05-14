@@ -3,6 +3,7 @@ import openai
 import langchain
 # from pinecone import Pinecone 
 from langchain.document_loaders import PyPDFDirectoryLoader
+from langchain.document_loaders import RecursiveUrlLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.vectorstores import Pinecone
@@ -16,10 +17,21 @@ from pathlib import Path
 from difflib import SequenceMatcher
 from sqlalchemy import func
 from langchain.chat_models import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain.schema import HumanMessage, SystemMessage, Document
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
-from typing import Optional
+from bs4 import BeautifulSoup
+from langchain.document_loaders import (
+    WebBaseLoader,
+    PyPDFLoader,
+    Docx2txtLoader,
+    TextLoader,
+    CSVLoader,
+    UnstructuredExcelLoader,
+    UnstructuredPowerPointLoader,
+    UnstructuredFileLoader
+)
+from typing import List, Optional
 import string
 import uuid
 import pinecone
@@ -28,6 +40,8 @@ load_dotenv()
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
 pc = pinecone.Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("yashraa-ai")  # Use your index name
+
+
 
 # # Initialize OpenAI Embeddings
 embedding_model = OpenAIEmbeddings(model="text-embedding-3-small", dimensions=1024, openai_api_key=os.getenv("OPENAI_API_KEY"))
@@ -40,6 +54,7 @@ def retrieve_answers(query:str, bot_id:int):
     results = index.query(
         vector=query_vector,
         top_k=5,
+        
         namespace=f"bot_{bot_id}",
         include_metadata=True
     )
@@ -55,104 +70,197 @@ def retrieve_answers(query:str, bot_id:int):
     top_result = best_matches[0]
     score = top_result.get("score", 0)
 
-    if score < 0.60:
+    if score < 0.90:
         return None
     answer = top_result["metadata"].get("content") or top_result["metadata"].get("text") or "No content found."
 
     return answer
 
-# store data for pine coning
-def process_and_store_docs(data, db: Session):
-    documents = []
+def get_loader_for_file(file_path: str):
+    if file_path.endswith('.pdf'):
+        return PyPDFLoader(file_path)
+    elif file_path.endswith('.docx'):
+        return Docx2txtLoader(file_path)
+    elif file_path.endswith('.txt'):
+        return TextLoader(file_path)
+    elif file_path.endswith('.csv'):
+        return CSVLoader(file_path)
+    elif file_path.endswith('.xlsx') or file_path.endswith('.xls'):
+        return UnstructuredExcelLoader(file_path)
+    elif file_path.endswith('.pptx'):
+        return UnstructuredPowerPointLoader(file_path)
+    else:
+        return UnstructuredFileLoader(file_path)
 
-    # 2. Load from uploaded document
-    try:
-        # 1. Load from target link
-        if data.target_link:
-            loader = WebBaseLoader(data.target_link)
-            documents = loader.load()
-        elif data.document_link:
-            url_path = data.document_link.lstrip("/")
-            file_path = os.path.join(url_path)
-            loader = PyPDFLoader(str(file_path))
-            documents = loader.load()
-        else:
-            raise ValueError("Either target_link or document_link must be provided.")
-    except Exception as e:
-        print(f"Error loading PDF: {e}")
-        raise
+def preprocess_documents(docs: List[Document]) -> List[Document]:
+    processed = []
+    for doc in docs:
+        # Clean text
+        text = clean_text(doc.page_content)
+        
+        # Normalize metadata
+        metadata = normalize_metadata(doc.metadata)
+        
+        processed.append(Document(
+            page_content=text,
+            metadata=metadata
+        ))
+    return processed
 
-    if not documents:
-        raise ValueError("No data loaded from link or file")
-    
-    # Create a dense index with integrated embedding
-    index_name = "yashraa-ai"
-    if not pc.has_index(index_name):
-        pc.create_index_for_model(
-            name=index_name,
-            cloud="aws",
-            region="us-east-1",
-            embed={
-                "model":"llama-text-embed-v2",
-                "field_map":{"text": "chunk_text"}
-            }
-        )
+def clean_text(text: str) -> str:
+    # Remove excessive whitespace
+    text = ' '.join(text.split())
+    # Remove non-printable characters
+    text = ''.join(char for char in text if char.isprintable())
+    return text
+
+def normalize_metadata(metadata: dict) -> dict:
+    # Standardize metadata keys
+    standard_meta = {}
+    for k, v in metadata.items():
+        standard_meta[k.lower()] = str(v)
+    return standard_meta
 
 
-    # 3. Split documents into chunks
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    split_docs = splitter.split_documents(documents)
-
-    # 4. Store each chunk as row in DB
-    # 4. Embed and upsert to Pinecone
+def store_documents(docs: List[Document], data, db: Session) -> dict:
+    """Store documents and return processing statistics"""
     pinecone_vectors = []
-    count=0
-    for doc in split_docs:
+    batch_size = 100
+    stats = {
+        'total_chars': 0,
+        'chunks_processed': 0,
+        'failed_chunks': 0
+    }
 
-        text = doc.page_content
-        metadata = {
-            "bot_id": str(data.bot_id),
-            "user_id": str(data.user_id),
-            "source": data.target_link or data.document_link,
-            "content": text
-        }
-
+    for i, doc in enumerate(docs):
         try:
+            text = doc.page_content
+            stats['total_chars'] += len(text)
+            
+            metadata = {
+                "bot_id": str(data.bot_id),
+                "user_id": str(data.user_id),
+                "source": data.target_link or data.document_link,
+                "content": text,
+                "chunk_index": i,
+                **doc.metadata
+            }
+            
             embedding = embedding_model.embed_query(text)
-            vector_id = str(uuid.uuid4())  # unique ID for each chunk
-
-            # Add to Pinecone batch
+            
             pinecone_vectors.append({
-                "id": vector_id,
+                "id": str(uuid.uuid4()),
                 "values": embedding,
                 "metadata": metadata
             })
-
-            # Optionally store in your own DB too
+            
+            if len(pinecone_vectors) >= batch_size or i == len(docs)-1:
+                index.upsert(vectors=pinecone_vectors)
+                pinecone_vectors = []
+            
             db_chunk = ChatBotsDocChunks(
                 bot_id=data.bot_id,
                 user_id=data.user_id,
                 source=metadata["source"],
                 content=text,
-                metaData=str(doc.metadata)
+                metaData=str(metadata),
+                chunk_index=i,
+                char_count=len(text)  # Store char count per chunk
             )
             db.add(db_chunk)
-            count += len(text)
-
+            stats['chunks_processed'] += 1
+            
         except Exception as e:
-            print("Embedding error:", e)
-
-    # Upsert all vectors to Pinecone
-    if pinecone_vectors:
-        try:
-            dense_index = pc.Index(index_name)
-            dense_index.upsert(vectors=pinecone_vectors, namespace="bot_" + str(data.bot_id))
-        except Exception as e:
-            print("e ", e)
-            raise     
+            print(f"Error storing chunk {i}: {e}")
+            stats['failed_chunks'] += 1
+            continue
     
     db.commit()
-    return  count
+    return stats
+
+# store data for pine coning
+def process_and_store_docs(data, db: Session) -> dict:
+    """Process documents and return metadata including character counts"""
+    documents = []
+    stats = {
+        'total_chars': 0,
+        'total_chunks': 0,
+        'sources': set(),
+        'file_types': set()
+    }
+
+    try:
+        print("=== Start: process_and_store_docs ===")
+        print("Received data:", data)
+
+        # Handle web content
+        if data.target_link:
+            print("Target link detected:", data.target_link)
+            if data.train_from == "Full website":
+                print("Training from full website...")
+                loader = RecursiveUrlLoader(
+                    url=data.target_link,
+                    max_depth=1,
+                    extractor=lambda x: BeautifulSoup(x, "html.parser").text
+                )
+                stats['source_type'] = 'website'
+            else:
+                print("Training from single page...")
+                loader = WebBaseLoader(data.target_link)
+                stats['source_type'] = 'single_page'
+            documents = loader.load()
+            print(f"Loaded {len(documents)} documents from web.")
+            stats['sources'].add(data.target_link)
+
+        # Handle file uploads
+        elif data.document_link:
+            print("Document link detected:", data.document_link)
+            file_path = data.document_link.lstrip("/")
+            print("Sanitized file path:", file_path)
+            loader = get_loader_for_file(file_path)
+            documents = loader.load()
+            print(f"Loaded {len(documents)} documents from file.")
+            file_type = os.path.splitext(file_path)[1][1:]  # Get extension without dot
+            stats['file_types'].add(file_type)
+            stats['source_type'] = 'file'
+            stats['sources'].add(file_path)
+
+        if not documents:
+            raise ValueError("No data loaded from link or file")
+
+        # Pre-process documents (clean, normalize)
+        print("Preprocessing documents...")
+        cleaned_docs = preprocess_documents(documents)
+        print(f"Preprocessed into {len(cleaned_docs)} documents.")
+
+        # Chunking with overlap
+        print("Splitting documents into chunks...")
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            length_function=len,
+            is_separator_regex=False
+        )
+        split_docs = splitter.split_documents(cleaned_docs)
+        print(f"Generated {len(split_docs)} chunks.")
+        stats['total_chunks'] = len(split_docs)
+
+        # Store in vector DB and SQL while counting characters
+        print("Storing documents...")
+        store_results = store_documents(split_docs, data, db)
+        stats['total_chars'] = store_results['total_chars']
+        print("Total characters stored:", stats['total_chars'])
+
+        # Convert sets to lists for JSON serialization
+        stats['sources'] = list(stats['sources'])
+        stats['file_types'] = list(stats['file_types'])
+
+        print("=== End: process_and_store_docs ===")
+        return stats['total_chars']
+
+    except Exception as e:
+        print(f"Error processing documents: {e}")
+        raise
 
 def get_response_from_faqs(user_msg: str, bot_id: int, db: Session):
     try:

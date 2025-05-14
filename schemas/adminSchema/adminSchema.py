@@ -24,8 +24,6 @@ class BotProductSchema(BaseModel):
     product_name: Optional[str] = None
     active: Optional[bool] = None
 
-
-
 class RolePermissionInput(BaseModel):
     role: str
     permissions: List[str]
@@ -33,3 +31,8 @@ class RolePermissionInput(BaseModel):
 class RolePermissionResponse(BaseModel):
     role: str
     permissions: List[str]
+class PaymentGatewaySchema(BaseModel):
+    id: Optional[int] = None
+    payment_name: Optional[str] = None
+    status: Optional[str] = None
+    api_key: Optional[str] = None
