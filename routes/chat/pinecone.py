@@ -14,6 +14,7 @@ from langchain import OpenAI
 from sqlalchemy.orm import Session
 from langchain.document_loaders import WebBaseLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBotsDocChunks, ChatBotsFaqs
 from pathlib import Path
 from difflib import SequenceMatcher
@@ -164,7 +165,7 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 continue
             
             # Check DB for existing hash
-            if db.query(ChatBotsDocChunks.id).filter_by(content_hash=content_hash).first():
+            if db.query(ChatBotsDocChunks).filter_by(content_hash=content_hash).first():
                 continue
             metadata = {
                 "bot_id": str(data.bot_id),
@@ -230,7 +231,7 @@ def process_and_store_docs(data, db: Session) -> dict:
                 print("Training from full website...")
                 loader = RecursiveUrlLoader(
                     url=data.target_link,
-                    max_depth=1,
+                    max_depth=2,
                     extractor=lambda x: BeautifulSoup(x, "html.parser").text
                 )
                 stats['source_type'] = 'website'

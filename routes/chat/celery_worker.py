@@ -1,12 +1,14 @@
 from celery import Celery
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from models.chatModel.chatModel import ChatBotsDocLinks
 from routes.chat.pinecone import process_and_store_docs
+from config import SessionLocal
 
 celery = Celery(__name__, broker='redis://localhost:6379/0')
-engine = create_engine("mysql+pymysql://user:pass@db_host/db_name")
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+i = celery.control.inspect()
+active_tasks = i.active()
+print(active_tasks)
+
 
 @celery.task
 def process_document_task(doc_id: int):
