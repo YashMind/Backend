@@ -3,6 +3,10 @@ from typing import Optional
 from datetime import timedelta, datetime
 from typing import List
 
+class PostEmail(BaseModel):
+    title: str
+    description: str
+    recipients: List[EmailStr] 
 
 class PlansSchema(BaseModel):
     id: Optional[int] = None

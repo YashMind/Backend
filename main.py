@@ -8,7 +8,8 @@ from routes.chat.whatsapp import router as whatsapp_router
 from routes.admin.admin import router as admin_router
 from fastapi.staticfiles import StaticFiles
 from routes.activitylog.activitylog import router as activity_log_router
-
+from routes.admin.announcement import router as announcement_router
+from routes.admin.notice import router as notice_router
 from config import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -48,6 +49,8 @@ app.include_router(admin_router, prefix="/api/admin")
 app.include_router(slack_router, prefix="/api/slack")
 app.include_router(activity_log_router, prefix="/api/activity")
 app.include_router(whatsapp_router, prefix="/api/whatsapp")
+app.include_router(announcement_router, prefix="/api/admin")
+app.include_router(notice_router, prefix="/api/admin")
 
 
 if __name__ == "__main__":

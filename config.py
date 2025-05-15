@@ -13,6 +13,11 @@ class Settings:
     DB_NAME = os.getenv("DB_NAME")
     DB_HOST = os.getenv("DB_HOSTNAME")
     DB_PORT = os.getenv("DB_PORT", "3306")
+    EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
+    EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+    # SMTP2GO_USERNAME = os.getenv("SMTP2GO_USERNAME")
+    # SMTP2GO_PASSWORD = os.getenv("SMTP2GO_PASSWORD")
+    # EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
 
     # MySQL connection string
     SQLALCHEMY_DATABASE_URL = (

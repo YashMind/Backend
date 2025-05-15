@@ -33,7 +33,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
         hashed_password = pwd_context.hash(user.password)
         existing_user = db.query(AuthUser).filter(AuthUser.email == email).first()
         if existing_user:
-            raise HTTPException(status_code=400, detail="email already registered")
+            raise HTTPException(status_code=400, detail="ERR_ALREADY_EXIST")
 
         new_user = AuthUser(
             fullName=fullName,
