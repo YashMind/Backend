@@ -65,7 +65,9 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
             raise HTTPException(status_code=400, detail="Incorrect email or password")
 
         # ✅ Make sure fullName and role exist
-        print(db_user,"==db_user")
+        print("Raw password from request:", user.password)
+        print("Stored hash from DB:", db_user.password)
+        print("Password match:", pwd_context.verify(user.password, db_user.password))
         if not db_user.fullName or not db_user.role:
             raise HTTPException(status_code=400, detail="Incomplete user data")
 

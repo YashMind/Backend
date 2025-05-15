@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form, Query,Body
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from utils.utils import decode_access_token, get_current_user
@@ -8,6 +8,7 @@ import json
 from models.authModel.authModel import AuthUser
 from models.adminModel.adminModel import SubscriptionPlans, TokenBots, BotProducts
 from models.adminModel.roles_and_permission import RolePermission
+from sqlalchemy.exc import SQLAlchemyError
 
 from schemas.authSchema.authSchema import User, UserUpdate
 from schemas.adminSchema.adminSchema import PostEmail, PaymentGatewaySchema, PlansSchema, TokenBotsSchema, BotProductSchema,RolePermissionInput, RolePermissionResponse
@@ -240,55 +241,62 @@ async def create_subscription_plans(data:PlansSchema, request: Request, db: Sess
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/subscription-plans/{plan_id}/status")
+async def update_plan_status(
+    plan_id: int,
+    is_active: bool = Body(..., embed=True),
+    db: Session = Depends(get_db)
+):
+    plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Subscription plan not found.")
+
+    plan.is_active = is_active
+    db.commit()
+    db.refresh(plan)
+
+    return {
+        "success": True,
+        "message": f"Subscription plan {'activated' if is_active else 'deactivated'} successfully.",
+        "data": {"id": plan.id, "is_active": plan.is_active}
+    }        
     
-@router.get("/get-all-subscription-plans")
+@router.get("/subscription-plans")
 async def get_all_subscription_plans(
     request: Request,
-    db: Session = Depends(get_db),
-    search: Optional[str] = Query(None, description="Search by document_link or target_link"),
-    sort_by: str = Query("created_at", description="Field to sort by"),
-    sort_order: str = Query("desc", description="Sort order: asc or desc"),
-    page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    db: Session = Depends(get_db)
 ):
     try:
-        token = request.cookies.get("access_token")
-        payload = decode_access_token(token)
-        user_id = int(payload.get("user_id"))
+        plans = db.query(SubscriptionPlans).all()
 
-        query = db.query(SubscriptionPlans).filter()
-
-        # Apply search
-        if search:
-            query = query.filter(
-                or_(
-                    SubscriptionPlans.name.ilike(f"%{search}%"),
-                    SubscriptionPlans.features.ilike(f"%{search}%"),
-                )
-            )
-
-        # Sorting
-        sort_column = getattr(SubscriptionPlans, sort_by, SubscriptionPlans.created_at)
-        sort_column = desc(sort_column) if sort_order == "desc" else asc(sort_column)
-        query = query.order_by(sort_column)
-
-        # Pagination
-        total_count = query.count()
-        total_pages = (total_count + limit - 1) // limit
-        results = query.offset((page - 1) * limit).limit(limit).all()
-
+        # Format plans with relevant fields
+        formatted_plans = [
+            {
+                "id": plan.id,
+                "name": plan.name,
+                "pricing": plan.pricing,
+                "token_limits": plan.token_limits,
+                "features": plan.features,
+                "users_active": plan.users_active,
+                "is_active": plan.is_active,  # ✅ Include activation status
+                "created_at": plan.created_at,
+                "updated_at": plan.updated_at,
+            }
+            for plan in plans
+        ]
 
         return {
-            "current_page": page,
-            "total_pages": total_pages,
-            "total_count": total_count,
-            "data": results
+            "success": True,
+            "message": "Subscription plans fetched successfully.",
+            "data": formatted_plans
         }
-
-    except HTTPException as http_exc:
-        raise http_exc
+    except SQLAlchemyError as db_err:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(db_err)}")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Something went wrong: {str(e)}")
     
 @router.delete("/delete-subscription-plan/{plan_id}")
 async def delete_subscription_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
