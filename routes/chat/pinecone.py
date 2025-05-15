@@ -1,4 +1,6 @@
+from hashlib import sha256
 import os
+import re
 import openai
 import langchain
 # from pinecone import Pinecone 
@@ -76,6 +78,32 @@ def retrieve_answers(query:str, bot_id:int):
 
     return answer
 
+
+############################################
+# training 
+############################################
+def clean_text(text: str) -> str:
+    # Remove HTML/XML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Remove special characters
+    text = re.sub(r'[^\w\s-]', '', text)
+    # Remove redundant whitespace
+    text = ' '.join(text.split())
+    # Remove boilerplate phrases
+    boilerplate = ["cookie policy", "privacy policy", "terms of use"]
+    for phrase in boilerplate:
+        text = text.replace(phrase, '')
+    return text.strip()
+
+def split_documents(docs: List[Document]) -> List[Document]:
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1500,
+        chunk_overlap=250,
+        separators=["\n\n##", "\n\n", "\n", ". "],
+        length_function=len
+    )
+    return splitter.split_documents(docs)
+
 def get_loader_for_file(file_path: str):
     if file_path.endswith('.pdf'):
         return PyPDFLoader(file_path)
@@ -107,13 +135,6 @@ def preprocess_documents(docs: List[Document]) -> List[Document]:
         ))
     return processed
 
-def clean_text(text: str) -> str:
-    # Remove excessive whitespace
-    text = ' '.join(text.split())
-    # Remove non-printable characters
-    text = ''.join(char for char in text if char.isprintable())
-    return text
-
 def normalize_metadata(metadata: dict) -> dict:
     # Standardize metadata keys
     standard_meta = {}
@@ -121,11 +142,12 @@ def normalize_metadata(metadata: dict) -> dict:
         standard_meta[k.lower()] = str(v)
     return standard_meta
 
-
 def store_documents(docs: List[Document], data, db: Session) -> dict:
     """Store documents and return processing statistics"""
+    
+    existing_hashes = set()
+    batch_size = 200
     pinecone_vectors = []
-    batch_size = 100
     stats = {
         'total_chars': 0,
         'chunks_processed': 0,
@@ -136,7 +158,14 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
         try:
             text = doc.page_content
             stats['total_chars'] += len(text)
+            content_hash = sha256(text.encode()).hexdigest()
             
+            if content_hash in existing_hashes:
+                continue
+            
+            # Check DB for existing hash
+            if db.query(ChatBotsDocChunks.id).filter_by(content_hash=content_hash).first():
+                continue
             metadata = {
                 "bot_id": str(data.bot_id),
                 "user_id": str(data.user_id),
@@ -153,6 +182,7 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 "values": embedding,
                 "metadata": metadata
             })
+            existing_hashes.add(content_hash)
             
             if len(pinecone_vectors) >= batch_size or i == len(docs)-1:
                 index.upsert(vectors=pinecone_vectors)
@@ -235,13 +265,7 @@ def process_and_store_docs(data, db: Session) -> dict:
 
         # Chunking with overlap
         print("Splitting documents into chunks...")
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len,
-            is_separator_regex=False
-        )
-        split_docs = splitter.split_documents(cleaned_docs)
+        split_docs = split_documents(cleaned_docs)
         print(f"Generated {len(split_docs)} chunks.")
         stats['total_chunks'] = len(split_docs)
 
@@ -261,6 +285,12 @@ def process_and_store_docs(data, db: Session) -> dict:
     except Exception as e:
         print(f"Error processing documents: {e}")
         raise
+
+
+############################################
+# training 
+############################################
+
 
 def get_response_from_faqs(user_msg: str, bot_id: int, db: Session):
     try:

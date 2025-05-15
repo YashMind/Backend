@@ -1,26 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form,  UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query
 from fastapi.responses import JSONResponse
-from passlib.context import CryptContext
-from utils.utils import create_access_token, decode_access_token, get_current_user
-from jose import JWTError, jwt
+from utils.utils import decode_access_token, get_current_user
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
 from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks, ChatBotLeadsModel, ChatTotalToken
-from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens, ChatTotalTokenCreate
+from schemas.chatSchema.chatSchema import ChatMessageRead, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens, ChatTotalTokenCreate
 from models.chatModel.appearance import ChatSettings
 from models.chatModel.tuning import DBInstructionPrompt
-from schemas.authSchema.authSchema import User
 from sqlalchemy.orm import Session
 from config import get_db
-from typing import Optional, Dict, List
+from typing import Optional, List
 from collections import defaultdict
 import os
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
-from utils.utils import get_country_from_ip
-from routes.chat.pinecone import process_and_store_docs, get_docs_tuned_like_response, get_response_from_faqs
-from sqlalchemy import func, distinct, and_
+from routes.chat.pinecone import process_and_store_docs, get_response_from_faqs
+from sqlalchemy import func, and_
+from routes.chat.celery_worker import process_document_task
 import secrets
 import string
 from datetime import datetime
@@ -531,7 +528,6 @@ async def create_chatbot(data:CreateBotDocLinks, request: Request, db: Session =
         user_id = int(payload.get("user_id"))
         new_chatbot_doc_links = data
         new_chatbot_doc_links.user_id = user_id
-        chars_count =  process_and_store_docs(data=new_chatbot_doc_links, db=db)
         new_doc = ChatBotsDocLinks(
             user_id=user_id,
             bot_id=int(data.bot_id),
@@ -540,14 +536,14 @@ async def create_chatbot(data:CreateBotDocLinks, request: Request, db: Session =
             target_link=data.target_link,
             document_link=data.document_link,
             public= data.public,
-            status=data.status or "Indexed",
-            chars=chars_count
-
+            status="pending",
+            chars=0
         )
         db.add(new_doc)
         db.commit()
-        db.refresh(new_doc)
-
+        
+        process_document_task.delay(new_doc.id)
+        
         return new_doc
     
     except HTTPException as http_exc:
@@ -555,6 +551,16 @@ async def create_chatbot(data:CreateBotDocLinks, request: Request, db: Session =
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+# Check doc status
+@router.get("/document-status/{doc_id}")
+async def get_document_status(doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(ChatBotsDocLinks).get(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"status": doc.status}
+    
+    
+
 @router.get("/get-bot-doc-links/{bot_id}")
 async def get_bot_doc_links(
     bot_id: int,
