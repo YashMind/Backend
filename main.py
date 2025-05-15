@@ -46,7 +46,7 @@ app.include_router(tuning_router, prefix="/api/tuning")
 app.include_router(appearance_router, prefix="/api/appearance")
 app.include_router(admin_router, prefix="/api/admin")
 app.include_router(slack_router, prefix="/api/slack")
-# app.include_router(activity_log_router, prefix="/api/activity")
+app.include_router(activity_log_router, prefix="/api/activity")
 app.include_router(whatsapp_router, prefix="/api/whatsapp")
 
 
