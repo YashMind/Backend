@@ -186,35 +186,99 @@ async def logout(response: Response):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred during logout") from e
 
 @router.put("/update-profile")
-def update_profile(updateUser: UserUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+async def update_profile(
+    updateUser: UserUpdate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     try:
+        # Get the user from database
         user = db.query(AuthUser).filter(AuthUser.id == current_user.id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        if updateUser.fullName:
-            user.fullName = updateUser.fullName
+        # Define editable fields and their validation rules
+        editable_fields = {
+            "fullName": {"type": str, "max_length": 100},
+            "isMFA": {"type": bool},
+            "tokenUsed": {"type": int},
+            "picture": {"type": str}  # Assuming this is a URL after upload
+        }
 
+        # Track changes for audit logging
+        changes = {}
+
+        # Process each editable field
+        for field, rules in editable_fields.items():
+            if field in updateUser.dict() and updateUser.dict()[field] is not None:
+                # Validate field type
+                if not isinstance(updateUser.dict()[field], rules["type"]):
+                    try:
+                        # Attempt type conversion if possible
+                        updateUser.dict()[field] = rules["type"](updateUser.dict()[field])
+                    except (ValueError, TypeError):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid type for {field}. Expected {rules['type'].__name__}"
+                        )
+
+                # Additional validation based on field rules
+                if rules.get("max_length") and len(str(updateUser.dict()[field])) > rules["max_length"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"{field} exceeds maximum length of {rules['max_length']}"
+                    )
+
+                # Only update if the value actually changed
+                if getattr(user, field) != updateUser.dict()[field]:
+                    changes[field] = {
+                        "old": getattr(user, field),
+                        "new": updateUser.dict()[field]
+                    }
+                    setattr(user, field, updateUser.dict()[field])
+
+        # Special handling for password changes
         if updateUser.password:
+            if len(updateUser.password) < 8:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Password must be at least 8 characters long"
+                )
             hashed_pw = pwd_context.hash(updateUser.password)
+            changes["password"] = {"changed": True}  # Don't log actual passwords
             user.password = hashed_pw
 
+        # If no changes were made
+        if not changes and not updateUser.password:
+            raise HTTPException(
+                status_code=304,
+                detail="No changes detected"
+            )
+
+        # Commit changes to database
         db.commit()
         db.refresh(user)
 
+        # Log the changes (you'd implement your own logging system)
+        # log_profile_update(current_user.id, changes)
+
         return {
+            "status": "success",
             "message": "Profile updated successfully",
-            "user": {
-                "id": user.id,
-                "fullName": user.fullName,
-                "email": user.email,
-            },
+            "updated_fields": list(changes.keys())
         }
-    except HTTPException as http_exc:
-        raise http_exc
+
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        db.rollback()
+        print(f"Error updating profile: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while updating the profile"
+        )
+
+
 
 # google login
 @router.post("/google-login")

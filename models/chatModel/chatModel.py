@@ -78,6 +78,7 @@ class ChatBotsDocLinks(Base):
     text_content = Column(Text, nullable=True)
     status = Column(String(255), nullable=False)
     chars =  Column(Integer, nullable=True)
+    content_hash = Column(String(64), index=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 
@@ -91,6 +92,8 @@ class ChatBotsDocChunks(Base):
     content = Column(Text)  # chunked text
     chunk_index = Column(Integer)
     metaData = Column(Text)  # JSON string, optionally
+    content_hash= Column(String(64))
+    char_count = Column(Integer)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 
