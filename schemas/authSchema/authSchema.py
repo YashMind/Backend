@@ -14,8 +14,8 @@ class User(BaseModel):
     tokenUsed: Optional[int] = None
     last_active: Optional[datetime] = None
     role_permissions: Optional[List[str]] = None
-    base_rate_per_token: condecimal(max_digits=10, decimal_places=6)
-
+    base_rate_per_token: Optional[float] = None
+    
 class SignInUser(BaseModel):
     email: EmailStr
     password: str

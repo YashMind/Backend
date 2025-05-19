@@ -163,7 +163,6 @@ async def update_chatbot(data:User, db: Session = Depends(get_db),current_user: 
 
         if data.status:
             user.status = data.status
-
         if data.tokenUsed==0:
             user.tokenUsed = int(data.tokenUsed)
 

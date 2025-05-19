@@ -67,20 +67,26 @@ def seed_products(db: Session):
             db.add(Product(**product))
 
 def seed_tools(db: Session):
+    # Define only the tools you want to keep
     default_tools = [
-        {"name": "Chatbot", "status": "active"},
-        {"name": "LLM", "status": "active"},
-        {"name": "Voice Agent", "status": "active"},
-        {"name": "Crawler", "status": "deactive"},
-        {"name": "Analytics", "status": "active"},
+        {"name": "ChatGpt", "status": "active"},
+        {"name": "Gemini", "status": "active"},
     ]
 
+    # Keep track of tool names you want to preserve
+    tool_names_to_keep = [tool["name"] for tool in default_tools]
+
+    # Delete tools not in the current list
+    db.query(ToolsUsed).filter(~ToolsUsed.name.in_(tool_names_to_keep)).delete(synchronize_session=False)
+
+    # Upsert logic for current tools
     for tool in default_tools:
         existing = db.query(ToolsUsed).filter_by(name=tool["name"]).first()
         if existing:
             existing.status = tool["status"]
         else:
             db.add(ToolsUsed(**tool))
+
 
 
 def seed_volume_discounts(db: Session):

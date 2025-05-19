@@ -28,6 +28,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
         role = user.role
         status = user.status if user.status else None
         role_permissions = user.role_permissions if user.role_permissions else None
+        base_rate_per_token=user.base_rate_per_token  if user.base_rate_per_token else None
         if not fullName or not email or not password:
             raise HTTPException(status_code=400, detail="email and password are required")
         hashed_password = pwd_context.hash(user.password)
@@ -41,7 +42,8 @@ async def signup(user: User, db: Session = Depends(get_db)):
             password=hashed_password,
             role=role,
             status=status,
-            role_permissions=role_permissions
+            role_permissions=role_permissions,
+            base_rate_per_token=base_rate_per_token
         )
         db.add(new_user)
         db.commit()
@@ -61,13 +63,13 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
             raise HTTPException(status_code=400, detail="Email and password are required")
 
         db_user = db.query(AuthUser).filter(AuthUser.email == user.email).first()
-        if not db_user or not pwd_context.verify(user.password, db_user.password):
-            raise HTTPException(status_code=400, detail="Incorrect email or password")
 
-        # ✅ Make sure fullName and role exist
-        print("Raw password from request:", user.password)
-        print("Stored hash from DB:", db_user.password)
-        print("Password match:", pwd_context.verify(user.password, db_user.password))
+        if not db_user:
+            raise HTTPException(status_code=400, detail="Email is incorrect")
+
+        if not pwd_context.verify(user.password, db_user.password):
+            raise HTTPException(status_code=400, detail="Password is incorrect")
+
         if not db_user.fullName or not db_user.role:
             raise HTTPException(status_code=400, detail="Incomplete user data")
 
@@ -101,6 +103,7 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+
 
 @router.get("/me")
 async def getme(request: Request,response: Response, db: Session = Depends(get_db)):
