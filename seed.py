@@ -3,7 +3,7 @@ from config import SessionLocal
 from models.adminModel.adminModel import SubscriptionPlans
 from models.adminModel.productModel import Product 
 from models.adminModel.toolsModal import ToolsUsed 
-
+from models.adminModel.volumnDiscountModel import VolumeDiscount
 def seed_subscription_plans(db: Session):
     default_plans = [
         {
@@ -82,11 +82,28 @@ def seed_tools(db: Session):
         else:
             db.add(ToolsUsed(**tool))
 
+
+def seed_volume_discounts(db: Session):
+    default_discounts = [
+        {"min_tokens": 0,       "discount_percent": 0.0},
+        {"min_tokens": 1_000_000, "discount_percent": 5.0},
+        {"min_tokens": 5_000_000, "discount_percent": 10.0},
+    ]
+
+    for discount in default_discounts:
+        existing = db.query(VolumeDiscount).filter_by(min_tokens=discount["min_tokens"]).first()
+        if existing:
+            existing.discount_percent = discount["discount_percent"]
+        else:
+            db.add(VolumeDiscount(**discount))
+
+
 def main():
     db: Session = SessionLocal()
     seed_subscription_plans(db)
     seed_products(db)
     seed_tools(db)
+    seed_volume_discounts(db)
     db.commit()
     db.close()
     print("✅ All seeds applied successfully.")

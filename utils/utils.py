@@ -5,7 +5,7 @@ from jose import JWTError, jwt
 from typing import Optional
 from sqlalchemy.orm import Session
 from config import get_db
-from routes.chat.pinecone import process_and_store_docs, get_docs_tuned_like_response, get_response_from_faqs
+from routes.chat.pinecone import get_response_from_faqs
 from models.authModel.authModel import AuthUser
 from langchain.chat_models import ChatOpenAI
 from models.chatModel.chatModel import ChatSession, ChatMessage
@@ -84,8 +84,6 @@ def get_response_from_chatbot(data, platform, db: Session):
     except Exception as e:
         print("Unhandled Exception:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
-
-    
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     try:

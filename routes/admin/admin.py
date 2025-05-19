@@ -47,6 +47,7 @@ import smtplib
 #             print(f"Failed to send email to {email}: {e}")
 
 router = APIRouter()
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 from models.activityLogModel.activityLogModel import ActivityLog
 from send_email import send_email
@@ -74,6 +75,28 @@ def send_post_to_users(payload: PostEmail, background_tasks: BackgroundTasks):
     except Exception as e:
         print(f"Error occurred while queuing email task: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while sending emails.")
+
+
+@router.put("/users/{user_id}/base-rate")
+async def update_base_rate(user_id: int, data: User, db: Session = Depends(get_db)):
+    user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.base_rate_per_token = data.base_rate_per_token
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "success": True,
+        "message": "Base rate updated successfully.",
+        "data": {
+            "id": user.id,
+            "email": user.email,
+            "base_rate_per_token": str(user.base_rate_per_token)
+        }
+    }
 
 
 @router.get("/get-all-users")

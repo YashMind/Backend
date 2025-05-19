@@ -1,32 +1,27 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form,  UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query
 from fastapi.responses import JSONResponse
-from passlib.context import CryptContext
-from utils.utils import create_access_token, decode_access_token, get_current_user
-from jose import JWTError, jwt
+from utils.utils import decode_access_token, get_current_user
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
 from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks, ChatBotLeadsModel, ChatTotalToken
-from schemas.chatSchema.chatSchema import ChatMessageBase, ChatMessageRead, ChatSessionCreate, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens, ChatTotalTokenCreate
+from schemas.chatSchema.chatSchema import ChatMessageRead, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens, ChatTotalTokenCreate
 from models.chatModel.appearance import ChatSettings
 from models.chatModel.tuning import DBInstructionPrompt
-from schemas.authSchema.authSchema import User
 from sqlalchemy.orm import Session
 from config import get_db
-from typing import Optional, Dict, List
+from typing import Optional, List
 from collections import defaultdict
 import os
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
-from utils.utils import get_country_from_ip
-from routes.chat.pinecone import process_and_store_docs, get_docs_tuned_like_response, get_response_from_faqs
-from sqlalchemy import func, distinct, and_
+from routes.chat.pinecone import  get_response_from_faqs, hybrid_retrieval, generate_response, delete_documents_from_pinecone
+from sqlalchemy import func, and_
+from routes.chat.celery_worker import process_document_task
 import secrets
 import string
 from datetime import datetime
 
-
-from routes.chat.pinecone import retrieve_answers
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
 router = APIRouter()
@@ -263,31 +258,57 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
 
         # Verify chat belongs to user
         chat = db.query(ChatSession).filter_by(id=chat_id).first()
-        if not chat:
+        if not chat:    
             raise HTTPException(status_code=404, detail="Chat not found")
         
 
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
-        # fallback to Pinecone if no FAQ match found
-        final_answer = response_from_faqs.answer if response_from_faqs else retrieve_answers(user_msg, bot_id)
+        # # fallback to Pinecone if no FAQ match found
+        # final_answer = response_from_faqs.answer if response_from_faqs else retrieve_answers(user_msg, bot_id)
 
-        # Set response_content
-        if final_answer:
-            response_content = final_answer
-        else:
-            # Get message history from DB
-            messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
-            langchain_messages = [
-                HumanMessage(content=m.message) if m.sender == 'user' else AIMessage(content=m.message)
-                for m in messages
-            ]
-            langchain_messages.append(HumanMessage(content=user_msg))
-            response = llm.invoke(langchain_messages)
-            response_content = response.content if response and response.content else "No response"
+        # # Set response_content
+        # if final_answer:
+        #     print("################# Got message from FAQ AND PINCONE ##################")
+        #     response_content = final_answer
+        # else:
+        #     print("################# Sending message request to open ai ##################")
+        #     # Get message history from DB
+        #     messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
+        #     langchain_messages = [
+        #         HumanMessage(content=m.message) if m.sender == 'user' else AIMessage(content=m.message)
+        #         for m in messages
+        #     ]
+        #     langchain_messages.append(HumanMessage(content=user_msg))
+        #     response = llm.invoke(langchain_messages)
+        #     response_content = response.content if response and response.content else "No response"
+        
+        response_content= response_from_faqs.answer if response_from_faqs else None
+        
+        
+        if not response_content:
+            print("No response found from FAQ")
+            # Hybrid retrieval
+            context_texts, scores = hybrid_retrieval(user_msg, bot_id)
+            
+            
+            print("Hybrid retrieval results: ", context_texts, scores)
+            # Determine answer source
+            if any(score > 0.65 for score in scores):
+                    print("using openai with context")
+                    use_openai = True
+                    answer = generate_response(user_msg, context_texts[:1], use_openai)
+                
+            else:
+                print("no direct scores from hybrid retrieval and using openai independently")
+                # Full OpenAI fallback
+                use_openai = True
+                answer = generate_response(user_msg, [], use_openai)
+                
+            response_content= answer    
 
         # ✅ Always compute tokens after final response is ready
         input_tokens = len(user_msg.strip().split())
-        output_tokens = len(response_content.strip().split())
+        output_tokens = len(response_content.strip().split() if response_content else "No response found")
 
         # Save user and bot messages
         user_message = ChatMessage(user_id=user_id, bot_id=bot_id, chat_id=chat_id, sender="user", message=user_msg)
@@ -421,7 +442,6 @@ async def delete_chat(bot_id: int, request_data: DeleteChatsRequest, request: Re
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.delete("/chats")
 async def delete_all_chats(request: Request, db: Session = Depends(get_db)):
     try:
@@ -522,16 +542,15 @@ async def delete_all_faqs(bot_id: int, request: Request, db: Session = Depends(g
         print("Delete all FAQs error:", e)
         raise HTTPException(status_code=500, detail=str(e))
     
-# create new chatbot
+# create new chatbot doc
 @router.post("/create-bot-doc-links", response_model=CreateBotDocLinks)
-async def create_chatbot(data:CreateBotDocLinks, request: Request, db: Session = Depends(get_db)):
+async def create_chatbot_docs(data:CreateBotDocLinks, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         new_chatbot_doc_links = data
         new_chatbot_doc_links.user_id = user_id
-        chars_count =  process_and_store_docs(data=new_chatbot_doc_links, db=db)
         new_doc = ChatBotsDocLinks(
             user_id=user_id,
             bot_id=int(data.bot_id),
@@ -540,14 +559,14 @@ async def create_chatbot(data:CreateBotDocLinks, request: Request, db: Session =
             target_link=data.target_link,
             document_link=data.document_link,
             public= data.public,
-            status=data.status or "Indexed",
-            chars=chars_count
-
+            status="pending",
+            chars=0
         )
         db.add(new_doc)
         db.commit()
-        db.refresh(new_doc)
-
+        
+        process_document_task.delay(new_doc.id)
+        
         return new_doc
     
     except HTTPException as http_exc:
@@ -555,6 +574,15 @@ async def create_chatbot(data:CreateBotDocLinks, request: Request, db: Session =
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+# Check doc status
+@router.get("/document-status/{doc_id}")
+async def get_document_status(doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(ChatBotsDocLinks).get(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"status": doc.status}
+    
+
 @router.get("/get-bot-doc-links/{bot_id}")
 async def get_bot_doc_links(
     bot_id: int,
@@ -656,22 +684,55 @@ async def get_bot_doc_links(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+
+
+
 @router.delete("/delete-doc-links/{bot_id}")
-async def delete_doc_links(bot_id: int, request_data: DeleteDocLinksRequest, request: Request, db: Session = Depends(get_db)):
+async def delete_doc_links(
+    bot_id: int, 
+    request_data: DeleteDocLinksRequest, 
+    request: Request, 
+    db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         
-        for doc_id in request_data.doc_ids:
-            doc = db.query(ChatBotsDocLinks).filter_by(id=doc_id, user_id=user_id, bot_id=bot_id).first()
-            if doc:
-                db.delete(doc)
+        # First get all document links that will be deleted
+        docs_to_delete = db.query(ChatBotsDocLinks).filter(
+            ChatBotsDocLinks.id.in_(request_data.doc_ids),
+            ChatBotsDocLinks.user_id == user_id,
+            ChatBotsDocLinks.bot_id == bot_id
+        ).all()
+        
+        if not docs_to_delete:
+            return {"message": "No documents found to delete"}
+        
+        # Get the source links for Pinecone deletion
+        doc_links = [doc.target_link or doc.document_link for doc in docs_to_delete]
+        
+        # Delete from Pinecone first
+        deletion_stats = delete_documents_from_pinecone(bot_id, doc_links, db)
+        
+        # Then delete from database
+        db.query(ChatBotsDocLinks).filter(
+            ChatBotsDocLinks.id.in_(request_data.doc_ids),
+            ChatBotsDocLinks.user_id == user_id,
+            ChatBotsDocLinks.bot_id == bot_id
+        ).delete(synchronize_session=False)
+        
         db.commit()
-        return {"message": "Chat deleted successfully"}
+        
+        return {
+            "message": "Documents deleted successfully",
+            "pinecone_deletion_stats": deletion_stats
+        }
+        
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/chats-delete-token/{token}")

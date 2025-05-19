@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr,condecimal
 from typing import Optional, List
 from datetime import timedelta, datetime
 
@@ -14,6 +14,7 @@ class User(BaseModel):
     tokenUsed: Optional[int] = None
     last_active: Optional[datetime] = None
     role_permissions: Optional[List[str]] = None
+    base_rate_per_token: condecimal(max_digits=10, decimal_places=6)
 
 class SignInUser(BaseModel):
     email: EmailStr
@@ -32,6 +33,8 @@ class UserUpdate(BaseModel):
     fullName: Optional[str] = None
     password: Optional[str] = None
     isRestricted: Optional[bool] = False
+    picture: Optional[str] = None
+    tokenUsed: Optional[int] = None
     email: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
