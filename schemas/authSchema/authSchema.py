@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import timedelta, datetime
+
 class User(BaseModel):
     id: Optional[int] = None
     fullName: Optional[str] = None

@@ -11,6 +11,7 @@ from routes.activitylog.activitylog import router as activity_log_router
 from routes.admin.announcement import router as announcement_router
 from routes.admin.notice import router as notice_router
 from routes.admin.product import router as product_router
+from routes.admin.tools import router as tool_router
 from config import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -53,6 +54,7 @@ app.include_router(whatsapp_router, prefix="/api/whatsapp")
 app.include_router(announcement_router, prefix="/api/admin")
 app.include_router(notice_router, prefix="/api/admin")
 app.include_router(product_router, prefix="/api/admin")
+app.include_router(tool_router, prefix="/api/admin")
 
 
 if __name__ == "__main__":
