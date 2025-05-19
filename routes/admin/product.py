@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException,Depends,Body
 from sqlalchemy.orm import Session
 from config import get_db
 from sqlalchemy.exc import SQLAlchemyError
-from models.adminModel.productModel import Product ,ProductStatusUpdate
+from models.adminModel.productModel import Product,ProductStatusUpdate
 from pydantic import BaseModel
 
 router = APIRouter()

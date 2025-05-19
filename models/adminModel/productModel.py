@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String
 from config import Base  
+from pydantic import BaseModel
 
 class Product(Base):
     __tablename__ = "products"
@@ -7,6 +8,6 @@ class Product(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False)
     status = Column(String(50), default="active")
-    
+
 class ProductStatusUpdate(BaseModel):
     status: str

@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from config import SessionLocal
 from models.adminModel.adminModel import SubscriptionPlans
 from models.adminModel.productModel import Product 
+from models.adminModel.toolsModal import ToolsUsed 
 
 def seed_subscription_plans(db: Session):
     default_plans = [
@@ -65,11 +66,27 @@ def seed_products(db: Session):
         else:
             db.add(Product(**product))
 
+def seed_tools(db: Session):
+    default_tools = [
+        {"name": "Chatbot", "status": "active"},
+        {"name": "LLM", "status": "active"},
+        {"name": "Voice Agent", "status": "active"},
+        {"name": "Crawler", "status": "deactive"},
+        {"name": "Analytics", "status": "active"},
+    ]
+
+    for tool in default_tools:
+        existing = db.query(ToolsUsed).filter_by(name=tool["name"]).first()
+        if existing:
+            existing.status = tool["status"]
+        else:
+            db.add(ToolsUsed(**tool))
 
 def main():
     db: Session = SessionLocal()
     seed_subscription_plans(db)
     seed_products(db)
+    seed_tools(db)
     db.commit()
     db.close()
     print("✅ All seeds applied successfully.")
