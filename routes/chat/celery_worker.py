@@ -1,16 +1,16 @@
-# from celery import Celery
+from celery import Celery
 from models.chatModel.chatModel import ChatBotsDocLinks
 from routes.chat.pinecone import process_and_store_docs
 from config import SessionLocal
 
-# celery = Celery(__name__, broker='redis://localhost:6379/0')
+celery = Celery(__name__, broker='redis://localhost:6379/0')
 
-# i = celery.control.inspect()
-# active_tasks = i.active()
-# print(active_tasks)
+i = celery.control.inspect()
+active_tasks = i.active()
+print(active_tasks)
 
 
-# @celery.task
+@celery.task
 def process_document_task(doc_id: int):
     db = SessionLocal()
     try:

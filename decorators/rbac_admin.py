@@ -21,8 +21,8 @@ accessPoints = [
 ]
 
 def check_permissions(required_permissions: list[str]):
-    def decorator(func):
-        @wraps(func)
+    def decorator(route_func):
+        @wraps(route_func)
         async def wrapper(request: Request, *args, **kwargs):
             try:
                 # Get database session from kwargs
@@ -69,7 +69,7 @@ def check_permissions(required_permissions: list[str]):
                     )
                 
                 # All checks passed, proceed with the original function
-                return await func(request, *args, **kwargs)
+                return await route_func(request, *args, **kwargs)
             
             except HTTPException as http_exc:
                 return JSONResponse(
