@@ -29,7 +29,7 @@ def check_permissions(required_permissions: list[str]):
                 db = kwargs.get('db')
                 if not db or not isinstance(db, Session):
                     raise HTTPException(status_code=500, detail="Database session not available")
-                
+
                 # Get token from cookies
                 token = request.cookies.get("access_token")
                 if not token:
@@ -41,33 +41,33 @@ def check_permissions(required_permissions: list[str]):
                 user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
                 if not user:
                     raise HTTPException(status_code=400, detail="User not found")
-                
+
                 # Get user's role
                 role = user.role
                 if not role:
                     raise HTTPException(status_code=403, detail="User has no role")
-                
+
                 # Get permissions for the role
                 role_permissions = db.query(RolePermission).filter(
-                    func.lower(RolePermission.role) == func.lower(role)
+                    func.lower(RolePermission.role) == role.lower()
                 ).first()
-                
+
                 if not role_permissions:
                     raise HTTPException(status_code=403, detail="No permissions found for this role")
-                
+
                 # Check if user has all required permissions
-                user_permissions = role_permissions.permissions
+                user_permissions = role_permissions.permissions or []
                 missing_permissions = [
                     perm for perm in required_permissions 
                     if perm not in user_permissions
                 ]
-                
+
                 if missing_permissions:
                     raise HTTPException(
                         status_code=403,
                         detail=f"Missing permissions: {', '.join(missing_permissions)}"
                     )
-                
+
                 # All checks passed, proceed with the original function
                 return await route_func(request, *args, **kwargs)
             
@@ -76,6 +76,6 @@ def check_permissions(required_permissions: list[str]):
                     content={"detail": http_exc.detail},
                     status_code=http_exc.status_code
                 )
-        
+
         return wrapper
     return decorator
