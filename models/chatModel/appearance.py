@@ -54,7 +54,7 @@ class ChatSettings(Base):
     is_message_lead_gen= Column(Boolean)
     required_message_lead_gen= Column(Boolean)
     submission_message_heading_lead_gen=Column(String(30))
-    sumbission_message_lead_gen=Column(String(30))
+    sumbission_message_lead_gen=Column(String(255))
     submit_text_lead_gen= Column(String(30))
     submit_button_color_lead_gen=Column(String(30))
 
