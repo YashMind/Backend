@@ -4,6 +4,8 @@ from models.adminModel.adminModel import SubscriptionPlans
 from models.adminModel.productModel import Product 
 from models.adminModel.toolsModal import ToolsUsed 
 from models.adminModel.volumnDiscountModel import VolumeDiscount
+from models.adminModel.roles_and_permission import RolePermission
+
 def seed_subscription_plans(db: Session):
     default_plans = [
         {
@@ -51,7 +53,6 @@ def seed_subscription_plans(db: Session):
         else:
             db.add(SubscriptionPlans(**plan))
 
-
 def seed_products(db: Session):
     default_products = [
         {"name": "Chatbot", "status": "active"},
@@ -87,8 +88,6 @@ def seed_tools(db: Session):
         else:
             db.add(ToolsUsed(**tool))
 
-
-
 def seed_volume_discounts(db: Session):
     default_discounts = [
         {"min_tokens": 0,       "discount_percent": 0.0},
@@ -103,6 +102,35 @@ def seed_volume_discounts(db: Session):
         else:
             db.add(VolumeDiscount(**discount))
 
+def seed_roles_and_permissions(db: Session):
+    default_roles = [
+        {
+            "role": "Super Admin",
+            "permissions": [
+                "overview",
+                "user-management",
+                "subscription-plans",
+                "token-analytics",
+                "product-monitoring",
+                "logs-activity",
+                "enterprise-clients",
+                "billing-settings",
+                "users-roles",
+                "support-communication"
+            ]
+        },
+        {"role": "Billing Admin", "permissions": []},
+        {"role": "Product Admin", "permissions": []},
+        {"role": "Support Admin", "permissions": []},
+    ]
+
+    for role in default_roles:
+        existing = db.query(RolePermission).filter_by(role=role["role"]).first()
+        if existing:
+            existing.permissions = role["permissions"]
+        else:
+            db.add(RolePermission(**role))
+
 
 def main():
     db: Session = SessionLocal()
@@ -110,6 +138,7 @@ def main():
     seed_products(db)
     seed_tools(db)
     seed_volume_discounts(db)
+    seed_roles_and_permissions(db)
     db.commit()
     db.close()
     print("✅ All seeds applied successfully.")

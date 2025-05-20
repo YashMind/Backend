@@ -9,6 +9,7 @@ from models.authModel.authModel import AuthUser
 from models.adminModel.adminModel import SubscriptionPlans, TokenBots, BotProducts
 from models.adminModel.roles_and_permission import RolePermission
 from sqlalchemy.exc import SQLAlchemyError
+from models.activityLogModel.activityLogModel import ActivityLog 
 
 from schemas.authSchema.authSchema import User, UserUpdate
 from schemas.adminSchema.adminSchema import PostEmail, PaymentGatewaySchema, PlansSchema, TokenBotsSchema, BotProductSchema,RolePermissionInput, RolePermissionResponse
@@ -894,6 +895,8 @@ def get_role_permissions(role: str, db: Session = Depends(get_db)):
 @router.get("/roles_permissions")
 async def fetch_roles(request: Request, response: Response, db: Session = Depends(get_db)):
     try:
+    
+
         token = request.cookies.get("access_token")
         if not token:
             raise HTTPException(status_code=401, detail="Not authenticated")
@@ -920,4 +923,3 @@ async def fetch_roles(request: Request, response: Response, db: Session = Depend
             status_code=http_exc.status_code
         )
         return error_response
-

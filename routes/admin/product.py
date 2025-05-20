@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException,Depends,Body
+from fastapi import APIRouter, BackgroundTasks, HTTPException,Depends,Body,Request
 from sqlalchemy.orm import Session
 from config import get_db
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,7 +10,8 @@ from pydantic import BaseModel
 router = APIRouter()
 @router.get("/products")
 @public_route()
-async def get_all_products(db: Session = Depends(get_db)):
+
+async def get_all_products(request: Request, db: Session = Depends(get_db)):
     try:
         products = db.query(Product).all()
 
@@ -37,9 +38,10 @@ async def get_all_products(db: Session = Depends(get_db)):
 @router.put("/products/{product_id}/status")
 @check_permissions(["product-monitoring"])
 async def update_product_status(
+    request: Request,
     product_id: int,
     status_update: ProductStatusUpdate = Body(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     try:
         product = db.query(Product).filter(Product.id == product_id).first()

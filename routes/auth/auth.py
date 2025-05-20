@@ -27,7 +27,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
         fullName = user.fullName
         email = user.email
         password = user.password
-        role = user.role
+        role = user.role if user.role else "user"
         status = user.status if user.status else None
         role_permissions = user.role_permissions if user.role_permissions else None
         base_rate_per_token=user.base_rate_per_token  if user.base_rate_per_token else None
@@ -61,6 +61,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
 @router.post("/signin")
 async def signin(user: SignInUser, response: Response, db: Session = Depends(get_db)):
     try:
+        print(user,"===========")
         if not user.email or not user.password:
             raise HTTPException(status_code=400, detail="Email and password are required")
 
