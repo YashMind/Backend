@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form, Query,Body
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
+from models.activityLogModel.activityLogModel import ActivityLog
 from utils.utils import decode_access_token, get_current_user
 from jose import JWTError, jwt
 from uuid import uuid4
 import json
 from models.authModel.authModel import AuthUser
-from models.adminModel.adminModel import SubscriptionPlans, TokenBots, BotProducts
+from models.adminModel.adminModel import PaymentGateway, SubscriptionPlans, TokenBots, BotProducts
 from models.adminModel.roles_and_permission import RolePermission
 from sqlalchemy.exc import SQLAlchemyError
 
