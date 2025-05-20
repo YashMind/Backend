@@ -7,7 +7,18 @@ from utils.utils import decode_access_token
 from models.authModel.authModel import AuthUser
 from models.adminModel.roles_and_permission import RolePermission
 
-
+accessPoints = [
+    'overview',
+    'user-management',
+    'subscription-plans',
+    'token-analytics',
+    'product-monitoring',
+    'logs-activity',
+    'enterprise-clients',
+    'billing-settings',
+    'users-roles',
+    'support-communication',
+]
 
 def check_permissions(required_permissions: list[str]):
     def decorator(func):

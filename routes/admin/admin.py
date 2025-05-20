@@ -24,61 +24,9 @@ from email.mime.text import MIMEText
 import smtplib
 from decorators.rbac_admin import check_permissions
 
-
-router = APIRouter()
-
-# def send_emails_in_batches(subject: str, content: str):
-#     db: Session = SessionLocal()
-#     users = db.query(AuthUser).with_entities(AuthUser.email).all()
-#     recipient_emails = [u.email for u in users if u.email]
-
-#     for email in recipient_emails:
-#         try:
-#             msg = MIMEMultipart()
-#             msg["From"] = settings.EMAIL_ADDRESS
-#             msg["To"] = email
-#             msg["Subject"] = subject
-#             msg.attach(MIMEText(content, "html"))
-
-#             with smtplib.SMTP("mail.smtp2go.com", 587) as server:
-#                 server.starttls()
-#                 server.login(settings.SMTP2GO_USERNAME, settings.SMTP2GO_PASSWORD)
-#                 server.send_message(msg)
-
-#             print(f"Email sent to {email}")
-#         except Exception as e:
-#             print(f"Failed to send email to {email}: {e}")
-
 router = APIRouter()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-from models.activityLogModel.activityLogModel import ActivityLog
-from send_email import send_email
-
-def send_emails_in_batches(subject: str, content: str, recipients: List[str]):
-    batch_size = 50  # adjust based on your SMTP or provider limits
-    for i in range(0, len(recipients), batch_size):
-        batch = recipients[i:i + batch_size]
-        send_email(subject=subject, html_content=content, recipients=batch)
-
-@router.post("/send-emails")
-def send_post_to_users(payload: PostEmail, background_tasks: BackgroundTasks):
-    try:
-        if not payload.recipients or len(payload.recipients) == 0:
-            raise HTTPException(status_code=400, detail="At least one recipient is required.")
-        
-        content = f"<h3>{payload.title}</h3><p>{payload.description}</p>"
-        background_tasks.add_task(send_emails_in_batches, payload.title, content, payload.recipients)
-        return {"message": "Emails are being sent in the background"}
-    
-    except HTTPException as e:
-        # re-raise specific validation errors
-        raise e
-
-    except Exception as e:
-        print(f"Error occurred while queuing email task: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred while sending emails.")
-
 
 @router.put("/users/{user_id}/base-rate")
 async def update_base_rate(user_id: int, data: User, db: Session = Depends(get_db)):

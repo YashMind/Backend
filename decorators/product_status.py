@@ -18,7 +18,6 @@ def check_product_status(product: str):
                 
                 # Get token from cookies
                 is_active = db.query(Product).filter(func.lower(Product.name) == func.lower(product)).first()
-                print("PRODUCT STATUS: ", is_active)
                 if is_active.status == "deactive":
                     raise HTTPException(
                         status_code=403,
