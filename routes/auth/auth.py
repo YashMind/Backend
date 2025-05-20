@@ -6,6 +6,7 @@ from jose import JWTError, jwt
 from uuid import uuid4
 import json
 from models.authModel.authModel import AuthUser
+from models.adminModel.roles_and_permission import RolePermission
 from schemas.authSchema.authSchema import User, SignInUser, PasswordResetRequest, PasswordReset, UserUpdate
 from sqlalchemy.orm import Session
 from config import get_db
@@ -13,6 +14,7 @@ from typing import Optional, Dict, List
 from sqlalchemy import or_, desc, asc
 from datetime import datetime
 import httpx
+
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -134,8 +136,6 @@ async def getme(request: Request,response: Response, db: Session = Depends(get_d
         error_response.delete_cookie("access_token")
         error_response.delete_cookie("role")
         return error_response
-
-  
 
 @router.post("/forget-password")
 async def forget_password(request: PasswordResetRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
@@ -279,7 +279,6 @@ async def update_profile(
         )
 
 
-
 # google login
 @router.post("/google-login")
 async def google_login(request: Request, response:Response, db: Session = Depends(get_db)):
@@ -311,7 +310,7 @@ async def google_login(request: Request, response:Response, db: Session = Depend
                 db.commit()
                 db.refresh(user)
 
-            access_token = create_access_token(data={"sub": email, "user_id": str(user.id)})
+            access_token = create_access_token(data={"sub": email, "user_id": str(user.id), "role":user.role})
             response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, 
                             samesite="Lax", max_age=84600)
             response.set_cookie(key="role", value=user.role, httponly=False, secure=False,samesite="Lax",max_age=84600)
@@ -361,7 +360,7 @@ async def facebook_login(request: Request, response: Response, db: Session = Dep
             db.commit()
             db.refresh(user)
 
-        access_token = create_access_token(data={"sub": email, "user_id": str(user.id)})
+        access_token = create_access_token(data={"sub": email, "user_id": str(user.id), "role":user.role})
         response.set_cookie(
             key="access_token",
             value=access_token,
@@ -377,3 +376,5 @@ async def facebook_login(request: Request, response: Response, db: Session = Dep
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+

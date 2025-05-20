@@ -10,6 +10,7 @@ import logging
 from utils.utils import get_response_from_chatbot
 from dotenv import load_dotenv
 import os
+from decorators.product_status import check_product_status
 
 # Find your Account SID and Auth Token at twilio.com/console
 # and set the environment variables. See http://twil.io/secure
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 # Single Twilio account (from settings)
 
 @router.post("/register")
+@check_product_status("chatbot")
 async def register_whatsapp_user(
    request:Request,
     db: Session = Depends(get_db)
@@ -81,6 +83,7 @@ async def register_whatsapp_user(
 
 
 @router.post("/message")
+@check_product_status("chatbot")
 async def handle_whatsapp_message(
     From: str = Form(...),  # User's WhatsApp number (+1234567890)
     Body: str = Form(...),  # Message content

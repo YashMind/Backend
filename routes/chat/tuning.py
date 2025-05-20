@@ -7,11 +7,13 @@ from models.chatModel.tuning import DBInstructionPrompt
 from schemas.chatSchema.tuningSchema import InstructionPrompt,BotPromptsUpdate,InstructionPromptFetch
 from models.chatModel.chatModel import ChatBots
 from utils.utils import  decode_access_token
+from decorators.product_status import check_product_status
 
 
 router = APIRouter()
 
 @router.post("/prompts", response_model=List[InstructionPrompt])
+@check_product_status("chatbot")
 async def create_or_update_prompts(
     data: BotPromptsUpdate,
     request: Request,
@@ -69,6 +71,7 @@ async def create_or_update_prompts(
 
 # Get Bot Prompts
 @router.get("/bots/{bot_id}/prompts", response_model= InstructionPromptFetch)
+@check_product_status("chatbot")
 async def get_bot_prompts(
     bot_id: int,
     request: Request,

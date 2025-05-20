@@ -15,14 +15,17 @@ from schemas.adminSchema.adminSchema import PostEmail, PaymentGatewaySchema, Pla
 from sqlalchemy.orm import Session
 from config import get_db,settings
 from typing import Optional, Dict, List
-from sqlalchemy import or_, desc, asc
+from sqlalchemy import func, or_, desc, asc
 import httpx
 from datetime import datetime
-router = APIRouter()
 from config import SessionLocal
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import smtplib
+from decorators.rbac_admin import check_permissions
+
+
+router = APIRouter()
 
 # def send_emails_in_batches(subject: str, content: str):
 #     db: Session = SessionLocal()
@@ -917,15 +920,34 @@ def get_role_permissions(role: str, db: Session = Depends(get_db)):
     }
 
 
-# @router.get("/get", response_model=RolePermissionResponse)
-# def get_role_permissions(role: str, db: Session = Depends(get_db)):
-#     role_obj = db.query(RolePermission).filter_by(role=role).first()
+# Roles
+@router.get("/roles_permissions")
+async def fetch_roles(request: Request, response: Response, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Not authenticated")
 
-#     if not role_obj:
-#         raise HTTPException(status_code=404, detail="Role not found")
+        payload = decode_access_token(token)
+        user_id = payload.get("user_id")
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=400, detail="User not found")
+        
+        role = user.role
+        if not role:
+            raise HTTPException(status_code=200, detail="User has no role")
 
-#     return {
-#         "role": role_obj.role,
-#         "permissions": role_obj.permissions
-#     }
+        permissions = db.query(RolePermission).filter(func.lower(RolePermission.role) == func.lower(role)).first()
+        if not permissions:
+            raise HTTPException(status_code=200, detail="User has no permissions")
+        
+        return {"permissions": permissions.permissions, "status": 200}
+
+    except HTTPException as http_exc:
+        error_response = JSONResponse(
+            content={"detail": http_exc.detail},
+            status_code=http_exc.status_code
+        )
+        return error_response
 

@@ -10,6 +10,7 @@ from datetime import datetime
 from models.chatModel.integrations import SlackInstallation
 from datetime import datetime
 from utils.utils import get_response_from_chatbot
+from decorators.product_status import check_product_status
 
 router = APIRouter()
 
@@ -25,6 +26,7 @@ client = WebClient(token=SLACK_BOT_TOKEN)
 verifier = SignatureVerifier(SLACK_SIGNING_SECRET)
 
 @router.post("/events")
+@check_product_status("chatbot")
 async def slack_events(request: Request,
                        x_slack_signature: str = Header(None),
                        x_slack_request_timestamp: str = Header(None),
@@ -107,6 +109,7 @@ async def slack_events(request: Request,
     
 # handle slack commands
 @router.post("/commands")
+@check_product_status("chatbot")
 async def slack_commands(
     command: str = Form(...),
     text: str = Form(...),
@@ -156,6 +159,7 @@ async def save_installation(data: dict, db: Session):
 
 
 @router.get("/oauth/callback")
+@check_product_status("chatbot")
 async def oauth_callback(code: str, state: str = "", db: Session = Depends(get_db)):
     # Parse bot_id or other values from state
     # Example: state="bot_id=abc123"

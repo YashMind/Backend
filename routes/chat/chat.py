@@ -18,6 +18,7 @@ from langchain.schema import HumanMessage, AIMessage
 from routes.chat.pinecone import  get_response_from_faqs, hybrid_retrieval, generate_response, delete_documents_from_pinecone
 from sqlalchemy import func, and_
 from routes.chat.celery_worker import process_document_task
+from decorators.product_status import check_product_status
 import secrets
 import string
 from datetime import datetime
@@ -28,6 +29,7 @@ router = APIRouter()
 
 # create new chatbot
 @router.post("/create-bot", response_model=CreateBot)
+@check_product_status("chatbot")
 async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -56,6 +58,7 @@ async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends
         raise HTTPException(status_code=500, detail=str(e))
 # update chatbot
 @router.put("/update-bot", response_model=CreateBot)
+@check_product_status("chatbot")
 async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
     try:
         chatbot = db.query(ChatBots).filter(ChatBots.id == int(data.id)).first()
@@ -101,6 +104,7 @@ async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
     
 # get chatbot
 @router.get("/get-bot", response_model=CreateBot)
+@check_product_status("chatbot")
 async def get_chatbot(botId:int, db: Session = Depends(get_db)):
     try:
         chatbot = db.query(ChatBots).filter(ChatBots.id == botId).first()
@@ -128,6 +132,7 @@ ALLOWED_FILE_TYPES = [
 ]
 
 @router.post("/chat-tokens")
+@check_product_status("chatbot")
 def create_chat_token(data: ChatTotalTokenCreate, db: Session = Depends(get_db)):
     new_token = ChatTotalToken(**data.dict())
     db.add(new_token)
@@ -136,6 +141,7 @@ def create_chat_token(data: ChatTotalTokenCreate, db: Session = Depends(get_db))
     return new_token
 
 @router.post("/upload-document")
+@check_product_status("chatbot")
 async def upload_photo(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     try:
         # Validate file type
@@ -169,6 +175,7 @@ async def upload_photo(file: UploadFile = File(...), current_user: dict = Depend
 
 # get all chatbots
 @router.get("/get-all", response_model=List[CreateBot])
+@check_product_status("chatbot")
 async def get_my_bots(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -184,6 +191,7 @@ async def get_my_bots(request: Request, db: Session = Depends(get_db)):
 
 # create new chat
 @router.post("/chats-id", response_model=ChatSessionRead)
+@check_product_status("chatbot")
 async def create_chat(data: ChatSessionRead, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -210,6 +218,7 @@ async def create_chat(data: ChatSessionRead, request: Request, db: Session = Dep
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.post("/chats-id-token", response_model=ChatSessionRead)
+@check_product_status("chatbot")
 async def create_chat_token_session(data: ChatSessionRead, request: Request, db: Session = Depends(get_db)):
     try:
         chat_bot = db.query(ChatBots).filter_by(token=data.token).first()
@@ -244,6 +253,7 @@ async def create_chat_token_session(data: ChatSessionRead, request: Request, db:
       
 # send message
 @router.post("/chats/{chat_id}/message", response_model=ChatMessageRead)
+@check_product_status("chatbot")
 async def chat_message(chat_id: int, data: dict, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -346,6 +356,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
     
 # get all charts
 @router.get("/chats", response_model=List[ChatSessionWithMessages])
+@check_product_status("chatbot")
 async def list_chats(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -361,6 +372,7 @@ async def list_chats(request: Request, db: Session = Depends(get_db)):
     
 # load chat history
 @router.get("/chats/{chat_id}", response_model=List[ChatMessageRead])
+@check_product_status("chatbot")
 async def get_chat_history(chat_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         chat = db.query(ChatSession).filter_by(id=chat_id).first()
@@ -377,6 +389,7 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
 
 # get user chat history
 @router.get("/chats-history/{bot_id}")
+@check_product_status("chatbot")
 async def get_user_chat_history(bot_id: int, request: Request, db: Session = Depends(get_db), 
     page: int = Query(1, ge=1), limit: int = Query(10, ge=1), search: Optional[str] = None):
     try:
@@ -424,6 +437,7 @@ async def get_user_chat_history(bot_id: int, request: Request, db: Session = Dep
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/delete-chats/{bot_id}")
+@check_product_status("chatbot")
 async def delete_chat(bot_id: int, request_data: DeleteChatsRequest, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -443,6 +457,7 @@ async def delete_chat(bot_id: int, request_data: DeleteChatsRequest, request: Re
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/chats")
+@check_product_status("chatbot")
 async def delete_all_chats(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -461,6 +476,7 @@ async def delete_all_chats(request: Request, db: Session = Depends(get_db)):
 
 # create new chatbot
 @router.post("/create-bot-faqs", response_model=CreateBotFaqs)
+@check_product_status("chatbot")
 async def create_chatbot_faqs(data:CreateBotFaqs, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -492,6 +508,7 @@ async def create_chatbot_faqs(data:CreateBotFaqs, request: Request, db: Session 
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/get-bot-faqs/{bot_id}", response_model=List[FaqResponse])
+@check_product_status("chatbot")
 async def get_chatbot_faqs(bot_id:int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -508,6 +525,7 @@ async def get_chatbot_faqs(bot_id:int, request: Request, db: Session = Depends(g
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/delete-faq/{bot_id}/{faq_id}")
+@check_product_status("chatbot")
 async def delete_single_faq(bot_id: int, faq_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -527,6 +545,7 @@ async def delete_single_faq(bot_id: int, faq_id: int, request: Request, db: Sess
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/delete-all-faqs/{bot_id}")
+@check_product_status("chatbot")
 async def delete_all_faqs(bot_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -544,6 +563,7 @@ async def delete_all_faqs(bot_id: int, request: Request, db: Session = Depends(g
     
 # create new chatbot doc
 @router.post("/create-bot-doc-links", response_model=CreateBotDocLinks)
+@check_product_status("chatbot")
 async def create_chatbot_docs(data:CreateBotDocLinks, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -576,6 +596,7 @@ async def create_chatbot_docs(data:CreateBotDocLinks, request: Request, db: Sess
     
 # Check doc status
 @router.get("/document-status/{doc_id}")
+@check_product_status("chatbot")
 async def get_document_status(doc_id: int, db: Session = Depends(get_db)):
     doc = db.query(ChatBotsDocLinks).get(doc_id)
     if not doc:
@@ -584,6 +605,7 @@ async def get_document_status(doc_id: int, db: Session = Depends(get_db)):
     
 
 @router.get("/get-bot-doc-links/{bot_id}")
+@check_product_status("chatbot")
 async def get_bot_doc_links(
     bot_id: int,
     request: Request,
@@ -685,9 +707,8 @@ async def get_bot_doc_links(
         raise HTTPException(status_code=500, detail=str(e))
     
 
-
-
 @router.delete("/delete-doc-links/{bot_id}")
+@check_product_status("chatbot")
 async def delete_doc_links(
     bot_id: int, 
     request_data: DeleteDocLinksRequest, 
@@ -736,6 +757,7 @@ async def delete_doc_links(
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/chats-delete-token/{token}")
+@check_product_status("chatbot")
 async def delete_token_chat(token: str, db: Session = Depends(get_db)):
     try:
         chat_session = db.query(ChatSession).filter(ChatSession.token==token).first()
@@ -753,6 +775,7 @@ async def delete_token_chat(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/user-chats-delete/{chat_id}")
+@check_product_status("chatbot")
 async def delete_user_chats(chat_id: int, db: Session = Depends(get_db)):
     try:
         # Delete all messages related to this chat
@@ -765,6 +788,7 @@ async def delete_user_chats(chat_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/delete-bot/{bot_id}")
+@check_product_status("chatbot")
 async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -791,6 +815,7 @@ async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_d
 
 # create new chatbot
 @router.post("/create-bot-leads", response_model=ChatbotLeads)
+@check_product_status("chatbot")
 async def create_chatbot_leads(data:ChatbotLeads, request: Request, db: Session = Depends(get_db)):
     try:
         chatbot = db.query(ChatBots).filter(ChatBots.id == data.bot_id).first()
@@ -834,6 +859,7 @@ async def create_chatbot_leads(data:ChatbotLeads, request: Request, db: Session 
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/get-chatbot-leads/{bot_id}")
+@check_product_status("chatbot")
 async def get_chatbot_leads(
     bot_id: int,
     request: Request,
@@ -884,6 +910,7 @@ async def get_chatbot_leads(
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.delete("/delete-chatbot-leads/{bot_id}")
+@check_product_status("chatbot")
 async def delete_doc_links(bot_id: int, request_data: DeleteChatbotLeadsRequest, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -902,6 +929,7 @@ async def delete_doc_links(bot_id: int, request_data: DeleteChatbotLeadsRequest,
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/leads/{chat_id}/messages", response_model=List[ChatMessageRead])
+@check_product_status("chatbot")
 async def chat_lead_messages(chat_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -919,6 +947,7 @@ async def chat_lead_messages(chat_id: int, request: Request, db: Session = Depen
 
 
 @router.get("/tokens", response_model=ChatMessageTokens)
+@check_product_status("chatbot")
 async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")

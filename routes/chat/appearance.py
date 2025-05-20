@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, APIRouter, Request
 from config import get_db
 from models.chatModel.appearance import ChatSettings
 from schemas.chatSchema.appearanceSchema import ChatSettingsBase,ChatSettingsCreate,ChatSettingsRead,ChatSettingsUpdate
+from decorators.product_status import check_product_status
 
 router = APIRouter()
 
@@ -42,10 +43,12 @@ class CRUDChatSettings:
 crud = CRUDChatSettings()
 
 @router.post("/settings/", response_model=ChatSettingsRead)
+@check_product_status("chatbot")
 def create_settings(settings: ChatSettingsCreate, db: get_db = Depends(get_db)):
     return crud.create(db, settings)
 
 @router.get("/settings/{bot_id}", response_model=ChatSettingsRead)
+@check_product_status("chatbot")
 def read_settings(bot_id: int, db: get_db = Depends(get_db)):
     settings = crud.get(db, bot_id)
     if not settings:
@@ -53,9 +56,11 @@ def read_settings(bot_id: int, db: get_db = Depends(get_db)):
     return settings
 
 @router.put("/settings/{id}", response_model=ChatSettingsRead)
+@check_product_status("chatbot")
 def update_settings(id: int, settings: ChatSettingsUpdate, db: get_db = Depends(get_db)):
     return crud.update(db, id, obj_in=settings)
 
 @router.delete("/settings/{id}", response_model=ChatSettingsRead)
+@check_product_status("chatbot")
 def delete_settings(id: int, db: get_db = Depends(get_db)):
     return crud.delete(db, id)
