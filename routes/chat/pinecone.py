@@ -209,7 +209,7 @@ def generate_response(query: str, context: List[str], use_openai: bool, instruct
             break
         # Remove the longest context item first
         context_list.remove(max(context_list, key=len))
-        context_str = "\n".join(context_list)
+        context_str = " ".join(context_list)
     
     # if not context_str:
     #     return "I don't have enough information to answer that question."
@@ -257,7 +257,7 @@ def clean_text(text: str) -> str:
     # Remove HTML/XML tags (in case any remain)
     text = re.sub(r'<[^>]+>', '', text)
     # Remove special characters (keep letters, numbers, whitespace, hyphens)
-    text = re.sub(r'[^\w\s-]', '', text)
+    # text = re.sub(r'[^\w\s-]', '', text)
     # Remove redundant whitespace
     text = ' '.join(text.split())
     # Remove boilerplate phrases (case insensitive)
