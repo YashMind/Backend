@@ -261,16 +261,15 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         if not user_msg:
             raise HTTPException(status_code=400, detail="Message required")
         
-        chatbot = db.query(ChatBots).filter(id=bot_id)
+        print("finding Bot")
+        chatbot = db.query(ChatBots).filter(ChatBots.id==bot_id).first()
         if not chatbot:
             raise HTTPException(status_code=404, detail="ChatBot not found")
-        
-        chatbot_settings = db.query(ChatSettings).filter(bot_id=bot_id).first()
         
         token_record = db.query(ChatTotalToken).filter_by(user_id=user_id, bot_id=bot_id).first()
         # currently we are only checking if the reacord in this table exsits then it should not exceed limit. once subscriptions implemented we will return user with no token limit if the record not exists
         if token_record:
-            if token_record.total_tokens <= token_record.user_message_tokens:
+            if token_record.total_token <= token_record.user_message_tokens:
                 raise HTTPException(status_code=400, detail="Token limit exceeded")
         
 
@@ -310,7 +309,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
             context_texts, scores = hybrid_retrieval(user_msg, bot_id)
             
             instruction_prompts = db.query(DBInstructionPrompt).filter(bot_id==bot_id).all()
-            creativity = chatbot.Creativity
+            creativity = chatbot.creativity
             text_content = chatbot.text_content
             
             answer = None

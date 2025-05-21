@@ -155,32 +155,42 @@ def generate_response(query: str, context: List[str], use_openai: bool, instruct
             return "I couldn't find relevant information in my knowledge base."
         return "Here's what I found:\n" + "\n\n".join([f"- {text}" for text in context])
     
-    prompt_template = """You are a knowledgeable financial assistant specializing in clear, professional communication. When responding:
+    prompt_template = """
+    You are a specialized assistant deployed on the Yashraa platform, trained to generate expert-level responses with professional clarity. Your behavior is guided by domain-specific fine-tuning, creativity calibration, and explicit instructions provided by the chatbot owner.
 
-    1. First determine if the provided context contains relevant information
-    2. If relevant information exists:
-    - Extract key facts
-    - Present them in a clear, concise manner (1-3 sentences)
-    - Use professional but accessible language
-    3. If no relevant context exists:
-    - Provide a brief, authoritative answer from your knowledge
-    - Maintain neutral, factual tone
+    Follow these steps precisely:
 
-    Always structure your response as if speaking directly to an investor or business professional seeking quick, reliable information.
+    1. **Analyze the Input Context:**
+    - The `context` field contains raw yet high-relevance information extracted from the source website using embedding similarity (Pinecone DB).
+    - If **relevant**, extract key facts and present them concisely (1–3 sentences), using accessible business language.
+    - If **not relevant**, answer authoritatively using your internal knowledge.
 
-    Context: {context}
+    2. **Incorporate Fine-Tuning Parameters:**
+    - **Text Content:** Incorporate tone, domain insight, or structured information provided here to shape the response.
+    - **Creativity (%):** 
+        - 0–30% → Strictly factual and neutral.
+        - 31–70% → Professional with room for structured suggestion or interpretation.
+        - 71–100% → Allow more expressive, human-like guidance while keeping accuracy intact.
 
-    Question: {question}
-    
-    this content should be used design answer of the question: {text_content}
-    
-    we have creativity percentage of the chat bot:{creativity}
-    
-    we also have Instructions of diffrent type of  from owner of this chatbot:{instruction_prompts}
-    
+    3. **Instruction Prompt Classification:**
+    - Automatically determine the best-matched domain (e.g., ecommerce, hospitality, education, etc.) from `instruction_prompts` based on the nature of the question.
+    - Integrate domain-specific tone, formatting, or insights if such instructions are found.
 
-    Please provide your professional response:"""
-    
+    4. **Response Guidelines:**
+    - Use clear, professional, and trustworthy tone—tailored for an investor, customer, or decision-maker.
+    - Focus on clarity, domain relevance, and applied intelligence.
+    - Avoid generic AI phrasing or disclaimers.
+
+    Inputs:
+    - Context (scraped website content): {context}
+    - User Question: {question}
+    - Domain Training Content: {text_content}
+    - Creativity Level (%): {creativity}
+    - Instruction Prompts (Categorized): {instruction_prompts}
+
+    Now generate a professional, fine-tuned response based on the above inputs:
+    """
+
     # Truncate context to fit token limit more efficiently
     encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
     context_str = "\n".join(context)
@@ -193,7 +203,7 @@ def generate_response(query: str, context: List[str], use_openai: bool, instruct
     
     # Calculate tokens more precisely
     while True:
-        prompt = prompt_template.format(context=context_str, question=query)
+        prompt = prompt_template.format(context=context_str, question=query, text_content=text_content, creativity=creativity, instruction_prompts=instruction_prompts)
         tokens = encoder.encode(prompt)
         if len(tokens) <= 3000 or not context_list:
             break
