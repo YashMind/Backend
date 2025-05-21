@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, UploadFile, File, Query
 from fastapi.responses import JSONResponse
 from utils.utils import decode_access_token, get_current_user
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
 from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks, ChatBotLeadsModel, ChatTotalToken
-from schemas.chatSchema.chatSchema import ChatMessageRead, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens, ChatTotalTokenCreate
+from schemas.chatSchema.chatSchema import ChatMessageRead, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens
 from models.chatModel.appearance import ChatSettings
 from models.chatModel.tuning import DBInstructionPrompt
 from sqlalchemy.orm import Session
@@ -30,20 +30,22 @@ router = APIRouter()
 # create new chatbot
 @router.post("/create-bot", response_model=CreateBot)
 @check_product_status("chatbot")
-async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends(get_db)):
+async def create_chatbot(request: Request, db: Session = Depends(get_db)):
     try:
+        payload = await request.json()
+        data = payload.get("data")
         token = request.cookies.get("access_token")
-        payload = decode_access_token(token)
-        user_id = int(payload.get("user_id"))
+        decoded = decode_access_token(token)
+        user_id = int(decoded.get("user_id"))
         generated_token = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(25))
 
         new_chatbot = ChatBots(
             user_id=user_id,
-            chatbot_name=data.chatbot_name,
-            public= data.public,
-            train_from=data.train_from,
-            target_link=data.target_link,
-            document_link=data.document_link,
+            chatbot_name=data.get("chatbot_name"),
+            public= data.get("public"),
+            train_from=data.get("train_from"),
+            target_link=data.get("target_link"),
+            document_link=data.get("document_link"),
             creativity=0,
             token=generated_token
         )
@@ -56,6 +58,7 @@ async def create_chatbot(data:CreateBot, request: Request, db: Session = Depends
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 # update chatbot
 @router.put("/update-bot", response_model=CreateBot)
 @check_product_status("chatbot")
@@ -131,14 +134,6 @@ ALLOWED_FILE_TYPES = [
     "image/webp",
 ]
 
-@router.post("/chat-tokens")
-@check_product_status("chatbot")
-def create_chat_token(data: ChatTotalTokenCreate, db: Session = Depends(get_db)):
-    new_token = ChatTotalToken(**data.dict())
-    db.add(new_token)
-    db.commit()
-    db.refresh(new_token)
-    return new_token
 
 @router.post("/upload-document")
 @check_product_status("chatbot")
@@ -265,6 +260,19 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         bot_id = data.get("bot_id")
         if not user_msg:
             raise HTTPException(status_code=400, detail="Message required")
+        
+        chatbot = db.query(ChatBots).filter(id=bot_id)
+        if not chatbot:
+            raise HTTPException(status_code=404, detail="ChatBot not found")
+        
+        chatbot_settings = db.query(ChatSettings).filter(bot_id=bot_id).first()
+        
+        token_record = db.query(ChatTotalToken).filter_by(user_id=user_id, bot_id=bot_id).first()
+        # currently we are only checking if the reacord in this table exsits then it should not exceed limit. once subscriptions implemented we will return user with no token limit if the record not exists
+        if token_record:
+            if token_record.total_tokens <= token_record.user_message_tokens:
+                raise HTTPException(status_code=400, detail="Token limit exceeded")
+        
 
         # Verify chat belongs to user
         chat = db.query(ChatSession).filter_by(id=chat_id).first()
@@ -272,6 +280,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
             raise HTTPException(status_code=404, detail="Chat not found")
         
 
+        user_tokens, response_tokens, openai_tokens = 0, 0, 0
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
         # # fallback to Pinecone if no FAQ match found
         # final_answer = response_from_faqs.answer if response_from_faqs else retrieve_answers(user_msg, bot_id)
@@ -300,25 +309,38 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
             # Hybrid retrieval
             context_texts, scores = hybrid_retrieval(user_msg, bot_id)
             
+            instruction_prompts = db.query(DBInstructionPrompt).filter(bot_id==bot_id).all()
+            creativity = chatbot.Creativity
+            text_content = chatbot.text_content
+            chatbot_settings = 
             
+            answer = None
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
             if any(score > 0.65 for score in scores):
                     print("using openai with context")
                     use_openai = True
-                    answer = generate_response(user_msg, context_texts[:1], use_openai)
+                    generated_res = generate_response(user_msg, context_texts[:1], use_openai, instruction_prompts, creativity, text_content)
+                    print("GEENENNENENENEN: ", generated_res)
+                    answer = generated_res[0]
+                    openai_tokens = generated_res[1]
+                    print("ANSWER",answer, openai_tokens)
                 
             else:
                 print("no direct scores from hybrid retrieval and using openai independently")
                 # Full OpenAI fallback
                 use_openai = True
-                answer = generate_response(user_msg, [], use_openai)
+                generated_res = generate_response(user_msg, [], use_openai, instruction_prompts, creativity, text_content)
+                print("GEENENNENENENEN: ", generated_res)
+                answer = generated_res[0]
+                openai_tokens = generated_res[1]
+                print("ANSWER",answer, openai_tokens)
                 
             response_content= answer    
 
         # ✅ Always compute tokens after final response is ready
-        input_tokens = len(user_msg.strip().split())
-        output_tokens = len(response_content.strip().split() if response_content else "No response found")
+        user_tokens = len(user_msg.strip().split())
+        response_tokens = len(response_content.strip().split() if response_content else "No response found")
 
         # Save user and bot messages
         user_message = ChatMessage(user_id=user_id, bot_id=bot_id, chat_id=chat_id, sender="user", message=user_msg)
@@ -327,22 +349,29 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         db.add_all([user_message, bot_message])
         db.commit()
         db.refresh(bot_message)
+        print("BOT MESSAGE SAVED")
 
-        bot_message.input_tokens = input_tokens
-        bot_message.output_tokens = output_tokens
+        bot_message.input_tokens = user_tokens
+        bot_message.output_tokens = response_tokens
+        bot_message.open_ai_tokens = openai_tokens
 
         # ✅ Update ChatTotalToken
         token_record = db.query(ChatTotalToken).filter_by(user_id=user_id, bot_id=bot_id).first()
+        print("TOKEN RECORDS GENERATING")
         if token_record:
-            token_record.token_consumed += input_tokens
+            token_record.user_message_tokens += user_tokens
+            token_record.response_tokens += response_tokens
+            token_record.openai_tokens += openai_tokens
             token_record.updated_at = func.now()
         else:
             token_record = ChatTotalToken(
                 user_id=user_id,
                 bot_id=bot_id,
                 total_token=10000,  # default total
-                token_consumed=input_tokens,
-                plan="basic"  # default plan
+                user_message_tokens = user_tokens,
+                response_tokens = response_tokens,
+                openai_tokens = openai_tokens,
+                plan="basic"  
             )
             db.add(token_record)
 
