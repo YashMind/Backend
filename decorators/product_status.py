@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 def check_product_status(product: str):
     def decorator(route_func):
         @wraps(route_func)
-        async def wrapper(request: Request, *args, **kwargs):
+        async def wrapper(*args, **kwargs):
             try:
                 # Get database session from kwargs
                 db = kwargs.get('db')
@@ -25,7 +25,7 @@ def check_product_status(product: str):
                     )
                 
                 # All checks passed, proceed with the original function
-                return await route_func(request, *args, **kwargs)
+                return await route_func(*args, **kwargs)
                 
             except HTTPException as http_exc:
                 return JSONResponse(
