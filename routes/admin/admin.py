@@ -25,12 +25,15 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import smtplib
 from decorators.rbac_admin import check_permissions
+from decorators.public import public_route
+from decorators.allow_roles import allow_roles
 
 router = APIRouter()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @router.put("/users/{user_id}/base-rate")
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def update_base_rate(user_id: int, data: User, db: Session = Depends(get_db)):
     user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
     
@@ -53,6 +56,7 @@ async def update_base_rate(user_id: int, data: User, db: Session = Depends(get_d
 
 
 @router.get("/get-all-users")
+@public_route()
 async def get_all_users(
     request: Request,
     db: Session = Depends(get_db),
@@ -108,6 +112,7 @@ async def get_all_users(
     
 # update user
 @router.put("/update-user-admin", response_model=User)
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def update_chatbot(data:User, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
     try:
         user = db.query(AuthUser).filter(AuthUser.id == int(data.id)).first()
@@ -147,7 +152,8 @@ async def update_chatbot(data:User, db: Session = Depends(get_db),current_user: 
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/update-client-admin", response_model=User)
-async def update_chatbot(data:User, db: Session = Depends(get_db)):
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
+async def update_chatbot(data:User,request: Request, db: Session = Depends(get_db)):
     try:
         user = db.query(AuthUser).filter(AuthUser.id == int(data.id)).first()
         if not user:
@@ -179,8 +185,11 @@ async def update_chatbot(data:User, db: Session = Depends(get_db)):
     
 # create new subscription plan
 @router.post("/create-subscription-plans", response_model=PlansSchema)
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def create_subscription_plans(data:PlansSchema, request: Request, db: Session = Depends(get_db)):
     try:
+
+
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
@@ -217,6 +226,7 @@ async def create_subscription_plans(data:PlansSchema, request: Request, db: Sess
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 @router.post("/subscription-plans/{plan_id}/status")
 async def update_plan_status(
     plan_id: int,
@@ -238,6 +248,7 @@ async def update_plan_status(
     }        
     
 @router.get("/subscription-plans")
+@public_route()
 async def get_all_subscription_plans(
     request: Request,
     db: Session = Depends(get_db)
@@ -272,8 +283,9 @@ async def get_all_subscription_plans(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Something went wrong: {str(e)}")
-    
+
 @router.delete("/delete-subscription-plan/{plan_id}")
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])   
 async def delete_subscription_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -568,9 +580,8 @@ async def get_non_admin_users(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-    
 @router.put("/update-admin-user", response_model=UserUpdate)
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def update_admin_user(data: UserUpdate, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -667,6 +678,7 @@ async def update_client_user(data: UserUpdate, request: Request, db: Session = D
 
     
 @router.delete("/delete-admin-user/{id}")
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def delete_admin_user(
     id: int,
     request: Request,
@@ -704,6 +716,7 @@ async def delete_admin_user(
 
 
 @router.delete("/delete-client-user/{id}")
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])   
 async def delete_client_user(id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -894,9 +907,9 @@ def get_role_permissions(role: str, db: Session = Depends(get_db)):
 
 # Roles
 @router.get("/roles_permissions")
+@public_route()
 async def fetch_roles(request: Request, response: Response, db: Session = Depends(get_db)):
     try:
-    
 
         token = request.cookies.get("access_token")
         if not token:
