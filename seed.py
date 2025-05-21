@@ -109,7 +109,7 @@ def seed_roles_and_permissions(db: Session):
             "role": "Super Admin",
             "permissions": [
                 "overview",
-                "user-management",
+                "users-management",
                 "subscription-plans",
                 "token-analytics",
                 "product-monitoring",

@@ -54,36 +54,6 @@ embedding_model = OpenAIEmbeddings(model="text-embedding-3-small", dimensions=10
 
 
 
-# def hybrid_retrieval(query: str, bot_id: int, top_k: int = 5) -> Tuple[List[str], List[float]]:
-#     # Vector Search
-#     query_vector = embedding_model.embed_query(query)
-#     vector_results = index.query(
-#         vector=query_vector,
-#         top_k=top_k*2,  # Get extra for hybrid scoring
-#         namespace=f"bot_{bot_id}",
-#         include_metadata=True
-#     )
-
-#     # Text Search
-#     tokenized_query = query.lower().split()
-#     all_texts = [match.metadata["content"] for match in vector_results.matches]
-#     tokenized_docs = [doc.lower().split() for doc in all_texts]
-#     bm25 = BM25Okapi(tokenized_docs)
-#     text_scores = bm25.get_scores(tokenized_query)
-
-#     # Combine scores
-#     combined_results = []
-#     for idx, match in enumerate(vector_results.matches):
-#         combined_score = (match.score + text_scores[idx])/2
-#         combined_results.append((match.metadata["content"], combined_score))
-
-#     # Sort by combined score and return top K
-#     combined_results.sort(key=lambda x: x[1], reverse=True)
-#     return zip(*combined_results[:top_k])
-
-
-
-
 def hybrid_retrieval(query: str, bot_id: int, top_k: int = 5) -> Tuple[List[str], List[float]]:
     try:
         # Vector Search
@@ -174,35 +144,53 @@ def hybrid_retrieval(query: str, bot_id: int, top_k: int = 5) -> Tuple[List[str]
         print(f"Error in hybrid retrieval: {e}")
         return [], []
 
-def generate_response(query: str, context: List[str], use_openai: bool) -> str:
+def generate_response(query: str, context: List[str], use_openai: bool, instruction_prompts, creativity, text_content) -> Tuple[str, int]:
     # Convert context to list if it's a tuple
     context = list(context) if isinstance(context, tuple) else context
-    print(len(context))
+    
+    
     if not use_openai:
         # Simple concatenation of best matches with improved formatting
         if not context:
             return "I couldn't find relevant information in my knowledge base."
         return "Here's what I found:\n" + "\n\n".join([f"- {text}" for text in context])
     
-    prompt_template = """You are a knowledgeable financial assistant specializing in clear, professional communication. When responding:
+    prompt_template = """
+    You are a specialized assistant deployed on the Yashraa platform, trained to generate expert-level responses with professional clarity. Your behavior is guided by domain-specific fine-tuning, creativity calibration, and explicit instructions provided by the chatbot owner.
 
-    1. First determine if the provided context contains relevant information
-    2. If relevant information exists:
-    - Extract key facts
-    - Present them in a clear, concise manner (1-3 sentences)
-    - Use professional but accessible language
-    3. If no relevant context exists:
-    - Provide a brief, authoritative answer from your knowledge
-    - Maintain neutral, factual tone
+    Follow these steps precisely:
 
-    Always structure your response as if speaking directly to an investor or business professional seeking quick, reliable information.
+    1. **Analyze the Input Context:**
+    - The `context` field contains raw yet high-relevance information extracted from the source website using embedding similarity (Pinecone DB).
+    - If **relevant**, extract key facts and present them concisely (1–3 sentences), using accessible business language.
+    - If **not relevant**, answer authoritatively using your internal knowledge.
 
-    Context: {context}
+    2. **Incorporate Fine-Tuning Parameters:**
+    - **Text Content:** Incorporate tone, domain insight, or structured information provided here to shape the response.
+    - **Creativity (%):** 
+        - 0–30% → Strictly factual and neutral.
+        - 31–70% → Professional with room for structured suggestion or interpretation.
+        - 71–100% → Allow more expressive, human-like guidance while keeping accuracy intact.
 
-    Question: {question}
+    3. **Instruction Prompt Classification:**
+    - Automatically determine the best-matched domain (e.g., ecommerce, hospitality, education, etc.) from `instruction_prompts` based on the nature of the question.
+    - Integrate domain-specific tone, formatting, or insights if such instructions are found.
 
-    Please provide your professional response:"""
-    
+    4. **Response Guidelines:**
+    - Use clear, professional, and trustworthy tone—tailored for an investor, customer, or decision-maker.
+    - Focus on clarity, domain relevance, and applied intelligence.
+    - Avoid generic AI phrasing or disclaimers.
+
+    Inputs:
+    - Context (scraped website content): {context}
+    - User Question: {question}
+    - Domain Training Content: {text_content}
+    - Creativity Level (%): {creativity}
+    - Instruction Prompts (Categorized): {instruction_prompts}
+
+    Now generate a professional, fine-tuned response based on the above inputs:
+    """
+
     # Truncate context to fit token limit more efficiently
     encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
     context_str = "\n".join(context)
@@ -215,29 +203,37 @@ def generate_response(query: str, context: List[str], use_openai: bool) -> str:
     
     # Calculate tokens more precisely
     while True:
-        prompt = prompt_template.format(context=context_str, question=query)
+        prompt = prompt_template.format(context=context_str, question=query, text_content=text_content, creativity=creativity, instruction_prompts=instruction_prompts)
         tokens = encoder.encode(prompt)
         if len(tokens) <= 3000 or not context_list:
             break
         # Remove the longest context item first
         context_list.remove(max(context_list, key=len))
-        context_str = "\n".join(context_list)
+        context_str = " ".join(context_list)
     
     # if not context_str:
     #     return "I don't have enough information to answer that question."
     
     # Use invoke instead of predict
+    openai_tokens = len(encoder.encode(prompt))
+    print("OPENAI TOKENS: ",openai_tokens)
     try:
         response = llm.invoke(prompt)
+        response_content = ""
+        
         if isinstance(response, str):
-            return response
+            response_content = response
         elif hasattr(response, 'content'):
-            return response.content
+            response_content = response.content
         else:
-            return str(response)
+            response_content = str(response)
+        print("Returning")
+        return response_content, openai_tokens
+    
     except Exception as e:
         print(f"Error generating response: {e}")
-        return "I encountered an error while processing your request."
+        return "I encountered an error while processing your request.",openai_tokens
+
     
 
 
@@ -261,7 +257,7 @@ def clean_text(text: str) -> str:
     # Remove HTML/XML tags (in case any remain)
     text = re.sub(r'<[^>]+>', '', text)
     # Remove special characters (keep letters, numbers, whitespace, hyphens)
-    text = re.sub(r'[^\w\s-]', '', text)
+    # text = re.sub(r'[^\w\s-]', '', text)
     # Remove redundant whitespace
     text = ' '.join(text.split())
     # Remove boilerplate phrases (case insensitive)

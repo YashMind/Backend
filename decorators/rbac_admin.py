@@ -9,7 +9,7 @@ from models.adminModel.roles_and_permission import RolePermission
 
 accessPoints = [
     'overview',
-    'user-management',
+    'users-management',
     'subscription-plans',
     'token-analytics',
     'product-monitoring',
