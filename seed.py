@@ -70,8 +70,9 @@ def seed_products(db: Session):
 def seed_tools(db: Session):
     # Define only the tools you want to keep
     default_tools = [
-        {"name": "ChatGpt", "status": "active"},
-        {"name": "Gemini", "status": "active"},
+        {"name": "ChatGpt", "status": "deactive"},
+        {"name": "Gemini", "status": "deactive"},
+        {"name": "DeepSeek", "status": "deactive"},
     ]
 
     # Keep track of tool names you want to preserve

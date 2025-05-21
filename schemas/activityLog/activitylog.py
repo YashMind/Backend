@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import List
 from datetime import datetime
 
 class ActivityLogSchema(BaseModel):
@@ -13,3 +14,8 @@ class ActivityLogSchema(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class PaginatedActivityLogs(BaseModel):
+    logs: List[ActivityLogSchema]
+    total: int

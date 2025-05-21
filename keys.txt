@@ -1,0 +1,3 @@
+GEMINI_API_KEY: asas
+DEEPSEEK_API_KEY: dfdf
+OPENAI_API_KEY: assas

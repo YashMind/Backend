@@ -15,6 +15,7 @@ from routes.admin.tools import router as tool_router
 from routes.admin.volumndiscount import router as volumn_router
 from config import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
+from routes.admin.apikeys import router as apikeys_router
 
 app = FastAPI()
 # init_orm_db()
@@ -57,7 +58,7 @@ app.include_router(notice_router, prefix="/api/admin")
 app.include_router(product_router, prefix="/api/admin")
 app.include_router(tool_router, prefix="/api/admin")
 app.include_router(volumn_router, prefix="/api/admin")
-
+app.include_router(apikeys_router, prefix="/api/admin")
 
 if __name__ == "__main__":
     import uvicorn

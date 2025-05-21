@@ -11,7 +11,7 @@ from models.adminModel.adminModel import PaymentGateway, SubscriptionPlans, Toke
 from models.adminModel.roles_and_permission import RolePermission
 from sqlalchemy.exc import SQLAlchemyError
 from models.activityLogModel.activityLogModel import ActivityLog 
-
+import time
 from schemas.authSchema.authSchema import User, UserUpdate
 from schemas.adminSchema.adminSchema import PostEmail, PaymentGatewaySchema, PlansSchema, TokenBotsSchema, BotProductSchema,RolePermissionInput, RolePermissionResponse
 from sqlalchemy.orm import Session
@@ -188,8 +188,6 @@ async def update_chatbot(data:User,request: Request, db: Session = Depends(get_d
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def create_subscription_plans(data:PlansSchema, request: Request, db: Session = Depends(get_db)):
     try:
-
-
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
@@ -928,6 +926,8 @@ async def fetch_roles(request: Request, response: Response, db: Session = Depend
         permissions = db.query(RolePermission).filter(func.lower(RolePermission.role) == func.lower(role)).first()
         if not permissions:
             raise HTTPException(status_code=200, detail="User has no permissions")
+
+        # time.sleep(60)
         
         return {"permissions": permissions.permissions, "status": 200}
 
