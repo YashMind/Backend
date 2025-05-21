@@ -6,21 +6,21 @@ from config import SessionLocal
 def alter_tokens(db: Session):
     try:
         db.execute(text("""
-            ALTER TABLE "ChatTotalToken"
+            ALTER TABLE chat_total_tokens
             ADD COLUMN IF NOT EXISTS response_tokens INTEGER NOT NULL DEFAULT 0
         """))
 
         db.execute(text("""
-            ALTER TABLE "ChatTotalToken"
+            ALTER TABLE chat_total_tokens
             ADD COLUMN IF NOT EXISTS openai_tokens INTEGER NOT NULL DEFAULT 0
         """))
         
         db.execute(text("""
-            ALTER TABLE "ChatTotalToken"
+            ALTER TABLE chat_total_tokens
             RENAME COLUMN token_consumed TO user_message_tokens
         """))
 
-        print("✅ Columns 'response_tokens' and 'openai_tokens' added to ChatTotalToken.")
+        print("✅ Columns 'response_tokens' and 'openai_tokens' added to chat_total_token.")
 
     except Exception as e:
         db.rollback()
