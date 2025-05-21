@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException,Depends,Body,Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Body, Request
 from sqlalchemy.orm import Session
 from config import get_db
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,8 +10,7 @@ from pydantic import BaseModel
 router = APIRouter()
 @router.get("/products")
 @public_route()
-
-async def get_all_products(request: Request, db: Session = Depends(get_db)):
+async def get_all_products(request: Request,db: Session = Depends(get_db)):
     try:
         products = db.query(Product).all()
 
