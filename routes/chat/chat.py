@@ -659,6 +659,15 @@ async def get_bot_doc_links(
                 ChatBotsDocLinks.target_link != ""
             )
         ).count()
+        
+        user_target_links = db.query(ChatBotsDocLinks)\
+        .filter(
+            ChatBotsDocLinks.user_id == user_id,
+            and_(
+                ChatBotsDocLinks.target_link.isnot(None),
+                ChatBotsDocLinks.target_link != ""
+            )
+        ).count()
 
         # Count where document_link is not null and not empty
         total_document_links = db.query(ChatBotsDocLinks)\
@@ -674,11 +683,19 @@ async def get_bot_doc_links(
         total_chars = db.query(func.sum(ChatBotsDocLinks.chars))\
         .filter_by(user_id=user_id, bot_id=bot_id)\
         .scalar() or 0
+        user_total_chars = db.query(func.sum(ChatBotsDocLinks.chars))\
+        .filter_by(user_id=user_id)\
+        .scalar() or 0
 
         
         pending_count = db.query(func.count(ChatBotsDocLinks.id))\
         .filter(ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
+                ChatBotsDocLinks.status == "Pending")\
+        .scalar()
+        
+        user_pending_count = db.query(func.count(ChatBotsDocLinks.id))\
+        .filter(ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.status == "Pending")\
         .scalar()
 
@@ -687,10 +704,18 @@ async def get_bot_doc_links(
                     ChatBotsDocLinks.bot_id == bot_id,
                     ChatBotsDocLinks.status == "Failed")\
             .scalar()
+        user_failed_count = db.query(func.count(ChatBotsDocLinks.id))\
+            .filter(ChatBotsDocLinks.user_id == user_id,
+                    ChatBotsDocLinks.status == "Failed")\
+            .scalar()
 
         indexed_count = db.query(func.count(ChatBotsDocLinks.id))\
             .filter(ChatBotsDocLinks.user_id == user_id,
                     ChatBotsDocLinks.bot_id == bot_id,
+                    ChatBotsDocLinks.status == "Indexed")\
+            .scalar()
+        user_indexed_count = db.query(func.count(ChatBotsDocLinks.id))\
+            .filter(ChatBotsDocLinks.user_id == user_id,
                     ChatBotsDocLinks.status == "Indexed")\
             .scalar()
 
@@ -725,7 +750,12 @@ async def get_bot_doc_links(
             "pending_count":pending_count,
             "failed_count":failed_count,
             "indexed_count": indexed_count,
-            "total_chars": total_chars
+            "total_chars": total_chars,
+            "user_target_links": user_target_links,
+            "user_pending_count":user_pending_count,
+            "user_failed_count":user_failed_count,
+            "user_indexed_count":user_indexed_count,
+            "user_total_chars":user_total_chars,
         }
 
     except HTTPException as http_exc:
