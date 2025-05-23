@@ -34,7 +34,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @router.put("/users/{user_id}/base-rate")
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
-async def update_base_rate(user_id: int, data: User, db: Session = Depends(get_db)):
+async def update_base_rate(user_id: int, request: Request,data: User, db: Session = Depends(get_db)):
     user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
     
     if not user:
