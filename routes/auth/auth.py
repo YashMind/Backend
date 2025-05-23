@@ -7,7 +7,7 @@ from uuid import uuid4
 import json
 from models.authModel.authModel import AuthUser
 from models.adminModel.roles_and_permission import RolePermission
-from schemas.authSchema.authSchema import User, SignInUser, PasswordResetRequest, PasswordReset, UserUpdate
+from schemas.authSchema.authSchema import PasswordChange, User, SignInUser, PasswordResetRequest, PasswordReset, UserUpdate
 from sqlalchemy.orm import Session
 from config import get_db
 from typing import Optional, Dict, List
@@ -23,7 +23,6 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 @router.post("/signup")
 async def signup(user: User, db: Session = Depends(get_db)):
     try:
-        print("hello")
         fullName = user.fullName
         email = user.email
         password = user.password
@@ -172,6 +171,36 @@ async def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
         db.commit()
     
         return {"message": "Password reset successful"}
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid token")
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    
+    
+@router.post("/change-password")
+async def reset_password(request:Request, data: PasswordChange, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        
+        print(payload)
+        if payload.get("user_id") is None:
+            raise HTTPException(status_code=400, detail="Invalid token")
+        user = db.query(AuthUser).filter(AuthUser.id==payload.get("user_id")).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        old_password = data.old_password
+        if not pwd_context.verify(old_password, user.password ):
+            raise HTTPException(status_code=400, detail="Current Password is incorrect")
+        
+        hashed_password = pwd_context.hash(data.new_password)
+        user.password = hashed_password
+        db.commit()
+    
+        return {"message": "Password changed successful"}
     except JWTError:
         raise HTTPException(status_code=400, detail="Invalid token")
     except HTTPException as http_exc:

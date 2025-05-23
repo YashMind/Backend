@@ -27,6 +27,10 @@ class PasswordResetRequest(BaseModel):
 class PasswordReset(BaseModel):
     token: str
     new_password: str
+    
+class PasswordChange(BaseModel):
+    old_password: str
+    new_password: str
 
 class UserUpdate(BaseModel):
     id: Optional[int] = None
