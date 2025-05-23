@@ -10,7 +10,9 @@ from models.authModel.authModel import AuthUser
 from models.adminModel.adminModel import PaymentGateway, SubscriptionPlans, TokenBots, BotProducts
 from models.adminModel.roles_and_permission import RolePermission
 from sqlalchemy.exc import SQLAlchemyError
-from models.activityLogModel.activityLogModel import ActivityLog 
+from models.activityLogModel.activityLogModel import ActivityLog
+from models.chatModel.sharing import ChatBotSharing
+from models.chatModel.chatModel import ChatBots
 
 from schemas.authSchema.authSchema import User, UserUpdate
 from schemas.adminSchema.adminSchema import PostEmail, PaymentGatewaySchema, PlansSchema, TokenBotsSchema, BotProductSchema,RolePermissionInput, RolePermissionResponse
@@ -36,10 +38,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def update_base_rate(user_id: int, data: User, db: Session = Depends(get_db)):
     user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
-    
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     user.base_rate_per_token = data.base_rate_per_token
     db.commit()
     db.refresh(user)
@@ -109,7 +111,7 @@ async def get_all_users(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # update user
 @router.put("/update-user-admin", response_model=User)
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
@@ -132,20 +134,20 @@ async def update_chatbot(data:User, db: Session = Depends(get_db),current_user: 
 
         if data.plan:
             user.plan = data.plan
-            
+
         db.commit()
         db.refresh(user)
         log_entry = ActivityLog(
         user_id=current_user.id,
         username=current_user.fullName,
         role=current_user.role,
-        action=f"{data.status}", 
+        action=f"{data.status}",
         log_activity=f"Account status updated to {data.status}",
         )
         db.add(log_entry)
         db.commit()
         return user
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -173,16 +175,16 @@ async def update_chatbot(data:User,request: Request, db: Session = Depends(get_d
 
         if data.plan:
             user.plan = data.plan
-            
+
         db.commit()
         db.refresh(user)
         return user
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))       
-    
+        raise HTTPException(status_code=500, detail=str(e))
+
 # create new subscription plan
 @router.post("/create-subscription-plans", response_model=PlansSchema)
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
@@ -220,7 +222,7 @@ async def create_subscription_plans(data:PlansSchema, request: Request, db: Sess
             db.commit()
             db.refresh(new_plan)
             return new_plan
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -245,8 +247,8 @@ async def update_plan_status(
         "success": True,
         "message": f"Subscription plan {'activated' if is_active else 'deactivated'} successfully.",
         "data": {"id": plan.id, "is_active": plan.is_active}
-    }        
-    
+    }
+
 @router.get("/subscription-plans")
 @public_route()
 async def get_all_subscription_plans(
@@ -285,13 +287,13 @@ async def get_all_subscription_plans(
         raise HTTPException(status_code=500, detail=f"Something went wrong: {str(e)}")
 
 @router.delete("/delete-subscription-plan/{plan_id}")
-@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])   
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def delete_subscription_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        
+
 
         plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id==plan_id).first()
         if plan:
@@ -302,7 +304,7 @@ async def delete_subscription_plan(plan_id: int, request: Request, db: Session =
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # create new subscription plan
 @router.post("/create-token-bots", response_model=TokenBotsSchema)
 async def create_subscription_plans(data:TokenBotsSchema, request: Request, db: Session = Depends(get_db)):
@@ -333,12 +335,12 @@ async def create_subscription_plans(data:TokenBotsSchema, request: Request, db: 
             db.commit()
             db.refresh(new_botToken)
             return new_botToken
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.get("/get-all-token-bots")
 async def get_all_token_bots(
     request: Request,
@@ -387,14 +389,14 @@ async def get_all_token_bots(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.delete("/delete-token-bot/{token_bot_id}")
 async def delete_token_bots(token_bot_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        
+
 
         token_bot = db.query(TokenBots).filter(TokenBots.id==token_bot_id).first()
         if token_bot:
@@ -405,7 +407,7 @@ async def delete_token_bots(token_bot_id: int, request: Request, db: Session = D
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.get("/get-top-consumption-users", response_model=List[User])
 async def get_top_consumption_users(
     request: Request,
@@ -441,7 +443,7 @@ async def update_chatbot(data:TokenBotsSchema, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(token_bot)
         return token_bot
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -474,12 +476,12 @@ async def create_update_bot_product(data:BotProductSchema, request: Request, db:
             db.commit()
             db.refresh(new_bot_product)
             return new_bot_product
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.get("/get-bot-products")
 async def get_bot_products(
     request: Request,
@@ -575,6 +577,253 @@ async def get_non_admin_users(
         )
 
         return non_admin_users
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/get-uninvited-users")
+@public_route()
+async def get_uninvited_users(
+    request: Request,
+    bot_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all users who haven't been invited to the specified chatbot.
+    This includes both regular users and admin users, but excludes the chatbot owner.
+    """
+    try:
+        # Authenticate the user
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Get the current user to verify they have access to this chatbot
+        current_user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+        if not current_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Get the chatbot to find the owner
+        chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
+        if not chatbot:
+            raise HTTPException(status_code=404, detail="Chatbot not found")
+
+        # Verify the current user has access to this chatbot (either owner or invited user)
+        has_access = False
+        if chatbot.user_id == user_id:
+            # User is the owner
+            has_access = True
+        else:
+            # Check if user is invited to this chatbot
+            sharing = db.query(ChatBotSharing).filter(
+                ChatBotSharing.bot_id == bot_id,
+                ChatBotSharing.shared_user_id == user_id,
+                ChatBotSharing.status == "active"
+            ).first()
+            if sharing:
+                has_access = True
+
+        if not has_access:
+            raise HTTPException(status_code=403, detail="You don't have access to this chatbot")
+
+        # Find all users who have already been invited to this chatbot
+        invited_user_ids = db.query(ChatBotSharing.shared_user_id).filter(
+            ChatBotSharing.bot_id == bot_id,
+            ChatBotSharing.shared_user_id.isnot(None)
+        ).all()
+
+        invited_emails = db.query(ChatBotSharing.shared_email).filter(
+            ChatBotSharing.bot_id == bot_id,
+            ChatBotSharing.shared_email.isnot(None)
+        ).all()
+
+        # Extract the IDs and emails from the query results
+        invited_user_ids = [user_id[0] for user_id in invited_user_ids if user_id[0] is not None]
+        invited_emails = [email[0] for email in invited_emails if email[0] is not None]
+
+        # Get all users except:
+        # 1. The current user making the request
+        # 2. The chatbot owner
+        # 3. Users who have already been invited
+        uninvited_users = db.query(AuthUser).filter(
+            AuthUser.id != user_id,  # Exclude the current user
+            AuthUser.id != chatbot.user_id,  # Exclude the chatbot owner
+            ~AuthUser.id.in_(invited_user_ids) if invited_user_ids else True,  # Exclude already invited users by ID
+            ~AuthUser.email.in_(invited_emails) if invited_emails else True  # Exclude already invited users by email
+        ).all()
+
+        return uninvited_users
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/get-invited-users")
+@public_route()
+async def get_invited_users(
+    request: Request,
+    bot_id: int = None,
+    page: int = 1,
+    page_size: int = 10,
+    search: str = None,
+    status: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get paginated users who have been invited to chatbots owned by the current user.
+    Supports pagination, search, and filtering.
+    """
+    try:
+        # Authenticate the user
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Build the base query for sharing records
+        query = db.query(ChatBotSharing).join(ChatBots).filter(
+            ChatBots.user_id == user_id  # Only chatbots owned by current user
+        )
+
+        # Apply status filter
+        if status and status != "all":
+            query = query.filter(ChatBotSharing.status == status)
+        else:
+            # Default: exclude revoked unless specifically requested
+            query = query.filter(ChatBotSharing.status.in_(["pending", "active"]))
+
+        # If bot_id is provided, filter for that specific chatbot
+        if bot_id:
+            query = query.filter(ChatBotSharing.bot_id == bot_id)
+
+        # Apply search filter if provided
+        if search:
+            search_term = f"%{search}%"
+            # Join with AuthUser to search in user names
+            query = query.outerjoin(AuthUser, ChatBotSharing.shared_user_id == AuthUser.id)
+            query = query.filter(
+                or_(
+                    ChatBotSharing.shared_email.ilike(search_term),
+                    AuthUser.fullName.ilike(search_term),
+                    AuthUser.email.ilike(search_term),
+                    ChatBots.chatbot_name.ilike(search_term)
+                )
+            )
+
+        # Get total count before pagination
+        total_count = query.count()
+
+        # Apply pagination
+        offset = (page - 1) * page_size
+        sharing_records = query.offset(offset).limit(page_size).all()
+
+        # Prepare the response with user and chatbot details
+        invited_users = []
+        for sharing in sharing_records:
+            # Get chatbot details
+            chatbot = db.query(ChatBots).filter(ChatBots.id == sharing.bot_id).first()
+
+            user_info = {
+                "sharing_id": sharing.id,
+                "bot_id": sharing.bot_id,
+                "chatbot_name": chatbot.chatbot_name if chatbot else "Unknown Chatbot",
+                "status": sharing.status,
+                "created_at": sharing.created_at,
+                "updated_at": sharing.updated_at,
+                "shared_email": sharing.shared_email,
+                "user_name": None,
+                "user_id": sharing.shared_user_id
+            }
+
+            # If there's a shared_user_id, get the user details
+            if sharing.shared_user_id:
+                user = db.query(AuthUser).filter(AuthUser.id == sharing.shared_user_id).first()
+                if user:
+                    user_info["user_name"] = user.fullName or "Unknown User"
+                    user_info["shared_email"] = user.email
+
+            invited_users.append(user_info)
+
+        # Calculate pagination metadata
+        total_pages = (total_count + page_size - 1) // page_size
+        has_next = page < total_pages
+        has_prev = page > 1
+
+        return {
+            "data": invited_users,
+            "pagination": {
+                "current_page": page,
+                "page_size": page_size,
+                "total_items": total_count,
+                "total_pages": total_pages,
+                "has_next": has_next,
+                "has_prev": has_prev
+            }
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/revoke-access/{sharing_id}")
+@public_route()
+async def revoke_access(
+    request: Request,
+    sharing_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Revoke access for a specific sharing record.
+    Only the chatbot owner can revoke access.
+    """
+    try:
+        # Authenticate the user
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Find the sharing record
+        sharing = db.query(ChatBotSharing).filter(
+            ChatBotSharing.id == sharing_id
+        ).first()
+
+        if not sharing:
+            raise HTTPException(status_code=404, detail="Sharing record not found")
+
+        # Verify the user owns the chatbot
+        chatbot = db.query(ChatBots).filter(
+            ChatBots.id == sharing.bot_id,
+            ChatBots.user_id == user_id
+        ).first()
+
+        if not chatbot:
+            raise HTTPException(status_code=403, detail="You don't have permission to revoke this access")
+
+        # Update the status to revoked
+        sharing.status = "revoked"
+        sharing.updated_at = datetime.now()
+
+        db.commit()
+        db.refresh(sharing)
+
+        return {
+            "success": True,
+            "message": "Access revoked successfully",
+            "sharing_id": sharing_id
+        }
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -676,7 +925,7 @@ async def update_client_user(data: UserUpdate, request: Request, db: Session = D
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    
+
 @router.delete("/delete-admin-user/{id}")
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def delete_admin_user(
@@ -716,13 +965,13 @@ async def delete_admin_user(
 
 
 @router.delete("/delete-client-user/{id}")
-@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])   
+@allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def delete_client_user(id: int, request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        
+
 
         clientUser = db.query(AuthUser).filter(AuthUser.id==id).first()
         if clientUser:
@@ -733,8 +982,8 @@ async def delete_client_user(id: int, request: Request, db: Session = Depends(ge
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-    
+
+
 @router.get("/get-admins-logs-activity")
 async def get_admin_logs_activity(
     request: Request,
@@ -748,7 +997,7 @@ async def get_admin_logs_activity(
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         admins = ["Super Admin", "Billing Admin", "Product Admin", "Support Admin"]
-        
+
         # last_added_admin = db.query(AuthUser).filter(AuthUser.role.in_(admins)).order_by(desc(AuthUser.created_at)).first()
 
         # last_role_updated = db.query(AuthUser).filter(AuthUser.role.in_(admins)).order_by(desc(AuthUser.updated_at)).first()
@@ -770,13 +1019,13 @@ async def get_admin_logs_activity(
         last_suspended_admin = query.filter(AuthUser.status == "Suspend").order_by(AuthUser.updated_at.desc()).first()
 
         results = {"last_added_admin":last_added_admin, "last_role_updated":last_role_updated, "last_suspended_admin":last_suspended_admin}
-       
+
         return results
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # create update payment gateway
 @router.post("/create-update-payment-gateway", response_model=PaymentGatewaySchema)
 async def create_update_payment_gateway(data:PaymentGatewaySchema, request: Request, db: Session = Depends(get_db)):
@@ -810,12 +1059,12 @@ async def create_update_payment_gateway(data:PaymentGatewaySchema, request: Requ
             db.commit()
             db.refresh(new_payment_gateway)
             return new_payment_gateway
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # get payment gateway
 @router.get("/get-payments-gateway", response_model=List[PaymentGatewaySchema])
 async def get_payments_gateway(request: Request, db: Session = Depends(get_db)):
@@ -825,12 +1074,12 @@ async def get_payments_gateway(request: Request, db: Session = Depends(get_db)):
         user_id = int(payload.get("user_id"))
         payments_gateway = db.query(PaymentGateway).filter()
         return payments_gateway
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # delete payment gateway
 @router.delete("/delete-payments-gateway/{id}")
 async def delete_payments_gateway(id: int, request: Request, db: Session = Depends(get_db)):
@@ -843,21 +1092,21 @@ async def delete_payments_gateway(id: int, request: Request, db: Session = Depen
             db.delete(payment_gateway)
             db.commit()
         return {"message": "Payment gateway deleted successfully!"}
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
- 
+
 
 @router.post("/assign", response_model=RolePermissionResponse)
 def assign_custom_permissions(data: RolePermissionInput, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
     print("User object:", current_user)
     print("User fields:", current_user.__dict__)
-    
+
     # Check if role exists
     role_obj = db.query(RolePermission).filter_by(role=data.role).first()
-    
+
     if role_obj:
         # Update permissions if role exists
         role_obj.permissions = data.permissions
@@ -865,7 +1114,7 @@ def assign_custom_permissions(data: RolePermissionInput, db: Session = Depends(g
         # Create new role with permissions
         role_obj = RolePermission(role=data.role, permissions=data.permissions)
         db.add(role_obj)
-    
+
     db.commit()
     db.refresh(role_obj)
     log_entry = ActivityLog(
@@ -882,7 +1131,7 @@ def assign_custom_permissions(data: RolePermissionInput, db: Session = Depends(g
         "permissions": role_obj.permissions
     }
 
-    
+
 @router.get("/get", response_model=RolePermissionResponse)
 def get_role_permissions(role: str, db: Session = Depends(get_db)):
     role_obj = db.query(RolePermission).filter_by(role=role).first()
@@ -920,7 +1169,7 @@ async def fetch_roles(request: Request, response: Response, db: Session = Depend
         user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
         if not user:
             raise HTTPException(status_code=400, detail="User not found")
-        
+
         role = user.role
         if not role:
             raise HTTPException(status_code=200, detail="User has no role")
@@ -928,7 +1177,7 @@ async def fetch_roles(request: Request, response: Response, db: Session = Depend
         permissions = db.query(RolePermission).filter(func.lower(RolePermission.role) == func.lower(role)).first()
         if not permissions:
             raise HTTPException(status_code=200, detail="User has no permissions")
-        
+
         return {"permissions": permissions.permissions, "status": 200}
 
     except HTTPException as http_exc:

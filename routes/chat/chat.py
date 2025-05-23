@@ -1,15 +1,17 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, UploadFile, File, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, UploadFile, File, Query, BackgroundTasks
 from fastapi.responses import JSONResponse
 from utils.utils import decode_access_token, get_current_user
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
 from models.chatModel.chatModel import ChatSession, ChatMessage, ChatBots, ChatBotsFaqs, ChatBotsDocLinks, ChatBotsDocChunks, ChatBotLeadsModel, ChatTotalToken
+from models.chatModel.sharing import ChatBotSharing
 from schemas.chatSchema.chatSchema import ChatMessageRead, ChatSessionRead, ChatSessionWithMessages, CreateBot, DeleteChatsRequest, CreateBotFaqs, FaqResponse, CreateBotDocLinks, DeleteDocLinksRequest, ChatbotLeads, DeleteChatbotLeadsRequest, ChatMessageTokens, BotTokens
+from schemas.chatSchema.sharingSchema import DirectSharingRequest, EmailInviteRequest, BulkEmailInviteRequest, AcceptInviteRequest, SharingResponse, InviteResponse, AcceptInviteResponse
 from models.chatModel.appearance import ChatSettings
 from models.chatModel.tuning import DBInstructionPrompt
 from sqlalchemy.orm import Session
-from config import get_db
+from config import get_db, settings
 from typing import Optional, List
 from collections import defaultdict
 import os
@@ -22,10 +24,67 @@ from decorators.product_status import check_product_status
 import secrets
 import string
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import smtplib
+from models.authModel.authModel import AuthUser
 
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
 router = APIRouter()
+
+def generate_invite_token():
+    """Generate a random token for invitation links"""
+    return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
+
+async def send_invitation_email(recipient_email: str, invite_token: str, chatbot_name: str, owner_name: str):
+    """Send invitation email to the recipient"""
+    try:
+        # Create message
+        message = MIMEMultipart()
+        message["From"] = settings.EMAIL_ADDRESS
+        message["To"] = recipient_email
+        message["Subject"] = f"You've been invited to collaborate on a chatbot: {chatbot_name}"
+
+        # Create the invite URL
+        invite_url = f"{settings.FRONTEND_URL}/accept-invite/{invite_token}"
+
+        # HTML content
+        html = f"""
+        <html>
+        <body>
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2>Chatbot Invitation</h2>
+                <p>Hello,</p>
+                <p>{owner_name} has invited you to collaborate on the chatbot: <strong>{chatbot_name}</strong>.</p>
+                <p>Click the button below to accept this invitation:</p>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{invite_url}" style="background-color: #4CAF50; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">
+                        Accept Invitation
+                    </a>
+                </div>
+                <p>Or copy and paste this link in your browser:</p>
+                <p>{invite_url}</p>
+                <p>This invitation link will expire in 7 days.</p>
+                <p>Thank you,<br>YashMind AI Team</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Attach HTML content
+        message.attach(MIMEText(html, "html"))
+
+        # Connect to SMTP server and send email
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(settings.EMAIL_ADDRESS, settings.EMAIL_PASSWORD)
+            server.send_message(message)
+
+        return True
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return False
 
 # create new chatbot
 @router.post("/create-bot", response_model=CreateBot)
@@ -53,7 +112,7 @@ async def create_chatbot(request: Request, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(new_chatbot)
         return new_chatbot
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -99,28 +158,50 @@ async def update_chatbot(data:CreateBot, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(chatbot)
         return chatbot
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # get chatbot
 @router.get("/get-bot", response_model=CreateBot)
 @check_product_status("chatbot")
-async def get_chatbot(botId:int, db: Session = Depends(get_db)):
+async def get_chatbot(botId: int, request: Request, db: Session = Depends(get_db)):
     try:
-        chatbot = db.query(ChatBots).filter(ChatBots.id == botId).first()
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
 
+        chatbot = db.query(ChatBots).filter(ChatBots.id == botId).first()
         if not chatbot:
             raise HTTPException(status_code=404, detail="Chatbot not found")
-        return chatbot
-    
+
+        # Check if user is the owner
+        if chatbot.user_id == user_id:
+            return chatbot
+
+        # Check if chatbot is shared with the user
+        sharing = db.query(ChatBotSharing).filter(
+            ChatBotSharing.bot_id == botId,
+            ChatBotSharing.shared_user_id == user_id,
+            ChatBotSharing.status == "active"
+        ).first()
+
+        if sharing:
+            return chatbot
+
+        # If chatbot is public, allow access
+        if chatbot.public:
+            return chatbot
+
+        raise HTTPException(status_code=403, detail="You don't have access to this chatbot")
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e), error=e)
-    
+
 UPLOAD_DIRECTORY = "uploads/"
 ALLOWED_FILE_TYPES = [
     "text/plain",
@@ -171,14 +252,33 @@ async def upload_photo(file: UploadFile = File(...), current_user: dict = Depend
 # get all chatbots
 @router.get("/get-all", response_model=List[CreateBot])
 @check_product_status("chatbot")
-async def get_my_bots(request: Request, db: Session = Depends(get_db)):
+async def get_my_bots(request: Request, db: Session = Depends(get_db), include_shared: bool = Query(True)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        
-        bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).order_by(ChatBots.created_at.desc()).all()
-        return bots
+
+        # Get user's own bots
+        owned_bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).order_by(ChatBots.created_at.desc()).all()
+
+        # If include_shared is True, also get shared bots
+        if include_shared:
+            # Get IDs of bots shared with the user
+            shared_bot_ids = db.query(ChatBotSharing.bot_id).filter(
+                ChatBotSharing.shared_user_id == user_id,
+                ChatBotSharing.status == "active"
+            ).all()
+
+            # Extract IDs from result tuples
+            shared_bot_ids = [bot_id for (bot_id,) in shared_bot_ids]
+
+            # Get shared bots if there are any
+            if shared_bot_ids:
+                shared_bots = db.query(ChatBots).filter(ChatBots.id.in_(shared_bot_ids)).all()
+                # Combine owned and shared bots
+                return owned_bots + shared_bots
+
+        return owned_bots
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -200,18 +300,18 @@ async def create_chat(data: ChatSessionRead, request: Request, db: Session = Dep
             has_messages = db.query(ChatMessage).filter_by(chat_id=last_chat.id).first()
             if not has_messages:
                 return last_chat
-            
+
         new_chat = ChatSession(user_id=user_id, bot_id=bot_id)
         db.add(new_chat)
         db.commit()
         db.refresh(new_chat)
         return new_chat
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.post("/chats-id-token", response_model=ChatSessionRead)
 @check_product_status("chatbot")
 async def create_chat_token_session(data: ChatSessionRead, request: Request, db: Session = Depends(get_db)):
@@ -229,23 +329,23 @@ async def create_chat_token_session(data: ChatSessionRead, request: Request, db:
             existing_chat = db.query(ChatSession).filter_by(bot_id=chat_bot.id, user_id=user_id).first()
             if existing_chat:
                 return existing_chat
-            
+
             new_chat = ChatSession(token=data.token, bot_id=chat_bot.id, user_id=user_id)
             db.add(new_chat)
             db.commit()
             db.refresh(new_chat)
             return new_chat
-        
+
         new_chat = ChatSession(token=data.token, bot_id=chat_bot.id)
         db.add(new_chat)
         db.commit()
         db.refresh(new_chat)
-        return new_chat  
+        return new_chat
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-      
+
 # send message
 @router.post("/chats/{chat_id}/message", response_model=ChatMessageRead)
 @check_product_status("chatbot")
@@ -260,25 +360,25 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         bot_id = data.get("bot_id")
         if not user_msg:
             raise HTTPException(status_code=400, detail="Message required")
-        
+
         chatbot = db.query(ChatBots).filter(id=bot_id)
         if not chatbot:
             raise HTTPException(status_code=404, detail="ChatBot not found")
-        
+
         chatbot_settings = db.query(ChatSettings).filter(bot_id=bot_id).first()
-        
+
         token_record = db.query(ChatTotalToken).filter_by(user_id=user_id, bot_id=bot_id).first()
         # currently we are only checking if the reacord in this table exsits then it should not exceed limit. once subscriptions implemented we will return user with no token limit if the record not exists
         if token_record:
             if token_record.total_tokens <= token_record.user_message_tokens:
                 raise HTTPException(status_code=400, detail="Token limit exceeded")
-        
+
 
         # Verify chat belongs to user
         chat = db.query(ChatSession).filter_by(id=chat_id).first()
-        if not chat:    
+        if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
-        
+
 
         user_tokens, response_tokens, openai_tokens = 0, 0, 0
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
@@ -300,19 +400,19 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         #     langchain_messages.append(HumanMessage(content=user_msg))
         #     response = llm.invoke(langchain_messages)
         #     response_content = response.content if response and response.content else "No response"
-        
+
         response_content= response_from_faqs.answer if response_from_faqs else None
-        
-        
+
+
         if not response_content:
             print("No response found from FAQ")
             # Hybrid retrieval
             context_texts, scores = hybrid_retrieval(user_msg, bot_id)
-            
+
             instruction_prompts = db.query(DBInstructionPrompt).filter(bot_id==bot_id).all()
             creativity = chatbot.Creativity
             text_content = chatbot.text_content
-            
+
             answer = None
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
@@ -324,7 +424,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
                     answer = generated_res[0]
                     openai_tokens = generated_res[1]
                     print("ANSWER",answer, openai_tokens)
-                
+
             else:
                 print("no direct scores from hybrid retrieval and using openai independently")
                 # Full OpenAI fallback
@@ -334,8 +434,8 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
                 answer = generated_res[0]
                 openai_tokens = generated_res[1]
                 print("ANSWER",answer, openai_tokens)
-                
-            response_content= answer    
+
+            response_content= answer
 
         # ✅ Always compute tokens after final response is ready
         user_tokens = len(user_msg.strip().split())
@@ -370,7 +470,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
                 user_message_tokens = user_tokens,
                 response_tokens = response_tokens,
                 openai_tokens = openai_tokens,
-                plan="basic"  
+                plan="basic"
             )
             db.add(token_record)
 
@@ -381,7 +481,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # get all charts
 @router.get("/chats", response_model=List[ChatSessionWithMessages])
 @check_product_status("chatbot")
@@ -397,7 +497,7 @@ async def list_chats(request: Request, db: Session = Depends(get_db)):
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # load chat history
 @router.get("/chats/{chat_id}", response_model=List[ChatMessageRead])
 @check_product_status("chatbot")
@@ -418,7 +518,7 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
 # get user chat history
 @router.get("/chats-history/{bot_id}")
 @check_product_status("chatbot")
-async def get_user_chat_history(bot_id: int, request: Request, db: Session = Depends(get_db), 
+async def get_user_chat_history(bot_id: int, request: Request, db: Session = Depends(get_db),
     page: int = Query(1, ge=1), limit: int = Query(10, ge=1), search: Optional[str] = None):
     try:
         token = request.cookies.get("access_token")
@@ -443,7 +543,7 @@ async def get_user_chat_history(bot_id: int, request: Request, db: Session = Dep
                 "currentPage": page,
                 "chatBot":chat_bot
             }
-        
+
         messages = db.query(ChatMessage).filter(ChatMessage.chat_id.in_(session_ids)).order_by(ChatMessage.created_at.asc()).all()
         # Group messages by chat_id
         grouped_messages = defaultdict(list)
@@ -463,7 +563,7 @@ async def get_user_chat_history(bot_id: int, request: Request, db: Session = Dep
     except Exception as e:
         print("e ", e)
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.delete("/delete-chats/{bot_id}")
 @check_product_status("chatbot")
 async def delete_chat(bot_id: int, request_data: DeleteChatsRequest, request: Request, db: Session = Depends(get_db)):
@@ -471,7 +571,7 @@ async def delete_chat(bot_id: int, request_data: DeleteChatsRequest, request: Re
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        
+
         for chat_id in request_data.chat_ids:
             chat = db.query(ChatSession).filter_by(id=chat_id, user_id=user_id, bot_id=bot_id).first()
             if chat:
@@ -528,13 +628,13 @@ async def create_chatbot_faqs(data:CreateBotFaqs, request: Request, db: Session 
         return {
             'bot_id': data.bot_id,
             'questions':created_faqs}
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         print("e ", e)
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.get("/get-bot-faqs/{bot_id}", response_model=List[FaqResponse])
 @check_product_status("chatbot")
 async def get_chatbot_faqs(bot_id:int, request: Request, db: Session = Depends(get_db)):
@@ -545,13 +645,13 @@ async def get_chatbot_faqs(bot_id:int, request: Request, db: Session = Depends(g
 
         chatbot_faqs = db.query(ChatBotsFaqs).filter_by(bot_id=bot_id, user_id=user_id).order_by(ChatBotsFaqs.created_at.desc()).all()
         return chatbot_faqs
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         print("e ", e)
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.delete("/delete-faq/{bot_id}/{faq_id}")
 @check_product_status("chatbot")
 async def delete_single_faq(bot_id: int, faq_id: int, request: Request, db: Session = Depends(get_db)):
@@ -588,7 +688,7 @@ async def delete_all_faqs(bot_id: int, request: Request, db: Session = Depends(g
     except Exception as e:
         print("Delete all FAQs error:", e)
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # create new chatbot doc
 @router.post("/create-bot-doc-links", response_model=CreateBotDocLinks)
 @check_product_status("chatbot")
@@ -612,16 +712,16 @@ async def create_chatbot_docs(data:CreateBotDocLinks, request: Request, db: Sess
         )
         db.add(new_doc)
         db.commit()
-        
+
         process_document_task.delay(new_doc.id)
-        
+
         return new_doc
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 # Check doc status
 @router.get("/document-status/{doc_id}")
 @check_product_status("chatbot")
@@ -630,7 +730,7 @@ async def get_document_status(doc_id: int, db: Session = Depends(get_db)):
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": doc.status}
-    
+
 
 @router.get("/get-bot-doc-links/{bot_id}")
 @check_product_status("chatbot")
@@ -671,12 +771,12 @@ async def get_bot_doc_links(
                     ChatBotsDocLinks.document_link != ""
                 )
             ).count()
-        
+
         total_chars = db.query(func.sum(ChatBotsDocLinks.chars))\
         .filter_by(user_id=user_id, bot_id=bot_id)\
         .scalar() or 0
 
-        
+
         pending_count = db.query(func.count(ChatBotsDocLinks.id))\
         .filter(ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
@@ -733,57 +833,57 @@ async def get_bot_doc_links(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 
 @router.delete("/delete-doc-links/{bot_id}")
 @check_product_status("chatbot")
 async def delete_doc_links(
-    bot_id: int, 
-    request_data: DeleteDocLinksRequest, 
-    request: Request, 
+    bot_id: int,
+    request_data: DeleteDocLinksRequest,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        
+
         # First get all document links that will be deleted
         docs_to_delete = db.query(ChatBotsDocLinks).filter(
             ChatBotsDocLinks.id.in_(request_data.doc_ids),
             ChatBotsDocLinks.user_id == user_id,
             ChatBotsDocLinks.bot_id == bot_id
         ).all()
-        
+
         if not docs_to_delete:
             return {"message": "No documents found to delete"}
-        
+
         # Get the source links for Pinecone deletion
         doc_links = [doc.target_link or doc.document_link for doc in docs_to_delete]
-        
+
         # Delete from Pinecone first
         deletion_stats = delete_documents_from_pinecone(bot_id, doc_links, db)
-        
+
         # Then delete from database
         db.query(ChatBotsDocLinks).filter(
             ChatBotsDocLinks.id.in_(request_data.doc_ids),
             ChatBotsDocLinks.user_id == user_id,
             ChatBotsDocLinks.bot_id == bot_id
         ).delete(synchronize_session=False)
-        
+
         db.commit()
-        
+
         return {
             "message": "Documents deleted successfully",
             "pinecone_deletion_stats": deletion_stats
         }
-        
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.delete("/chats-delete-token/{token}")
 @check_product_status("chatbot")
 async def delete_token_chat(token: str, db: Session = Depends(get_db)):
@@ -801,7 +901,7 @@ async def delete_token_chat(token: str, db: Session = Depends(get_db)):
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.delete("/user-chats-delete/{chat_id}")
 @check_product_status("chatbot")
 async def delete_user_chats(chat_id: int, db: Session = Depends(get_db)):
@@ -814,7 +914,7 @@ async def delete_user_chats(chat_id: int, db: Session = Depends(get_db)):
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.delete("/delete-bot/{bot_id}")
 @check_product_status("chatbot")
 async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_db)):
@@ -831,7 +931,7 @@ async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_d
         db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).delete(synchronize_session=False)
         db.query(ChatMessage).filter(ChatMessage.bot_id == bot_id).delete(synchronize_session=False)
         db.query(ChatSession).filter(ChatSession.bot_id == bot_id).delete(synchronize_session=False)
-        
+
         db.query(ChatBots).filter(ChatBots.id == bot_id, ChatBots.user_id == user_id).delete(synchronize_session=False)
         db.commit()
         return {"message": "Chatbot with all data deleted successfully"}
@@ -839,7 +939,7 @@ async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_d
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 
 # create new chatbot
 @router.post("/create-bot-leads", response_model=ChatbotLeads)
@@ -849,9 +949,9 @@ async def create_chatbot_leads(data:ChatbotLeads, request: Request, db: Session 
         chatbot = db.query(ChatBots).filter(ChatBots.id == data.bot_id).first()
         if not chatbot:
             raise HTTPException(status_code=404,detail="Chatbot not found")
-        
+
         user_id=None
-        
+
         # Require auth if chatbot is NOT public
         if not chatbot.public:
             token = request.cookies.get("access_token")
@@ -880,12 +980,12 @@ async def create_chatbot_leads(data:ChatbotLeads, request: Request, db: Session 
         db.commit()
         db.refresh(new_chatbot_lead)
         return new_chatbot_lead
-    
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.get("/get-chatbot-leads/{bot_id}")
 @check_product_status("chatbot")
 async def get_chatbot_leads(
@@ -936,7 +1036,7 @@ async def get_chatbot_leads(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.delete("/delete-chatbot-leads/{bot_id}")
 @check_product_status("chatbot")
 async def delete_doc_links(bot_id: int, request_data: DeleteChatbotLeadsRequest, request: Request, db: Session = Depends(get_db)):
@@ -944,7 +1044,7 @@ async def delete_doc_links(bot_id: int, request_data: DeleteChatbotLeadsRequest,
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        
+
         for lead_id in request_data.lead_ids:
             doc = db.query(ChatBotLeadsModel).filter_by(id=lead_id, user_id=user_id, bot_id=bot_id).first()
             if doc:
@@ -955,7 +1055,7 @@ async def delete_doc_links(bot_id: int, request_data: DeleteChatbotLeadsRequest,
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.get("/leads/{chat_id}/messages", response_model=List[ChatMessageRead])
 @check_product_status("chatbot")
 async def chat_lead_messages(chat_id: int, request: Request, db: Session = Depends(get_db)):
@@ -983,9 +1083,9 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
             raise HTTPException(status_code=401, detail="Access token missing")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        
+
         bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
-        
+
         bot_tokens_list = []
         total_tokens = 0
 
@@ -1039,4 +1139,233 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
         raise http_exc
     except Exception as e:
         print(str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/invite-users", response_model=InviteResponse)
+@check_product_status("chatbot")
+async def invite_users(
+    data: BulkEmailInviteRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Invite multiple users to a chatbot via email"""
+    try:
+        # Get current user from token
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(token)
+        owner_id = int(payload.get("user_id"))
+        owner_name = payload.get("username", "A user")
+
+        # Check if chatbot exists and user is the owner
+        chatbot = db.query(ChatBots).filter(
+            ChatBots.id == data.bot_id,
+            ChatBots.user_id == owner_id
+        ).first()
+
+        if not chatbot:
+            raise HTTPException(status_code=404, detail="Chatbot not found or you don't have permission")
+
+        # Process each email
+        invites = []
+        for email in data.user_emails:
+            # Check if user with this email exists
+            user = db.query(AuthUser).filter(AuthUser.email == email).first()
+
+            # Check if sharing already exists
+            existing_share = None
+            if user:
+                existing_share = db.query(ChatBotSharing).filter(
+                    ChatBotSharing.bot_id == data.bot_id,
+                    ChatBotSharing.shared_user_id == user.id
+                ).first()
+            else:
+                existing_share = db.query(ChatBotSharing).filter(
+                    ChatBotSharing.bot_id == data.bot_id,
+                    ChatBotSharing.shared_email == email
+                ).first()
+
+            if existing_share and existing_share.status == "active":
+                # Skip if already shared
+                continue
+            elif existing_share and existing_share.status == "pending":
+                # Update existing pending invitation
+                invite_token = generate_invite_token()
+                existing_share.invite_token = invite_token
+                existing_share.updated_at = datetime.now()
+                db.commit()
+                db.refresh(existing_share)
+                invites.append(existing_share)
+
+                # Send invitation email
+                background_tasks.add_task(
+                    send_invitation_email,
+                    email,
+                    invite_token,
+                    chatbot.chatbot_name,
+                    owner_name
+                )
+            else:
+                # Create new sharing record
+                invite_token = generate_invite_token()
+                new_sharing = ChatBotSharing(
+                    bot_id=data.bot_id,
+                    owner_id=owner_id,
+                    shared_email=email,
+                    shared_user_id=user.id if user else None,
+                    invite_token=invite_token,
+                    status="pending"
+                )
+
+                db.add(new_sharing)
+                db.commit()
+                db.refresh(new_sharing)
+                invites.append(new_sharing)
+
+                # Send invitation email
+                background_tasks.add_task(
+                    send_invitation_email,
+                    email,
+                    invite_token,
+                    chatbot.chatbot_name,
+                    owner_name
+                )
+
+        return {
+            "message": f"Invitations sent to {len(invites)} users",
+            "invites": invites
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/accept-invite/{token}", response_model=AcceptInviteResponse)
+async def accept_invite(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Accept an invitation using the token"""
+    try:
+        # Get current user from token
+        auth_token = request.cookies.get("access_token")
+        if not auth_token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(auth_token)
+        user_id = int(payload.get("user_id"))
+        user_email = payload.get("sub")  # Email is stored in 'sub' claim
+
+        # Find the invitation
+        invitation = db.query(ChatBotSharing).filter(
+            ChatBotSharing.invite_token == token,
+            ChatBotSharing.status == "pending"
+        ).first()
+
+        if not invitation:
+            raise HTTPException(status_code=404, detail="Invalid or expired invitation")
+
+        # Check if the invitation matches the current user's email
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if invitation.shared_email and invitation.shared_email != user.email:
+            raise HTTPException(
+                status_code=403,
+                detail="This invitation was sent to a different email address"
+            )
+
+        # Update the invitation
+        invitation.shared_user_id = user_id
+        invitation.status = "active"
+        invitation.updated_at = datetime.now()
+
+        db.commit()
+        db.refresh(invitation)
+
+        return {
+            "message": "Invitation accepted successfully",
+            "sharing": invitation
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/shared-chatbots", response_model=List[SharingResponse])
+async def get_shared_chatbots(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Get all chatbots shared with the current user"""
+    try:
+        # Get current user from token
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Find all active sharing records for this user
+        shared_chatbots = db.query(ChatBotSharing).filter(
+            ChatBotSharing.shared_user_id == user_id,
+            ChatBotSharing.status == "active"
+        ).all()
+
+        return shared_chatbots
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/revoke-sharing/{sharing_id}", response_model=SharingResponse)
+async def revoke_sharing(
+    sharing_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Revoke a sharing by its ID"""
+    try:
+        # Get current user from token
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Find the sharing record
+        sharing = db.query(ChatBotSharing).filter(
+            ChatBotSharing.id == sharing_id
+        ).first()
+
+        if not sharing:
+            raise HTTPException(status_code=404, detail="Sharing record not found")
+
+        # Check if the current user is the owner
+        if sharing.owner_id != user_id:
+            raise HTTPException(status_code=403, detail="You don't have permission to revoke this sharing")
+
+        # Update the status to revoked
+        sharing.status = "revoked"
+        sharing.updated_at = datetime.now()
+
+        db.commit()
+        db.refresh(sharing)
+
+        return sharing
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
