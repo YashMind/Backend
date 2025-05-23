@@ -14,11 +14,47 @@ from typing import Optional, Dict, List
 from sqlalchemy import or_, desc, asc
 from datetime import datetime
 import httpx
+from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime, timedelta
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
+
+
+@router.get("/recent-signups")
+async def get_recent_signups(db: Session = Depends(get_db)):
+    try:
+        # Calculate 24 hours ago from current UTC time
+        since = datetime.utcnow() - timedelta(hours=24)
+
+        # Fetch users created in the last 24 hours
+        users = db.query(AuthUser).filter(AuthUser.created_at >= since).all()
+
+        # Format the user data (you can customize fields as needed)
+        user_list = [
+            {
+                "id": user.id,
+                "fullName": user.fullName,
+                "email": user.email,
+                "created_at": user.created_at,
+            }
+            for user in users
+        ]
+
+        return {
+            "success": True,
+            "message": "Recent user signups in the last 24 hours.",
+            "count": len(user_list),  # Include total count
+            "data": user_list,
+        }
+
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Something went wrong: {str(e)}")
 
 @router.post("/signup")
 async def signup(user: User, db: Session = Depends(get_db)):
