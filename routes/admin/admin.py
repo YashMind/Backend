@@ -190,8 +190,6 @@ async def update_chatbot(data:User,request: Request, db: Session = Depends(get_d
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def create_subscription_plans(data:PlansSchema, request: Request, db: Session = Depends(get_db)):
     try:
-
-
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
