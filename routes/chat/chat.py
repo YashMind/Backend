@@ -586,7 +586,7 @@ async def delete_chat(bot_id: int, request_data: DeleteChatsRequest, request: Re
 
 @router.delete("/chats")
 @check_product_status("chatbot")
-async def delete_all_chats(request: Request, db: Session = Depends(get_db)):
+async def delete_all_chats_by_user(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
@@ -596,6 +596,30 @@ async def delete_all_chats(request: Request, db: Session = Depends(get_db)):
         for chat in user_chats:
             db.query(ChatMessage).filter_by(chat_id=chat.id).delete()
             db.delete(chat)
+
+        db.commit()
+        return {"message": "All chats deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.delete("/chats/delete-all")
+@check_product_status("chatbot")
+async def delete_all_chats_by_bots(request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        user_bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+        for bot in user_bots:
+            bot_chats = db.query(ChatSession).filter(ChatSession.bot_id==bot.id).all()
+            for chat in bot_chats:
+                db.query(ChatMessage).filter_by(chat_id=chat.id).delete()
+                db.delete(chat)
 
         db.commit()
         return {"message": "All chats deleted successfully"}
