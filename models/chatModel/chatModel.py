@@ -12,6 +12,7 @@ class ChatSession(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     token = Column(String(255), nullable=True)
     platform = Column(String(255), nullable=True)
+    archived = Column(Boolean, default=False)
     messages = relationship("ChatMessage", back_populates="chat_session")
 
 class ChatMessage(Base):

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, UploadFile, File, Query, BackgroundTasks
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from utils.utils import decode_access_token, get_current_user
 from uuid import uuid4
@@ -293,7 +294,7 @@ async def create_chat(data: ChatSessionRead, request: Request, db: Session = Dep
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         bot_id = data.bot_id
-        last_chat = (db.query(ChatSession).filter_by(user_id=user_id, bot_id=bot_id).order_by(ChatSession.created_at.desc()).first())
+        last_chat = (db.query(ChatSession).filter(ChatSession.user_id==user_id, ChatSession.bot_id==bot_id).order_by(ChatSession.created_at.desc()).first())
 
         # Step 2: Check if it has any messages
         if last_chat:
@@ -361,13 +362,13 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         if not user_msg:
             raise HTTPException(status_code=400, detail="Message required")
 
-        chatbot = db.query(ChatBots).filter(id=bot_id)
+        chatbot = db.query(ChatBots).filter(ChatBots.id==bot_id).first()
         if not chatbot:
             raise HTTPException(status_code=404, detail="ChatBot not found")
 
-        chatbot_settings = db.query(ChatSettings).filter(bot_id=bot_id).first()
+        chatbot_settings = db.query(ChatSettings).filter(ChatSettings.bot_id==bot_id).first()
 
-        token_record = db.query(ChatTotalToken).filter_by(user_id=user_id, bot_id=bot_id).first()
+        token_record = db.query(ChatTotalToken).filter(ChatTotalToken.user_id==user_id , ChatTotalToken.bot_id==bot_id).first()
         # currently we are only checking if the reacord in this table exsits then it should not exceed limit. once subscriptions implemented we will return user with no token limit if the record not exists
         if token_record:
             if token_record.total_token <= token_record.user_message_tokens:
@@ -375,7 +376,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
 
 
         # Verify chat belongs to user
-        chat = db.query(ChatSession).filter_by(id=chat_id).first()
+        chat = db.query(ChatSession).filter(ChatSession.id==chat_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
 
@@ -409,7 +410,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
             # Hybrid retrieval
             context_texts, scores = hybrid_retrieval(user_msg, bot_id)
 
-            instruction_prompts = db.query(DBInstructionPrompt).filter(bot_id==bot_id).all()
+            instruction_prompts = db.query(DBInstructionPrompt).filter(DBInstructionPrompt.bot_id==bot_id).all()
             creativity = chatbot.creativity
             text_content = chatbot.text_content
 
@@ -455,7 +456,7 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         bot_message.open_ai_tokens = openai_tokens
 
         # ✅ Update ChatTotalToken
-        token_record = db.query(ChatTotalToken).filter_by(user_id=user_id, bot_id=bot_id).first()
+        token_record = db.query(ChatTotalToken).filter(ChatTotalToken.user_id==user_id , ChatTotalToken.bot_id==bot_id).first()
         print("TOKEN RECORDS GENERATING")
         if token_record:
             token_record.user_message_tokens += user_tokens
@@ -491,7 +492,7 @@ async def list_chats(request: Request, db: Session = Depends(get_db)):
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-        chats = db.query(ChatSession).filter_by(user_id=user_id).order_by(ChatSession.created_at.desc()).all()
+        chats = db.query(ChatSession).filter_by(user_id=user_id ,archived =False).order_by(ChatSession.created_at.desc()).all()
         return chats
     except HTTPException as http_exc:
         raise http_exc
@@ -514,6 +515,92 @@ async def get_chat_history(chat_id: int, request: Request, db: Session = Depends
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+@router.get("/chats-history/archived")
+@check_product_status("chatbot")
+async def get_user_chat_history(
+    request: Request,
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1),
+    search: Optional[str] = None
+):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        
+        chat_bots = db.query(ChatBots).filter_by(user_id=user_id).all()
+        response_data = []
+
+        for chat_bot in chat_bots:
+            # Query sessions for this specific chatbot
+            session_query = db.query(ChatSession).filter_by(
+                user_id=user_id,
+                archived=True,
+                bot_id=chat_bot.id
+            )
+
+            # Apply search filter
+            if search:
+                session_query = session_query.join(ChatMessage).filter(
+                    ChatMessage.message.ilike(f"%{search}%")
+                )
+
+            # Get paginated results
+            total_count = session_query.count()
+            sessions = session_query.offset((page - 1) * limit).limit(limit).all()
+            
+            if not sessions:
+                response_data.append({
+                    "chatBotId": chat_bot.id,
+                    "chatBotName": chat_bot.chatbot_name,
+                    "sessions": [],
+                    "totalCount": 0,
+                    "totalPages": 0,
+                    "currentPage": page
+                })
+                continue
+
+            # Get messages for these sessions
+            session_ids = [int(s.id) for s in sessions]
+            messages = db.query(ChatMessage).filter(
+                ChatMessage.chat_id.in_(session_ids)
+            ).order_by(ChatMessage.created_at.asc()).all()
+
+            # Group messages
+            grouped_messages = defaultdict(list)
+            for message in messages:
+                grouped_messages[message.chat_id].append(message)
+
+            # Convert to dict and sort
+            sorted_grouped = dict(sorted(
+                grouped_messages.items(),
+                key=lambda x: x[0],
+                reverse=True
+            ))
+
+            response_data.append({
+                "chatBotId": chat_bot.id,
+                "chatBotName": chat_bot.chatbot_name,
+                "sessions": sorted_grouped,
+                "totalCount": total_count,
+                "totalPages": (total_count + limit - 1) // limit,
+                "currentPage": page
+            })
+
+        return {
+            "data": jsonable_encoder(response_data),
+            "globalTotal": sum(item["totalCount"] for item in response_data),
+            "globalPages": (sum(item["totalCount"] for item in response_data) + limit - 1) // limit
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print(f"Error fetching chat history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # get user chat history
 @router.get("/chats-history/{bot_id}")
@@ -525,7 +612,7 @@ async def get_user_chat_history(bot_id: int, request: Request, db: Session = Dep
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         chat_bot = db.query(ChatBots).filter_by(id=bot_id, user_id=user_id).first()
-        session_query = db.query(ChatSession).filter_by(bot_id=bot_id, user_id=user_id)
+        session_query = db.query(ChatSession).filter_by(bot_id=bot_id, user_id=user_id, archived=False)
         if not session_query:
             raise HTTPException(status_code=404, detail="Chat not found")
         if search:
@@ -562,7 +649,11 @@ async def get_user_chat_history(bot_id: int, request: Request, db: Session = Dep
         raise http_exc
     except Exception as e:
         print("e ", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))# get user chat history
+
+
+
+
 
 @router.delete("/delete-chats/{bot_id}")
 @check_product_status("chatbot")
@@ -623,6 +714,34 @@ async def delete_all_chats_by_bots(request: Request, db: Session = Depends(get_d
 
         db.commit()
         return {"message": "All chats deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/chats/archive")
+@check_product_status("chatbot")
+async def archive_all_chats(request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).all()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+
+        chatbots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+        if not chatbots:
+            raise HTTPException(status=400, detail="No chatbot found")
+
+        for bot in chatbots:
+            user_chats = db.query(ChatSession).filter(ChatSession.bot_id == bot.id).all()
+            for chat in user_chats:
+                chat.archived = True
+
+        db.commit()
+
+        return {"message": "All chats archived successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
