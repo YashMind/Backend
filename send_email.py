@@ -24,3 +24,4 @@ def send_email(subject: str, html_content: str, recipients: List[str]):
             print(f"Email sent to {email}")
         except Exception as e:
             print(f"Failed to send email to {email}: {e}")
+            raise Exception(f"Failed to send email to {email}")

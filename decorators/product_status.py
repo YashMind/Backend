@@ -4,6 +4,7 @@ from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from models.adminModel.productModel import Product
 from sqlalchemy.orm import Session
+import inspect
 
 
 def check_product_status(product: str):
@@ -25,7 +26,10 @@ def check_product_status(product: str):
                     )
                 
                 # All checks passed, proceed with the original function
-                return await route_func(*args, **kwargs)
+                result = route_func( *args, **kwargs)
+                if inspect.iscoroutine(result):
+                    return await result
+                return result
                 
             except HTTPException as http_exc:
                 return JSONResponse(

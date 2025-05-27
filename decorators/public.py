@@ -3,7 +3,7 @@ from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from inspect import signature
-
+import inspect
 from models.authModel.authModel import AuthUser
 from utils.utils import decode_access_token
 
@@ -56,7 +56,10 @@ def public_route(return_user: bool = False):
                     kwargs["user"] = user  # Pass 'user' only if it's needed
                 
                 # Proceed with the original function
-                return await route_func(request, *args, **kwargs)
+                result = route_func(request, *args, **kwargs)
+                if inspect.iscoroutine(result):
+                    return await result
+                return result
                 
             except HTTPException as http_exc:
                 return JSONResponse(

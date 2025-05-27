@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from utils.utils import decode_access_token
 from models.authModel.authModel import AuthUser
 from models.adminModel.roles_and_permission import RolePermission
+import inspect
 
 accessPoints = [
     'overview',
@@ -69,7 +70,10 @@ def check_permissions(required_permissions: list[str]):
                     )
 
                 # All checks passed, proceed with the original function
-                return await route_func(request, *args, **kwargs)
+                result = route_func(request, *args, **kwargs)
+                if inspect.iscoroutine(result):
+                    return await result
+                return result
             
             except HTTPException as http_exc:
                 return JSONResponse(

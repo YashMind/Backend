@@ -15,6 +15,9 @@ class Settings:
     DB_PORT = os.getenv("DB_PORT", "3306")
     EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+    SMTP_HOST = os.getenv("SMTP_HOST")
+    SMTP_PORT = os.getenv("SMTP_PORT")
+    
     # SMTP2GO_USERNAME = os.getenv("SMTP2GO_USERNAME")
     # SMTP2GO_PASSWORD = os.getenv("SMTP2GO_PASSWORD")
     # EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
