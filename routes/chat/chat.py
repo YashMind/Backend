@@ -18,7 +18,7 @@ from collections import defaultdict
 import os
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
-from routes.chat.pinecone import  get_response_from_faqs, hybrid_retrieval, generate_response, delete_documents_from_pinecone
+from routes.chat.pinecone import  clear_all_pinecone_namespaces, get_response_from_faqs, hybrid_retrieval, generate_response, delete_documents_from_pinecone
 from sqlalchemy import func, and_
 from routes.chat.celery_worker import process_document_task
 from decorators.product_status import check_product_status
@@ -366,8 +366,6 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
         if not chatbot:
             raise HTTPException(status_code=404, detail="ChatBot not found")
 
-        chatbot_settings = db.query(ChatSettings).filter(ChatSettings.bot_id==bot_id).first()
-
         token_record = db.query(ChatTotalToken).filter(ChatTotalToken.user_id==user_id , ChatTotalToken.bot_id==bot_id).first()
         # currently we are only checking if the reacord in this table exsits then it should not exceed limit. once subscriptions implemented we will return user with no token limit if the record not exists
         if token_record:
@@ -411,27 +409,29 @@ async def chat_message(chat_id: int, data: dict, request: Request, db: Session =
             context_texts, scores = hybrid_retrieval(user_msg, bot_id)
 
             instruction_prompts = db.query(DBInstructionPrompt).filter(DBInstructionPrompt.bot_id==bot_id).all()
+            dict_ins_prompt = [{prompt.type: prompt.prompt} for prompt in instruction_prompts]
+            # print("DICT INSTRUCTION PROMPTS",dict_ins_prompt)
+            
             creativity = chatbot.creativity
             text_content = chatbot.text_content
 
             answer = None
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
-            if any(score > 0.65 for score in scores):
-                    print("using openai with context")
-                    use_openai = True
-                    generated_res = generate_response(user_msg, context_texts[:1], use_openai, instruction_prompts, creativity, text_content)
-                    print("GEENENNENENENEN: ", generated_res)
-                    answer = generated_res[0]
-                    openai_tokens = generated_res[1]
-                    print("ANSWER",answer, openai_tokens)
+
+            if any(score > 0.85 for score in scores):
+                print("using openai with context")
+                use_openai = True
+                generated_res = generate_response(user_msg, context_texts[:3], use_openai, dict_ins_prompt, creativity, text_content)
+                answer = generated_res[0]
+                openai_tokens = generated_res[1]
+                print("ANSWER",answer, openai_tokens)
 
             else:
                 print("no direct scores from hybrid retrieval and using openai independently")
                 # Full OpenAI fallback
                 use_openai = True
-                generated_res = generate_response(user_msg, [], use_openai, instruction_prompts, creativity, text_content)
-                print("GEENENNENENENEN: ", generated_res)
+                generated_res = generate_response(user_msg, [], use_openai, dict_ins_prompt, creativity, text_content)
                 answer = generated_res[0]
                 openai_tokens = generated_res[1]
                 print("ANSWER",answer, openai_tokens)
@@ -1036,6 +1036,9 @@ async def delete_doc_links(
 
         # Delete from Pinecone first
         deletion_stats = delete_documents_from_pinecone(bot_id, doc_links, db)
+        
+        # # Clear whole pinecone
+        # clear_all_pinecone_namespaces(db)
 
         # Then delete from database
         db.query(ChatBotsDocLinks).filter(
