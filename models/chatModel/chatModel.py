@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text, Enum, TIMESTAMP
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -93,10 +94,11 @@ class ChatBotsDocChunks(Base):
     bot_id = Column(Integer)
     source = Column(String(255))
     content = Column(Text)  # chunked text
-    chunk_index = Column(Integer)
+    chunk_index = Column(String(36), default=lambda: str(uuid.uuid4()), unique=True, nullable=False)
     metaData = Column(Text)  # JSON string, optionally
     content_hash= Column(String(64))
     char_count = Column(Integer)
+    link_id = Column(Integer, ForeignKey('chat_bots_doc_links.id'))
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 

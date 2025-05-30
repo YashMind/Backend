@@ -426,50 +426,55 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
             }
 
             embedding = embedding_model.embed_query(text)
-
+            
+            vector_id= str(uuid.uuid4())
+            
             pinecone_vectors.append({
-                "id": str(uuid.uuid4()),
+                "id": vector_id,
                 "values": embedding,
                 "metadata": metadata
             })
             existing_hashes.add(content_hash)
 
-            if len(pinecone_vectors) >= batch_size or (i == len(docs) - 1 and pinecone_vectors):
-                if pinecone_vectors:
+            if len(pinecone_vectors) >= batch_size:
+                try:
+                    print(f"[DEBUG] Upserting {len(pinecone_vectors)} vectors to namespace '{namespace}'")
+                    response = index.upsert(
+                        vectors=pinecone_vectors,
+                        namespace=str(namespace)
+                    )
+                    print(f"[DEBUG] Upsert response: {response}")
+                    pinecone_vectors = []
+
                     try:
-                        print(f"[DEBUG] Upserting {len(pinecone_vectors)} vectors to namespace '{namespace}'")
-                        response = index.upsert(
-                            vectors=pinecone_vectors,
-                            namespace=str(namespace)
-                        )
-                        print(f"[DEBUG] Upsert response: {response}")
-                        pinecone_vectors = []
-
-                        try:
-                            time.sleep(2)
-                            ns_stats = index.describe_index_stats()
-                            if namespace in ns_stats['namespaces']:
-                                print(f"[DEBUG] Namespace '{namespace}' now has: {ns_stats['namespaces'][namespace]['vector_count']} vectors")
-                            else:
-                                print(f"Namespace not immediately available - try again later")
-                        except Exception as e:
-                            print(f"Error getting stats: {e}")
-
+                        time.sleep(2)
+                        ns_stats = index.describe_index_stats()
+                        if namespace in ns_stats['namespaces']:
+                            print(f"[DEBUG] Namespace '{namespace}' now has: {ns_stats['namespaces'][namespace]['vector_count']} vectors")
+                        else:
+                            print(f"Namespace not immediately available - try again later")
                     except Exception as e:
-                        print(f"[ERROR] Upsert error: {e}")
-                        stats['failed_chunks'] += len(pinecone_vectors)
-                        pinecone_vectors = []
+                        print(f"Error getting stats: {e}")
+
+                except Exception as e:
+                    print(f"[ERROR] Upsert error: {e}")
+                    stats['failed_chunks'] += len(pinecone_vectors)
+                    pinecone_vectors = []
+            
+            if i == len(docs) - 1 and pinecone_vectors:
+                print(f"[WARN] Final document skipped with {len(pinecone_vectors)} pending vectors")
 
             print("Creating DB CHUNK")
             db_chunk = ChatBotsDocChunks(
-                bot_id=data.bot_id,
-                user_id=data.user_id,
-                source=metadata["source"],
-                content=text,
-                metaData=str(metadata),
-                chunk_index=i,
-                char_count=len(text),
-                content_hash=content_hash
+                bot_id= data.bot_id,
+                user_id= data.user_id,
+                source= metadata["source"],
+                content= text,
+                metaData= str(metadata),
+                chunk_index= vector_id,
+                char_count= len(text),
+                link_id= data.id,
+                content_hash= content_hash
             )
             print("SAVING DB CHUNK")
             db.add(db_chunk)
@@ -479,6 +484,28 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
             print(f"[ERROR] Error storing chunk {i}: {e}")
             stats['failed_chunks'] += 1
             continue
+    if pinecone_vectors:
+        try:
+            print(f"[DEBUG] Upserting FINAL batch of {len(pinecone_vectors)} vectors to '{namespace}'")
+            response = index.upsert(
+                vectors=pinecone_vectors,
+                namespace=str(namespace))
+            print(f"[DEBUG] Final upsert response: {response}")
+            
+            # Optional: Namespace stats check
+            try:
+                time.sleep(2)
+                ns_stats = index.describe_index_stats()
+                if namespace in ns_stats['namespaces']:
+                    print(f"[DEBUG] Namespace '{namespace}' now has: {ns_stats['namespaces'][namespace]['vector_count']} vectors")
+            except Exception as e:
+                print(f"Error getting stats: {e}")
+                
+        except Exception as e:
+            print(f"[ERROR] Final upsert failed: {e}")
+            stats['failed_chunks'] += len(pinecone_vectors)
+        finally:
+            pinecone_vectors = []  # Prevent duplicate processing
 
     db.commit()
     print(f"[INFO] Final stats: {stats}")
@@ -564,7 +591,7 @@ def process_and_store_docs(data, db: Session) -> dict:
         raise
 
 # Delete Doc
-def delete_documents_from_pinecone(bot_id: int, doc_links: List[str], db: Session) -> dict:
+def delete_documents_from_pinecone(bot_id: int, doc_link_ids: List[str], db: Session) -> dict:
     """
     Delete document vectors from Pinecone namespace based on source links
     Returns: {'deleted_count': int, 'errors': int}
@@ -572,13 +599,13 @@ def delete_documents_from_pinecone(bot_id: int, doc_links: List[str], db: Sessio
     namespace = f"bot_{bot_id}"
     stats = {'deleted_count': 0, 'errors': 0}
     print(f"[DEBUG] Namespace for deletion: {namespace}")
-    print(f"[DEBUG] Document links to delete: {doc_links}")
+    print(f"[DEBUG] Document links to delete: {doc_link_ids}")
 
     try:
         # Get all chunks from DB that match the doc_links
         chunks = db.query(ChatBotsDocChunks).filter(
             ChatBotsDocChunks.bot_id == bot_id,
-            ChatBotsDocChunks.source.in_(doc_links)
+            ChatBotsDocChunks.link_id.in_(doc_link_ids)
         ).all()
         print(f"[DEBUG] Found {len(chunks)} matching chunks in DB.")
 
@@ -588,7 +615,8 @@ def delete_documents_from_pinecone(bot_id: int, doc_links: List[str], db: Sessio
 
         # Prepare vector IDs for deletion
         batch_size = 500
-        vector_ids = [str(chunk.id) for chunk in chunks]
+        vector_ids = [str(chunk.chunk_index) for chunk in chunks]
+        chunk_ids = [chunk.id  for chunk in chunks]
         print(f"[DEBUG] Total vector IDs to delete: {len(vector_ids)}")
 
         for i in range(0, len(vector_ids), batch_size):
@@ -603,9 +631,9 @@ def delete_documents_from_pinecone(bot_id: int, doc_links: List[str], db: Sessio
                 stats['errors'] += len(batch_ids)
 
         # Delete from database
-        print(f"[DEBUG] Deleting {len(vector_ids)} chunks from DB.")
+        print(f"[DEBUG] Deleting {len(chunk_ids)} chunks from DB.")
         db.query(ChatBotsDocChunks).filter(
-            ChatBotsDocChunks.id.in_(vector_ids)
+            ChatBotsDocChunks.id.in_(chunk_ids)
         ).delete(synchronize_session=False)
 
         db.commit()
@@ -614,7 +642,7 @@ def delete_documents_from_pinecone(bot_id: int, doc_links: List[str], db: Sessio
     except Exception as e:
         print(f"Error in delete_documents_from_pinecone: {e}")
         db.rollback()
-        stats['errors'] += len(doc_links)
+        stats['errors'] += len(doc_link_ids)
         
     return stats
 

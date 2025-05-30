@@ -1032,10 +1032,10 @@ async def delete_doc_links(
             return {"message": "No documents found to delete"}
 
         # Get the source links for Pinecone deletion
-        doc_links = [doc.target_link or doc.document_link for doc in docs_to_delete]
+        doc_link_ids = [doc.id for doc in docs_to_delete]
 
         # Delete from Pinecone first
-        deletion_stats = delete_documents_from_pinecone(bot_id, doc_links, db)
+        deletion_stats = delete_documents_from_pinecone(bot_id, doc_link_ids, db)
         
         # # Clear whole pinecone
         # clear_all_pinecone_namespaces(db)
