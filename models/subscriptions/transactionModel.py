@@ -10,9 +10,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.sql import func
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from config import Base
 
 
 class Transaction(Base):
@@ -23,7 +21,7 @@ class Transaction(Base):
 
     # Relationships
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    plan_id = Column(Integer, ForeignKey("plans.id"), nullable=True)
+    plan_id = Column(Integer, ForeignKey("subscription_plans.id"), nullable=True)
 
     # Payment essentials
     amount = Column(Numeric(15, 2), nullable=False)  # Supports 999,999,999,999.99
@@ -33,9 +31,7 @@ class Transaction(Base):
     provider = Column(
         Enum("cashfree", "paypal", "stripe", name="payment_providers"), nullable=False
     )
-    provider_transaction_id = Column(
-        String(255), nullable=False
-    )  # Gateway's transaction ID
+    provider_transaction_id = Column(String(255))  # Gateway's transaction ID
 
     # Status tracking (generic states)
     status = Column(

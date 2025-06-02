@@ -1,138 +1,134 @@
+from models.subscriptions.transactionModel import Transaction
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from config import settings
 from config import get_db, settings
 import hashlib
 import base64
 import json
-
 import hmac
 
-from models.subscriptions.transactionModel import Transaction
+from routes.subscriptions.transactions import update_transaction
+from routes.subscriptions.user_credits import create_user_credit_entry
 
 router = APIRouter(prefix="/webhook/payments")
 
 
-async def generateCashfreeSignature(request:Request):
+async def verify_cashfree_webhook(request: Request):
+    # Get raw request body as bytes
     raw_body = await request.body()
 
-    print("Cashfree raw body", raw_body.data)
-    timestamp = request.headers['x-webhook-timestamp']
-    signature = request.headers['x-webhook-signature']
-    signatureData = timestamp+raw_body.data
-    message = bytes(signatureData, 'utf-8')
-    secretkey=bytes("<client-signature>",'utf-8')
-    generatedSignature = base64.b64encode(hmac.new(secretkey, message, digestmod=hashlib.sha256).digest())
-    computed_signature = str(generatedSignature, encoding='utf8')
-    if computed_signature == signature:
-        json_response = json.loads(raw_body.data)
-        return json_response
-    raise Exception("Generated signature and received signature did not match.")
+    print("Raw body: ", raw_body)
 
-async def update_transaction(
-    db: Session,
-    provider: str,
-    order_id: str = None,
-    provider_transaction_id: str = None,
-    status: str = None,
-    payment_method: str = None,
-    payment_method_details: dict = None,
-    fees: float = None,
-    tax: float = None,
-    raw_data: dict = None
-):
-    # Find transaction
-    transaction = None
-    if order_id:
-        transaction = db.query(Transaction).filter_by(
-            provider=provider, 
-            order_id=order_id
-        ).first()
-    if not transaction and provider_transaction_id:
-        transaction = db.query(Transaction).filter_by(
-            provider=provider,
-            provider_transaction_id=provider_transaction_id
-        ).first()
-    
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    # Extract required headers
+    timestamp = request.headers.get("x-webhook-timestamp")
+    signature = request.headers.get("x-webhook-signature")
 
-    # Update provider ID if missing
-    if provider_transaction_id and not transaction.provider_transaction_id:
-        transaction.provider_transaction_id = provider_transaction_id
+    if not timestamp or not signature:
+        raise Exception("Missing required headers")
 
-    # Update status if provided and valid
-    valid_statuses = ["created", "pending", "success", "failed", "refunded", "cancelled"]
-    if status and status in valid_statuses:
-        transaction.status = status
-        # Set completion time for terminal states
-        if status in ("success", "failed", "refunded", "cancelled"):
-            transaction.completed_at = datetime.now(timezone.utc)
+    # Prepare the signature payload
+    signature_data = timestamp.encode("utf-8") + raw_body
 
-    # Update payment details
-    if payment_method:
-        transaction.payment_method = payment_method
-    if payment_method_details:
-        transaction.payment_method_details = payment_method_details
-    if fees is not None:
-        transaction.fees = fees
-    if tax is not None:
-        transaction.tax = tax
-    if raw_data:
-        transaction.provider_data = raw_data
+    # Get your client secret from Cashfree settings
+    secret_key = settings.CASHFREE_SECRET_KEY.encode("utf-8")  # Keep this secure!
 
-    # Commit changes
-    try:
-        db.commit()
-        db.refresh(transaction)
-        return JSONResponse(content={"status": "updated"}, status_code=200)
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Database update failed: {str(e)}")
-    
+    # Generate HMAC-SHA256 signature
+    generated_signature = hmac.new(
+        key=secret_key, msg=signature_data, digestmod=hashlib.sha256
+    ).digest()
+
+    # Base64 encode the signature
+    computed_signature = base64.b64encode(generated_signature).decode("utf-8")
+
+    # Compare signatures (use constant-time comparison)
+    if not hmac.compare_digest(computed_signature, signature):
+        raise Exception("Invalid signature")
+
+    # Parse and return JSON if valid
+    return json.loads(raw_body.decode("utf-8"))
+
 
 async def process_cashfree_payload(payload: dict, db: Session):
     # Extract data from Cashfree payload
-    order_id = payload.get("orderId")
-    provider_transaction_id = payload.get("referenceId")
-    tx_status = payload.get("txStatus")
-    
+    data = payload.get("data", {})
+    order = data.get("order", {})
+    payment = data.get("payment", {})
+    gateway = data.get("payment_gateway_details", {})
+    customer = data.get("customer_details", {})
+
+    # Identification parameters
+    order_id = order.get("order_id")
+    provider_payment_id = gateway.get("gateway_payment_id")
+    provider_transaction_id = gateway.get("gateway_order_id")
+
+    # Customer details
+    user_id = customer.get("customer_id")
+
+    # Update fields
+    payment_status = payment.get("payment_status")
+    payment_method = payment.get("payment_group")
+    payment_amount = payment.get("payment_amount")
+    payment_currency = payment.get("payment_currency")
+    payment_method_details = payment.get("payment_method", {})
+    fees = payment.get("payment_surcharge")  # Might be None
+    # tax = None  # Cashfree doesn't provide tax separately in this payload
+    raw_data = payload
+    # provider = gateway.get("gateway_name")
+    # refund_id = None  # Only present in refund webhooks
+    # country_code = "IN"  # Hardcoded or inferred from phone/logic
+
+    print(
+        f"ORDER ID: {order_id}, TX STATUS: {payment_status}, PROVIDER TX ID: {provider_transaction_id}"
+    )
+
     # Map status to your schema
     status_map = {
         "SUCCESS": "success",
         "FAILED": "failed",
         "PENDING": "pending",
         "USER_DROPPED": "cancelled",
-        "REFUND": "refunded"
+        "REFUND": "refunded",
     }
-    status = status_map.get(tx_status)
-    
+    status = status_map.get(payment_status)
+
     # Update transaction
-    return await update_transaction(
+    transaction = await update_transaction(
         db=db,
-        provider="cashfree",
         order_id=order_id,
+        provider_payment_id=provider_payment_id,
         provider_transaction_id=provider_transaction_id,
         status=status,
-        payment_method=payload.get("paymentMode"),
-        raw_data=payload
+        payment_method=payment_method,
+        payment_method_details=payment_method_details,
+        fees=fees,
+        # tax=tax,
+        raw_data=raw_data,
+        provider="cashfree",
+        # refund_id=refund_id,
+        # country_code=country_code
     )
+
+    # Add entry in user credits table about updation of plan
+    user_credit = create_user_credit_entry(trans_id=transaction.id, db=db)
+
 
 async def process_paypal_payload(payload: dict, db: Session):
     resource = payload.get("resource", {})
     event_type = payload.get("event_type", "")
-    
+
     if "PAYMENT.CAPTURE" in event_type:
         status_map = {
             "COMPLETED": "success",
             "DECLINED": "failed",
             "PENDING": "pending",
             "REFUNDED": "refunded",
-            "CANCELLED": "cancelled"
+            "CANCELLED": "cancelled",
         }
         status = status_map.get(resource.get("status"))
-        
+
         # Extract payment details
         payment_source = resource.get("payment_source", {})
         payment_method, details = None, None
@@ -140,12 +136,12 @@ async def process_paypal_payload(payload: dict, db: Session):
             payment_method = "card"
             details = {
                 "last_digits": payment_source["card"].get("last_digits"),
-                "brand": payment_source["card"].get("brand")
+                "brand": payment_source["card"].get("brand"),
             }
         elif "paypal" in payment_source:
             payment_method = "paypal"
             details = {"email": payment_source["paypal"].get("email_address")}
-        
+
         # Update transaction
         return await update_transaction(
             db=db,
@@ -155,20 +151,29 @@ async def process_paypal_payload(payload: dict, db: Session):
             status=status,
             payment_method=payment_method,
             payment_method_details=details,
-            fees=float(resource.get("seller_receivable_breakdown", {}).get("paypal_fee", {}).get("value", 0)),
-            raw_data=payload
+            fees=float(
+                resource.get("seller_receivable_breakdown", {})
+                .get("paypal_fee", {})
+                .get("value", 0)
+            ),
+            raw_data=payload,
         )
     return JSONResponse(content={"status": "unhandled_event"}, status_code=200)
-    
+
+
 # CashFree Webhook Handler
 @router.post("/cashfree")
 async def cashfree_webhook(request: Request, db: Session = Depends(get_db)):
+    try:
+        print("CASHFREE PAYLOAD RECIEVED: ", request)
+        # Verify signature
 
-    print("CASHFREE PAYLOAD RECIEVED: ", request)
-    # Verify signature
+        payload = await verify_cashfree_webhook(request=request)
+        return await process_cashfree_payload(payload, db)
+    except Exception as e:
+        print("Error processing CashFree webhook: ", e)
+        raise HTTPException(status_code=400, detail=str(e))
 
-    payload = await generateCashfreeSignature(request=request)
-    return await process_cashfree_payload(payload, db)
 
 # PayPal Webhook Handler
 @router.post("/paypal")
@@ -180,5 +185,3 @@ async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
         return await process_paypal_payload(payload, db)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-    
-
