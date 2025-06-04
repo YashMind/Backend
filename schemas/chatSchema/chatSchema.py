@@ -149,15 +149,3 @@ class ChatbotLeads(BaseModel):
     class Config:
         orm_mode = True
         
-
-class BotTokens(BaseModel):
-    bot_id: Optional[str] = None
-    users: Optional[str] = None
-    tokens: Optional[int] = None
-    token_today: Optional[int] = None
-    token_monthly: Optional[int] = None
-    messages: Optional[int] = None
-    
-class ChatMessageTokens(BaseModel):
-    total_tokens: Optional[int]= None
-    bots: Optional[List[BotTokens]]

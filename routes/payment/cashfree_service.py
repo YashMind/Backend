@@ -32,7 +32,7 @@ CASHFREE_BASE_URL = (
 )
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
-notify_url = "https://3018-122-176-88-30.ngrok-free.app/webhook/payments/cashfree"
+notify_url = "https://15da-2401-4900-1c6f-fba6-74df-76de-c6c3-b484.ngrok-free.app/webhook/payments/cashfree"
 
 
 def generate_cashfree_auth_headers():
