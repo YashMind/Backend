@@ -66,6 +66,7 @@ import os
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
 from routes.chat.pinecone import (
+    clear_all_pinecone_namespaces,
     get_response_from_faqs,
     hybrid_retrieval,
     generate_response,
@@ -491,10 +492,6 @@ async def chat_message(
         if not chatbot:
             raise HTTPException(status_code=404, detail="ChatBot not found")
 
-        chatbot_settings = (
-            db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).first()
-        )
-
         token_limit_availabe, message = verify_token_limit_available(
             bot_id=bot_id, db=db
         )
@@ -548,24 +545,29 @@ async def chat_message(
                 .filter(DBInstructionPrompt.bot_id == bot_id)
                 .all()
             )
+            dict_ins_prompt = [
+                {prompt.type: prompt.prompt} for prompt in instruction_prompts
+            ]
+            # print("DICT INSTRUCTION PROMPTS",dict_ins_prompt)
+
             creativity = chatbot.creativity
             text_content = chatbot.text_content
 
             answer = None
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
-            if any(score > 0.65 for score in scores):
+
+            if any(score > 0.6 for score in scores):
                 print("using openai with context")
                 use_openai = True
                 generated_res = generate_response(
                     user_msg,
-                    context_texts[:1],
+                    context_texts[:3],
                     use_openai,
-                    instruction_prompts,
+                    dict_ins_prompt,
                     creativity,
                     text_content,
                 )
-                print("GEENENNENENENEN: ", generated_res)
                 answer = generated_res[0]
                 openai_request_tokens = generated_res[1]
                 openai_response_tokens = generated_res[2]
@@ -579,14 +581,8 @@ async def chat_message(
                 # Full OpenAI fallback
                 use_openai = True
                 generated_res = generate_response(
-                    user_msg,
-                    [],
-                    use_openai,
-                    instruction_prompts,
-                    creativity,
-                    text_content,
+                    user_msg, [], use_openai, dict_ins_prompt, creativity, text_content
                 )
-                print("GEENENNENENENEN: ", generated_res)
                 answer = generated_res[0]
                 openai_request_tokens = generated_res[1]
                 openai_response_tokens = generated_res[2]
@@ -594,6 +590,14 @@ async def chat_message(
                 print("ANSWER", answer, openai_request_tokens)
 
             response_content = answer
+
+        # ✅ Always compute tokens after final response is ready
+        user_tokens = len(user_msg.strip().split())
+        response_tokens = len(
+            response_content.strip().split()
+            if response_content
+            else "No response found"
+        )
 
         # Save user and bot messages
         user_message = ChatMessage(
@@ -1305,10 +1309,13 @@ async def delete_doc_links(
             return {"message": "No documents found to delete"}
 
         # Get the source links for Pinecone deletion
-        doc_links = [doc.target_link or doc.document_link for doc in docs_to_delete]
+        doc_link_ids = [doc.id for doc in docs_to_delete]
 
         # Delete from Pinecone first
-        deletion_stats = delete_documents_from_pinecone(bot_id, doc_links, db)
+        deletion_stats = delete_documents_from_pinecone(bot_id, doc_link_ids, db)
+
+        # # Clear whole pinecone
+        # clear_all_pinecone_namespaces(db)
 
         # Then delete from database
         db.query(ChatBotsDocLinks).filter(

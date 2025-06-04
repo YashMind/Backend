@@ -1,6 +1,7 @@
 from hashlib import sha256
 import os
 import re
+import time
 import openai
 import langchain
 from typing import List, Tuple, Optional
@@ -14,6 +15,7 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.vectorstores import Pinecone
 from langchain.chains.question_answering import load_qa_chain
 from langchain import OpenAI
+import regex
 from sqlalchemy.orm import Session
 from langchain.document_loaders import WebBaseLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -65,18 +67,32 @@ def hybrid_retrieval(
         # Vector Search
         query_vector = embedding_model.embed_query(query)
 
+<<<<<<< HEAD
         # print(f"Query vector shape: {len(query_vector)}")
         # print(f"First few values: {query_vector[:5]}")  # Sanity check the values
+=======
+        print(f"Query vector shape: {len(query_vector)}")
+        print(f"First few values: {query_vector[:5]}")  # Sanity check the values
+>>>>>>> origin/main
 
         # Check index stats first
-        # index_stats = index.describe_index_stats()
-        # print(index_stats)
+        index_stats = index.describe_index_stats()
+        print("NAMESPACE INDEX STATS", index_stats)
 
         # Check if your namespace exists and has vectors
+<<<<<<< HEAD
         # if f"bot_{bot_id}" in index_stats['namespaces']:
         #     print(f"Namespace has {index_stats['namespaces'][f'bot_{bot_id}']['vector_count']} vectors")
         # else:
         #     print("Namespace doesn't exist or is empty")
+=======
+        if f"bot_{bot_id}" in index_stats["namespaces"]:
+            print(
+                f"Namespace has {index_stats['namespaces'][f'bot_{bot_id}']['vector_count']} vectors"
+            )
+        else:
+            print("Namespace doesn't exist or is empty")
+>>>>>>> origin/main
 
         vector_results = index.query(
             vector=query_vector,
@@ -85,7 +101,11 @@ def hybrid_retrieval(
             include_metadata=True,
         )
 
+<<<<<<< HEAD
         # print("Vector results acc to query: ", vector_results)
+=======
+        print("Vector results acc to query: ", vector_results)
+>>>>>>> origin/main
 
         # test_results = index.query(
         #     vector=query_vector,
@@ -103,7 +123,18 @@ def hybrid_retrieval(
 
         for match in vector_results.matches:
             if hasattr(match, "metadata") and match.metadata.get("content"):
+<<<<<<< HEAD
                 all_texts.append(match.metadata["content"])
+=======
+                metadata = match.metadata or {}
+                text_content = (
+                    f"source: '{metadata.get('source', '')}', "
+                    f"title: '{metadata.get('title', '')}', "
+                    f"description: '{metadata.get('description', '')}', "
+                    f"content: '{metadata.get('content', '')}'"
+                )
+                all_texts.append(text_content)
+>>>>>>> origin/main
                 valid_matches.append(match)
         print("collect matches content and metadata", all_texts, valid_matches)
         if not all_texts:
@@ -167,47 +198,134 @@ def generate_response(
             return "I couldn't find relevant information in my knowledge base."
         return "Here's what I found:\n" + "\n\n".join([f"- {text}" for text in context])
 
+<<<<<<< HEAD
     prompt_template = """
     You are a specialized assistant deployed on the Yashraa platform, trained to generate expert-level responses with professional clarity. Your behavior is guided by domain-specific fine-tuning, creativity calibration, and explicit instructions provided by the chatbot owner.
+=======
+    prompt_template = """You are an friendly intelligent domain-specific support assistant embedded on a website. Your job is to respond to user for their messages, if he has greeted you greet him back, for other queries reply only with what’s verified in the given inputs, while formatting everything clearly in professional, semantic HTML. Never fabricate data. Never assume.
 
-    Follow these steps precisely:
+    At every user turn, you are provided the following runtime variables:
 
-    1. **Analyze the Input Context:**
-    - The `context` field contains raw yet high-relevance information extracted from the source website using embedding similarity (Pinecone DB).
-    - If **relevant**, extract key facts and present them concisely (1–3 sentences), using accessible business language.
-    - If **not relevant**, answer authoritatively using your internal knowledge.
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    🧩 INPUT VARIABLES
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
-    2. **Incorporate Fine-Tuning Parameters:**
-    - **Text Content:** Incorporate tone, domain insight, or structured information provided here to shape the response.
-    - **Creativity (%):** 
-        - 0–30% → Strictly factual and neutral.
-        - 31–70% → Professional with room for structured suggestion or interpretation.
-        - 71–100% → Allow more expressive, human-like guidance while keeping accuracy intact.
+    • context — scraped content or metadata from the training data, it is a raw data contains a lot of unstructured text but if content is present you are bound to use it. and find information to answer from it. 
+    context: {context} 
+    
+    • question — User’s query.
+    question: {question} 
+    
+    • text_content — This field contains essential information about the owner, brand, and other relevant details regarding the bot’s usage. It includes tone guidelines, custom phrasing, formatting styles, and key policies—all of which must be followed exactly. If any workflow rules are provided (such as return policies or step-by-step procedures), they should be strictly adhered to in the response.
+    text_content:{text_content}
+    
+    • instruction_prompts — This is a domain-specific field. Begin by analyzing the question, context, and text_content to determine the relevant domain. Once identified, examine the instruction_prompts to locate matching or closely related domain instructions. If a match is found, strictly follow those specific instructions to generate the response. If no relevant domain is identified, default to using the general instructions provided.
+    instruction_prompts: {instruction_prompts}
+    
+    • creativity — Integer (0–100) controlling response creativity. 0 = strict factual, 100 = freeform.
+    creativity: {creativity}
+>>>>>>> origin/main
 
-    3. **Instruction Prompt Classification:**
-    - Automatically determine the best-matched domain (e.g., ecommerce, hospitality, education, etc.) from `instruction_prompts` based on the nature of the question.
-    - Integrate domain-specific tone, formatting, or insights if such instructions are found.
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    🔒 OUTPUT RULES
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    
+    1. SPECIAL CASES:
 
-    4. **Response Guidelines:**
-    - Use clear, professional, and trustworthy tone—tailored for an investor, customer, or decision-maker.
-    - Focus on clarity, domain relevance, and applied intelligence.
-    - Avoid generic AI phrasing or disclaimers.
+    - If the question is a greeting, respond with an appropriate greeting.
+    - For small talk (e.g., "How are you?", "Have a great day!"), reply with a warm, professional response and address the query clearly—use simple <p>...</p> without any structured formatting.
+    - If creativity is below 30, keep the response strictly factual and concise.
+    - If creativity is above 70, you may include light elaboration or explanation—but do not make assumptions or guesses.
+    
+    2. ALWAYS base your response on the information found in context, instruction_prompts, or text_content. 
+    - Always attempt to find content related to the user’s query, even if there is no exact match. If a partial or closely related match is found, respond with:
+    “I found something related to your query: …” and then present the relevant content.
+    - If the user query is not an exact match with the available context, identify the main subject or keyword of the query (e.g., for "courses related to fitness," the main subject is "fitness"). Then, generate a list of the top 15 related terms to that keyword (e.g., health, exercise, diet, sleep, hygiene, etc.). Use this expanded list of related terms to find relevant information within the context and construct a meaningful and accurate response to the user query.
+    - if user query is a collective noun (e.g., “What are the best books?”), you must provide a list of relevant items available in context, but always include a brief description or context for each item. If the query is singular (e.g., “What is the best book?”), provide a single , relevant item with a brief description. If no relevant items are found, respond with a message indicating that no relevant information was found.
+    - For queries involving pricing, availability, curriculum, steps, or any data-driven topics, add these information only if an exact or closely related match is available in the context.
+    - For example, if a user asks about "vegan diet" and no direct match exists, but "vegan diet course" or "vegan nutrition" is available, use that to respond helpfully.
+    - If neither exact nor related content is available, clearly state that the information is not found, and offer alternative suggestions or guidance when possible.
+    - Important Note: if context used always add a link to the source of the information at last of query with note "you can find more information related to this <a href="/** source here */">here</a>.
 
-    Inputs:
-    - Context (scraped website content): {context}
-    - User Question: {question}
-    - Domain Training Content: {text_content}
-    - Creativity Level (%): {creativity}
-    - Instruction Prompts (Categorized): {instruction_prompts}
+    3. FORMAT all outputs in clean semantic HTML only.
+    - Use <h1>, <h2>, <p>, <ul>, <li>, <a>, etc.
+    - Don’t use placeholders or empty tags.
+    - All responses must be accessible, mobile-friendly, and screen-reader compatible.
 
-    Now generate a professional, fine-tuned response based on the above inputs:
+    4. STRUCTURE responses based on domain detection:
+    - Courses → show: Title, Price, Duration, Curriculum.
+    - E-commerce → show: Product Name, Price, Features, Availability.
+    - Documentation → show: Description, Steps(if asked), Errors(if asked), Fixes(if asked).
+    - Custom workflows → follow 'instruction_prompts' exactly.
+
+    5. If Data Is Missing or Unclear:
+    - Respond with:
+    <p>I’m sorry, I couldn’t find that information right now.</p>
+    - Only include a support link if a help or support page URL is explicitly provided in text_content or instruction_prompts:
+    <p>Visit our <a href="/** use link from text_content */" title="Help Center">Help Center</a> for more support.</p>
+    - Offer helpful suggestions by listing 2–3 alternative queries that the user could try, based on related topics found in context or text_content:
+    <p>You might try:</p>
+    <pre>[/** suggest 2–3 related queries and pass each query here wrapped in " " */]</pre>
+
+    6. NEVER fabricate or assume. Do not guess course prices, product stock, or features.
+
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    EXAMPLE STRUCTURE — COURSES:
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    <h2>Course Title</h2><p>'Extracted course name'</p>
+    <h2>Price</h2><p>'Price'</p>
+    <h2>Duration</h2><p>'Duration' hours</p>
+    <h2>Curriculum</h2>
+    <ul>
+    <li>Module 1: …</li>
+    <li>Module 2: …</li>
+    </ul>
+
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    EXAMPLE STRUCTURE — PRODUCTS:
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    <h2>Product Name</h2><p>'Extracted product name'</p>
+    <h2>Price</h2><p>'Price'</p>
+    <h2>Features</h2>
+    <ul>
+    <li>Feature A</li>
+    <li>Feature B</li>
+    </ul>
+    <h2>Availability</h2><p>'In Stock / Out of Stock'</p>
+
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    EXAMPLE STRUCTURE — DOCUMENTATION / HOW-TO:
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    <h2>Steps</h2>
+    <ol>
+    <li>Step 1: …</li>
+    <li>Step 2: …</li>
+    </ol>
+    <h2>Notes</h2><p>Important warnings or tips.</p>
+    
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    EXAMPLE STRUCTURE — Array of items:
+    
+    <h2> We found the following items:</h2>
+    <ol>
+    <li> Item 1: ...</li>
+    <li> Item 1: ...</li>
+    </ol>
+    <p> I can provide you information regarding the these items</p>
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+    
     """
 
     # Truncate context to fit token limit more efficiently
     encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
     context_str = "\n".join(context)
 
+<<<<<<< HEAD
     print("Context String: ", context_str)
+=======
+    # print("Context String: ",context_str )
+>>>>>>> origin/main
 
     # Create a mutable copy of context for truncation
     context_list = list(context)  # Ensure we're working with a list
@@ -232,9 +350,22 @@ def generate_response(
     #     return "I don't have enough information to answer that question."
 
     # Use invoke instead of predict
+<<<<<<< HEAD
     openai_request_tokens = len(encoder.encode(prompt))
     print("OPENAI TOKENS: ", openai_request_tokens)
+=======
+    openai_tokens = len(encoder.encode(prompt))
+    # print("OPENAI TOKENS: ",openai_tokens)
+>>>>>>> origin/main
     try:
+
+        print(
+            f"""
+              ################################################################################
+              {prompt}
+              ################################################################################
+              """
+        )
         response = llm.invoke(prompt)
         response_content = ""
 
@@ -244,6 +375,7 @@ def generate_response(
             response_content = response.content
         else:
             response_content = str(response)
+<<<<<<< HEAD
         print("Returning")
         openai_response_tokens = len(encoder.encode(response_content))
         request_tokens = len(encoder.encode(query))
@@ -262,6 +394,14 @@ def generate_response(
             openai_request_tokens,
             0,
         )
+=======
+        # print("Returning")
+        return response_content, openai_tokens
+
+    except Exception as e:
+        print(f"Error generating response: {e}")
+        return "I encountered an error while processing your request.", openai_tokens
+>>>>>>> origin/main
 
 
 ############################################
@@ -283,7 +423,7 @@ def clean_text(text: str) -> str:
     # Remove HTML/XML tags (in case any remain)
     text = re.sub(r"<[^>]+>", "", text)
     # Remove special characters (keep letters, numbers, whitespace, hyphens)
-    # text = re.sub(r'[^\w\s-]', '', text)
+    text = regex.sub(r"[^a-zA-Z0-9_\s\p{Sc}\.,-]", "", text, flags=regex.UNICODE)
     # Remove redundant whitespace
     text = " ".join(text.split())
     # Remove boilerplate phrases (case insensitive)
@@ -302,8 +442,8 @@ def clean_text(text: str) -> str:
 
 def split_documents(docs: List[Document]) -> List[Document]:
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=400,
-        chunk_overlap=70,
+        chunk_size=1500,
+        chunk_overlap=500,
         separators=["\n\n##", "\n\n", "\n", ". "],
         length_function=len,
     )
@@ -356,6 +496,7 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
     pinecone_vectors = []
     stats = {"total_chars": 0, "chunks_processed": 0, "failed_chunks": 0}
     namespace = f"bot_{data.bot_id}"
+    print(f"[DEBUG] Namespace to use: {namespace}")
 
     for i, doc in enumerate(docs):
         try:
@@ -364,11 +505,14 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
             content_hash = sha256(text.encode()).hexdigest()
 
             if content_hash in existing_hashes:
+                print(f"[DEBUG] Skipping duplicate hash in batch: {content_hash}")
                 continue
 
             # Check DB for existing hash
             if db.query(ChatBotsDocChunks).filter_by(content_hash=content_hash).first():
+                print(f"[DEBUG] Skipping existing DB hash: {content_hash}")
                 continue
+
             metadata = {
                 "bot_id": str(data.bot_id),
                 "user_id": str(data.user_id),
@@ -380,6 +524,7 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
 
             embedding = embedding_model.embed_query(text)
 
+<<<<<<< HEAD
             pinecone_vectors.append(
                 {"id": str(uuid.uuid4()), "values": embedding, "metadata": metadata}
             )
@@ -391,10 +536,27 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                     response = index.upsert(
                         vectors=pinecone_vectors,
                         namespace=str(namespace),  # Force string conversion
+=======
+            vector_id = str(uuid.uuid4())
+
+            pinecone_vectors.append(
+                {"id": vector_id, "values": embedding, "metadata": metadata}
+            )
+            existing_hashes.add(content_hash)
+
+            if len(pinecone_vectors) >= batch_size:
+                try:
+                    print(
+                        f"[DEBUG] Upserting {len(pinecone_vectors)} vectors to namespace '{namespace}'"
+>>>>>>> origin/main
                     )
-                    print(f"Upsert response: {response}")
+                    response = index.upsert(
+                        vectors=pinecone_vectors, namespace=str(namespace)
+                    )
+                    print(f"[DEBUG] Upsert response: {response}")
                     pinecone_vectors = []
 
+<<<<<<< HEAD
                     # Immediate verification
                     ns_stats = index.describe_index_stats()
                     print(
@@ -405,24 +567,90 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                     print(f"Upsert error: {e}")
                     stats["failed_chunks"] += len(pinecone_vectors)
 
+=======
+                    try:
+                        time.sleep(2)
+                        ns_stats = index.describe_index_stats()
+                        if namespace in ns_stats["namespaces"]:
+                            print(
+                                f"[DEBUG] Namespace '{namespace}' now has: {ns_stats['namespaces'][namespace]['vector_count']} vectors"
+                            )
+                        else:
+                            print(
+                                f"Namespace not immediately available - try again later"
+                            )
+                    except Exception as e:
+                        print(f"Error getting stats: {e}")
+
+                except Exception as e:
+                    print(f"[ERROR] Upsert error: {e}")
+                    stats["failed_chunks"] += len(pinecone_vectors)
+                    pinecone_vectors = []
+
+            if i == len(docs) - 1 and pinecone_vectors:
+                print(
+                    f"[WARN] Final document skipped with {len(pinecone_vectors)} pending vectors"
+                )
+
+            print("Creating DB CHUNK")
+>>>>>>> origin/main
             db_chunk = ChatBotsDocChunks(
                 bot_id=data.bot_id,
                 user_id=data.user_id,
                 source=metadata["source"],
                 content=text,
                 metaData=str(metadata),
+<<<<<<< HEAD
                 chunk_index=i,
                 char_count=len(text),  # Store char count per chunk
+=======
+                chunk_index=vector_id,
+                char_count=len(text),
+                link_id=data.id,
+                content_hash=content_hash,
+>>>>>>> origin/main
             )
+            print("SAVING DB CHUNK")
             db.add(db_chunk)
             stats["chunks_processed"] += 1
 
         except Exception as e:
+<<<<<<< HEAD
             print(f"Error storing chunk {i}: {e}")
             stats["failed_chunks"] += 1
             continue
+=======
+            print(f"[ERROR] Error storing chunk {i}: {e}")
+            stats["failed_chunks"] += 1
+            continue
+    if pinecone_vectors:
+        try:
+            print(
+                f"[DEBUG] Upserting FINAL batch of {len(pinecone_vectors)} vectors to '{namespace}'"
+            )
+            response = index.upsert(vectors=pinecone_vectors, namespace=str(namespace))
+            print(f"[DEBUG] Final upsert response: {response}")
+
+            # Optional: Namespace stats check
+            try:
+                time.sleep(2)
+                ns_stats = index.describe_index_stats()
+                if namespace in ns_stats["namespaces"]:
+                    print(
+                        f"[DEBUG] Namespace '{namespace}' now has: {ns_stats['namespaces'][namespace]['vector_count']} vectors"
+                    )
+            except Exception as e:
+                print(f"Error getting stats: {e}")
+
+        except Exception as e:
+            print(f"[ERROR] Final upsert failed: {e}")
+            stats["failed_chunks"] += len(pinecone_vectors)
+        finally:
+            pinecone_vectors = []  # Prevent duplicate processing
+>>>>>>> origin/main
 
     db.commit()
+    print(f"[INFO] Final stats: {stats}")
     return stats
 
 
@@ -443,8 +671,14 @@ def process_and_store_docs(data, db: Session) -> dict:
                 print("Training from full website...")
                 loader = RecursiveUrlLoader(
                     url=data.target_link,
+<<<<<<< HEAD
                     max_depth=2,
                     extractor=lambda x: BeautifulSoup(x, "html.parser").text,
+=======
+                    max_depth=3,
+                    extractor=lambda x: BeautifulSoup(x, "html.parser").text,
+                    # link_regex=r"^(?!.*\?).*$",  # exclude links with query parameters
+>>>>>>> origin/main
                 )
                 stats["source_type"] = "website"
             else:
@@ -502,7 +736,11 @@ def process_and_store_docs(data, db: Session) -> dict:
 
 # Delete Doc
 def delete_documents_from_pinecone(
+<<<<<<< HEAD
     bot_id: int, doc_links: List[str], db: Session
+=======
+    bot_id: int, doc_link_ids: List[str], db: Session
+>>>>>>> origin/main
 ) -> dict:
     """
     Delete document vectors from Pinecone namespace based on source links
@@ -510,6 +748,11 @@ def delete_documents_from_pinecone(
     """
     namespace = f"bot_{bot_id}"
     stats = {"deleted_count": 0, "errors": 0}
+<<<<<<< HEAD
+=======
+    print(f"[DEBUG] Namespace for deletion: {namespace}")
+    print(f"[DEBUG] Document links to delete: {doc_link_ids}")
+>>>>>>> origin/main
 
     try:
         # Get all chunks from DB that match the doc_links
@@ -517,43 +760,115 @@ def delete_documents_from_pinecone(
             db.query(ChatBotsDocChunks)
             .filter(
                 ChatBotsDocChunks.bot_id == bot_id,
+<<<<<<< HEAD
                 ChatBotsDocChunks.source.in_(doc_links),
             )
             .all()
         )
+=======
+                ChatBotsDocChunks.link_id.in_(doc_link_ids),
+            )
+            .all()
+        )
+        print(f"[DEBUG] Found {len(chunks)} matching chunks in DB.")
+>>>>>>> origin/main
 
         if not chunks:
+            print("[INFO] No chunks found to delete.")
             return stats
 
+<<<<<<< HEAD
         # Delete from Pinecone in batches
         batch_size = 500
         vector_ids = [str(chunk.id) for chunk in chunks]
+=======
+        # Prepare vector IDs for deletion
+        batch_size = 500
+        vector_ids = [str(chunk.chunk_index) for chunk in chunks]
+        chunk_ids = [chunk.id for chunk in chunks]
+        print(f"[DEBUG] Total vector IDs to delete: {len(vector_ids)}")
+>>>>>>> origin/main
 
         for i in range(0, len(vector_ids), batch_size):
             batch_ids = vector_ids[i : i + batch_size]
             try:
-                # Delete vectors from Pinecone
+                print(f"[DEBUG] Deleting batch {i//batch_size + 1}: {batch_ids}")
                 index.delete(ids=batch_ids, namespace=namespace)
                 stats["deleted_count"] += len(batch_ids)
+<<<<<<< HEAD
             except Exception as e:
                 print(f"Error deleting batch {i}: {e}")
                 stats["errors"] += len(batch_ids)
 
         # Delete from database
         db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.id.in_(vector_ids)).delete(
+=======
+                print(f"[DEBUG] Deleted batch {i//batch_size + 1} successfully.")
+            except Exception as e:
+                print(f"[ERROR] Error deleting batch {i//batch_size + 1}: {e}")
+                stats["errors"] += len(batch_ids)
+
+        # Delete from database
+        print(f"[DEBUG] Deleting {len(chunk_ids)} chunks from DB.")
+        db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.id.in_(chunk_ids)).delete(
+>>>>>>> origin/main
             synchronize_session=False
         )
 
         db.commit()
+<<<<<<< HEAD
+=======
+        print(f"[INFO] Deletion complete. Stats: {stats}")
+>>>>>>> origin/main
 
     except Exception as e:
         print(f"Error in delete_documents_from_pinecone: {e}")
         db.rollback()
+<<<<<<< HEAD
         stats["errors"] += len(doc_links)
+=======
+        stats["errors"] += len(doc_link_ids)
+>>>>>>> origin/main
 
     return stats
 
 
+<<<<<<< HEAD
+=======
+def clear_all_pinecone_namespaces(db: Session) -> dict:
+    """
+    Deletes all vectors from all Pinecone namespaces corresponding to all bots.
+    Returns: {'namespaces_cleared': int, 'errors': List[str]}
+    """
+    errors = []
+    namespaces_cleared = 0
+
+    # Get unique bot_ids from the DB
+    try:
+        ns_stats = index.describe_index_stats()
+        all_namespaces = ns_stats.get("namespaces", {}).keys()
+        print(
+            f"[DEBUG] Found {len(all_namespaces)} bot_ids for namespace deletion: {all_namespaces}"
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch bot_ids: {e}")
+        return {"namespaces_cleared": 0, "errors": [str(e)]}
+
+    for bot_id in all_namespaces:
+        namespace = f"{bot_id}"
+        try:
+            index.delete(delete_all=True, namespace=namespace)
+            print(f"[INFO] Cleared namespace: {namespace}")
+            namespaces_cleared += 1
+        except Exception as e:
+            error_msg = f"Failed to delete namespace {namespace}: {e}"
+            print(f"[ERROR] {error_msg}")
+            errors.append(error_msg)
+
+    return {"namespaces_cleared": namespaces_cleared, "errors": errors}
+
+
+>>>>>>> origin/main
 ############################################
 # training
 ############################################
