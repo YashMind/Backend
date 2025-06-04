@@ -584,7 +584,7 @@ def process_and_store_docs(data, db: Session) -> dict:
                     url=base_url,
                     max_depth=3,
                     extractor=lambda x: BeautifulSoup(x, "html.parser").text,
-                    link_regex=r"^[^\?]*$",  # Apply the custom filter
+                    link_regex=r"^(?!.*\?).*$",  # Apply the custom filter
                 )
                 stats["source_type"] = "website"
             else:
