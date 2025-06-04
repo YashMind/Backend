@@ -6,7 +6,8 @@ import openai
 import langchain
 from typing import List, Tuple, Optional
 import numpy as np
-# from pinecone import Pinecone 
+
+# from pinecone import Pinecone
 from langchain.document_loaders import PyPDFDirectoryLoader
 from langchain.document_loaders import RecursiveUrlLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -36,13 +37,14 @@ from langchain.document_loaders import (
     CSVLoader,
     UnstructuredExcelLoader,
     UnstructuredPowerPointLoader,
-    UnstructuredFileLoader
+    UnstructuredFileLoader,
 )
 import string
 import uuid
 import pinecone
 from rank_bm25 import BM25Okapi
 import tiktoken
+
 load_dotenv()
 
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
@@ -50,60 +52,68 @@ pc = pinecone.Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("yashraa-ai")  # Use your index name
 
 
-
 # # Initialize OpenAI Embeddings
-embedding_model = OpenAIEmbeddings(model="text-embedding-3-small", dimensions=1024, openai_api_key=os.getenv("OPENAI_API_KEY"))
+embedding_model = OpenAIEmbeddings(
+    model="text-embedding-3-small",
+    dimensions=1024,
+    openai_api_key=os.getenv("OPENAI_API_KEY"),
+)
 
 
-
-def hybrid_retrieval(query: str, bot_id: int, top_k: int = 5) -> Tuple[List[str], List[float]]:
+def hybrid_retrieval(
+    query: str, bot_id: int, top_k: int = 5
+) -> Tuple[List[str], List[float]]:
     try:
         # Vector Search
         query_vector = embedding_model.embed_query(query)
-        
+
         print(f"Query vector shape: {len(query_vector)}")
         print(f"First few values: {query_vector[:5]}")  # Sanity check the values
-        
+
         # Check index stats first
         index_stats = index.describe_index_stats()
-        print("NAMESPACE INDEX STATS",index_stats)
+        print("NAMESPACE INDEX STATS", index_stats)
 
         # Check if your namespace exists and has vectors
-        if f"bot_{bot_id}" in index_stats['namespaces']:
-            print(f"Namespace has {index_stats['namespaces'][f'bot_{bot_id}']['vector_count']} vectors")
+        if f"bot_{bot_id}" in index_stats["namespaces"]:
+            print(
+                f"Namespace has {index_stats['namespaces'][f'bot_{bot_id}']['vector_count']} vectors"
+            )
         else:
             print("Namespace doesn't exist or is empty")
-        
-        
+
         vector_results = index.query(
             vector=query_vector,
-            top_k=max(top_k*2, 10),  # Ensure minimum 10 results
+            top_k=max(top_k * 2, 10),  # Ensure minimum 10 results
             namespace=f"bot_{bot_id}",
-            include_metadata=True
+            include_metadata=True,
         )
-        
+
         print("Vector results acc to query: ", vector_results)
-        
-        
+
         # test_results = index.query(
         #     vector=query_vector,
         #     top_k=5,
         #     include_metadata=True
         # )
         # print("Test results without namespace:", test_results)
-    
 
-        if not hasattr(vector_results, 'matches') or not vector_results.matches:
+        if not hasattr(vector_results, "matches") or not vector_results.matches:
             return [], []
         print("if vector-results has attribute matches")
         # Text Search Preparation
         all_texts = []
         valid_matches = []
-        
+
         for match in vector_results.matches:
-            if hasattr(match, 'metadata') and match.metadata.get('content'):
-                
-                text_content = f"source: '{match.metadata['source']}', title: '{match.metadata['content']}', description: '{match.metadata['description']}' ,content: '{match.metadata['content']}' "
+            if hasattr(match, "metadata") and match.metadata.get("content"):
+                metadata = match.metadata or {}
+                text_content = (
+                    f"source: '{metadata.get('source', '')}', "
+                    f"title: '{metadata.get('title', '')}', "
+                    f"description: '{metadata.get('description', '')}', "
+                    f"content: '{metadata.get('content', '')}'"
+                )
                 all_texts.append(text_content)
                 valid_matches.append(match)
         print("collect matches content and metadata", all_texts, valid_matches)
@@ -114,19 +124,19 @@ def hybrid_retrieval(query: str, bot_id: int, top_k: int = 5) -> Tuple[List[str]
         # BM25 Scoring
         tokenized_query = query.lower().split()
         tokenized_docs = [doc.lower().split() for doc in all_texts]
-        
+
         # Handle empty documents case
         tokenized_docs = [doc for doc in tokenized_docs if doc]
         if not tokenized_docs:
             return [], []
-            
+
         bm25 = BM25Okapi(tokenized_docs)
         text_scores = bm25.get_scores(tokenized_query)
 
         # Normalize scores to avoid division issues
         vector_scores = np.array([match.score for match in valid_matches])
         text_scores = np.array(text_scores)
-        
+
         if vector_scores.max() > 0:
             vector_scores = vector_scores / vector_scores.max()
         if text_scores.max() > 0:
@@ -137,29 +147,38 @@ def hybrid_retrieval(query: str, bot_id: int, top_k: int = 5) -> Tuple[List[str]
 
         # Sort results
         sorted_indices = np.argsort(combined_scores)[::-1]  # Descending order
-        top_results = [(all_texts[i], combined_scores[i]) for i in sorted_indices[:top_k]]
-        
+        top_results = [
+            (all_texts[i], combined_scores[i]) for i in sorted_indices[:top_k]
+        ]
+
         if not top_results:
             return [], []
-            
+
         return zip(*top_results)
-        
+
     except Exception as e:
         print(f"Error in hybrid retrieval: {e}")
         return [], []
 
-def generate_response(query: str, context: List[str], use_openai: bool, instruction_prompts, creativity, text_content) -> Tuple[str, int]:
+
+def generate_response(
+    query: str,
+    context: List[str],
+    use_openai: bool,
+    instruction_prompts,
+    creativity,
+    text_content,
+) -> Tuple[str, int]:
     # Convert context to list if it's a tuple
     context = list(context) if isinstance(context, tuple) else context
-    
-    
+
     if not use_openai:
         # Simple concatenation of best matches with improved formatting
         if not context:
             return "I couldn't find relevant information in my knowledge base."
         return "Here's what I found:\n" + "\n\n".join([f"- {text}" for text in context])
-    
-    prompt_template="""You are an friendly intelligent domain-specific support assistant embedded on a website. Your job is to respond to user for their messages, if he has greeted you greet him back, for other queries reply only with what’s verified in the given inputs, while formatting everything clearly in professional, semantic HTML. Never fabricate data. Never assume.
+
+    prompt_template = """You are an friendly intelligent domain-specific support assistant embedded on a website. Your job is to respond to user for their messages, if he has greeted you greet him back, for other queries reply only with what’s verified in the given inputs, while formatting everything clearly in professional, semantic HTML. Never fabricate data. Never assume.
 
     At every user turn, you are provided the following runtime variables:
 
@@ -193,10 +212,12 @@ def generate_response(query: str, context: List[str], use_openai: bool, instruct
     - If creativity is below 30, keep the response strictly factual and concise.
     - If creativity is above 70, you may include light elaboration or explanation—but do not make assumptions or guesses.
     
-    2. ALWAYS base your response strictly on the information found in context, instruction_prompts, or text_content. 
+    2. ALWAYS base your response on the information found in context, instruction_prompts, or text_content. 
     - Always attempt to find content related to the user’s query, even if there is no exact match. If a partial or closely related match is found, respond with:
     “I found something related to your query: …” and then present the relevant content.
-    - For queries involving pricing, availability, curriculum, steps, or any data-driven topics, respond only if an exact or closely related match is available in the context.
+    - If the user query is not an exact match with the available context, identify the main subject or keyword of the query (e.g., for "courses related to fitness," the main subject is "fitness"). Then, generate a list of the top 15 related terms to that keyword (e.g., health, exercise, diet, sleep, hygiene, etc.). Use this expanded list of related terms to find relevant information within the context and construct a meaningful and accurate response to the user query.
+    - if user query is a collective noun (e.g., “What are the best books?”), you must provide a list of relevant items available in context, but always include a brief description or context for each item. If the query is singular (e.g., “What is the best book?”), provide a single , relevant item with a brief description. If no relevant items are found, respond with a message indicating that no relevant information was found.
+    - For queries involving pricing, availability, curriculum, steps, or any data-driven topics, add these information only if an exact or closely related match is available in the context.
     - For example, if a user asks about "vegan diet" and no direct match exists, but "vegan diet course" or "vegan nutrition" is available, use that to respond helpfully.
     - If neither exact nor related content is available, clearly state that the information is not found, and offer alternative suggestions or guidance when possible.
     - Important Note: if context used always add a link to the source of the information at last of query with note "you can find more information related to this <a href="/** source here */">here</a>.
@@ -209,7 +230,7 @@ def generate_response(query: str, context: List[str], use_openai: bool, instruct
     4. STRUCTURE responses based on domain detection:
     - Courses → show: Title, Price, Duration, Curriculum.
     - E-commerce → show: Product Name, Price, Features, Availability.
-    - Documentation → show: Steps, Errors, Fixes.
+    - Documentation → show: Description, Steps(if asked), Errors(if asked), Fixes(if asked).
     - Custom workflows → follow 'instruction_prompts' exactly.
 
     5. If Data Is Missing or Unclear:
@@ -255,130 +276,154 @@ def generate_response(query: str, context: List[str], use_openai: bool, instruct
     <li>Step 1: …</li>
     <li>Step 2: …</li>
     </ol>
-    <h2>Notes</h2><p>Important warnings or tips.</p>"""
+    <h2>Notes</h2><p>Important warnings or tips.</p>
+    
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    EXAMPLE STRUCTURE — Array of items:
+    
+    <h2> We found the following items:</h2>
+    <ol>
+    <li> Item 1: ...</li>
+    <li> Item 1: ...</li>
+    </ol>
+    <p> I can provide you information regarding the these items</p>
+    ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
+    
+    """
 
     # Truncate context to fit token limit more efficiently
     encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
     context_str = "\n".join(context)
-    
-    
+
     # print("Context String: ",context_str )
-    
+
     # Create a mutable copy of context for truncation
     context_list = list(context)  # Ensure we're working with a list
-    
+
     # Calculate tokens more precisely
     while True:
-        prompt = prompt_template.format(context=context_str, question=query, text_content=text_content, creativity=creativity, instruction_prompts=instruction_prompts)
+        prompt = prompt_template.format(
+            context=context_str,
+            question=query,
+            text_content=text_content,
+            creativity=creativity,
+            instruction_prompts=instruction_prompts,
+        )
         tokens = encoder.encode(prompt)
         if len(tokens) <= 3000 or not context_list:
             break
         # Remove the longest context item first
         context_list.remove(max(context_list, key=len))
         context_str = " ".join(context_list)
-    
+
     # if not context_str:
     #     return "I don't have enough information to answer that question."
-    
+
     # Use invoke instead of predict
     openai_tokens = len(encoder.encode(prompt))
     # print("OPENAI TOKENS: ",openai_tokens)
     try:
-        
-        print(f"""
+
+        print(
+            f"""
               ################################################################################
               {prompt}
               ################################################################################
-              """)
+              """
+        )
         response = llm.invoke(prompt)
         response_content = ""
-        
+
         if isinstance(response, str):
             response_content = response
-        elif hasattr(response, 'content'):
+        elif hasattr(response, "content"):
             response_content = response.content
         else:
             response_content = str(response)
         # print("Returning")
         return response_content, openai_tokens
-    
+
     except Exception as e:
         print(f"Error generating response: {e}")
-        return "I encountered an error while processing your request.",openai_tokens
-
-
-
+        return "I encountered an error while processing your request.", openai_tokens
 
 
 ############################################
-# training 
+# training
 ############################################
 def clean_text(text: str) -> str:
     # Parse HTML if present
-    if '<html' in text.lower() or '<body' in text.lower():
-        soup = BeautifulSoup(text, 'html.parser')
-        
+    if "<html" in text.lower() or "<body" in text.lower():
+        soup = BeautifulSoup(text, "html.parser")
+
         # Remove unwanted sections
-        for tag in ['nav', 'header', 'footer', 'script', 'style']:
+        for tag in ["nav", "header", "footer", "script", "style"]:
             for element in soup.find_all(tag):
                 element.decompose()
-        
+
         # Get cleaned text from remaining HTML
-        text = soup.get_text(separator=' ', strip=True)
-    
+        text = soup.get_text(separator=" ", strip=True)
+
     # Remove HTML/XML tags (in case any remain)
-    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r"<[^>]+>", "", text)
     # Remove special characters (keep letters, numbers, whitespace, hyphens)
-    text = regex.sub(r'[^a-zA-Z0-9_\s\p{Sc}\.,-]', '', text, flags=regex.UNICODE)
+    text = regex.sub(r"[^a-zA-Z0-9_\s\p{Sc}\.,-]", "", text, flags=regex.UNICODE)
     # Remove redundant whitespace
-    text = ' '.join(text.split())
+    text = " ".join(text.split())
     # Remove boilerplate phrases (case insensitive)
-    boilerplate = ["cookie policy", "privacy policy", "terms of use", 
-                  "all rights reserved", "©", "legal notice"]
+    boilerplate = [
+        "cookie policy",
+        "privacy policy",
+        "terms of use",
+        "all rights reserved",
+        "©",
+        "legal notice",
+    ]
     for phrase in boilerplate:
-        text = re.sub(re.escape(phrase), '', text, flags=re.IGNORECASE)
+        text = re.sub(re.escape(phrase), "", text, flags=re.IGNORECASE)
     return text.strip()
+
 
 def split_documents(docs: List[Document]) -> List[Document]:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1500,
         chunk_overlap=500,
         separators=["\n\n##", "\n\n", "\n", ". "],
-        length_function=len
+        length_function=len,
     )
     return splitter.split_documents(docs)
 
+
 def get_loader_for_file(file_path: str):
-    if file_path.endswith('.pdf'):
+    if file_path.endswith(".pdf"):
         return PyPDFLoader(file_path)
-    elif file_path.endswith('.docx'):
+    elif file_path.endswith(".docx"):
         return Docx2txtLoader(file_path)
-    elif file_path.endswith('.txt'):
+    elif file_path.endswith(".txt"):
         return TextLoader(file_path)
-    elif file_path.endswith('.csv'):
+    elif file_path.endswith(".csv"):
         return CSVLoader(file_path)
-    elif file_path.endswith('.xlsx') or file_path.endswith('.xls'):
+    elif file_path.endswith(".xlsx") or file_path.endswith(".xls"):
         return UnstructuredExcelLoader(file_path)
-    elif file_path.endswith('.pptx'):
+    elif file_path.endswith(".pptx"):
         return UnstructuredPowerPointLoader(file_path)
     else:
         return UnstructuredFileLoader(file_path)
+
 
 def preprocess_documents(docs: List[Document]) -> List[Document]:
     processed = []
     for doc in docs:
         # Clean text
         text = clean_text(doc.page_content)
-        
+
         # Normalize metadata
         metadata = normalize_metadata(doc.metadata)
-        
-        processed.append(Document(
-            page_content=text,
-            metadata=metadata
-        ))
+
+        processed.append(Document(page_content=text, metadata=metadata))
     return processed
+
 
 def normalize_metadata(metadata: dict) -> dict:
     # Standardize metadata keys
@@ -387,24 +432,21 @@ def normalize_metadata(metadata: dict) -> dict:
         standard_meta[k.lower()] = str(v)
     return standard_meta
 
+
 def store_documents(docs: List[Document], data, db: Session) -> dict:
     """Store documents and return processing statistics"""
 
     existing_hashes = set()
     batch_size = 200
     pinecone_vectors = []
-    stats = {
-        'total_chars': 0,
-        'chunks_processed': 0,
-        'failed_chunks': 0
-    }
+    stats = {"total_chars": 0, "chunks_processed": 0, "failed_chunks": 0}
     namespace = f"bot_{data.bot_id}"
     print(f"[DEBUG] Namespace to use: {namespace}")
 
     for i, doc in enumerate(docs):
         try:
             text = doc.page_content
-            stats['total_chars'] += len(text)
+            stats["total_chars"] += len(text)
             content_hash = sha256(text.encode()).hexdigest()
 
             if content_hash in existing_hashes:
@@ -422,26 +464,25 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 "source": data.target_link or data.document_link,
                 "content": text,
                 "chunk_index": i,
-                **doc.metadata
+                **doc.metadata,
             }
 
             embedding = embedding_model.embed_query(text)
-            
-            vector_id= str(uuid.uuid4())
-            
-            pinecone_vectors.append({
-                "id": vector_id,
-                "values": embedding,
-                "metadata": metadata
-            })
+
+            vector_id = str(uuid.uuid4())
+
+            pinecone_vectors.append(
+                {"id": vector_id, "values": embedding, "metadata": metadata}
+            )
             existing_hashes.add(content_hash)
 
             if len(pinecone_vectors) >= batch_size:
                 try:
-                    print(f"[DEBUG] Upserting {len(pinecone_vectors)} vectors to namespace '{namespace}'")
+                    print(
+                        f"[DEBUG] Upserting {len(pinecone_vectors)} vectors to namespace '{namespace}'"
+                    )
                     response = index.upsert(
-                        vectors=pinecone_vectors,
-                        namespace=str(namespace)
+                        vectors=pinecone_vectors, namespace=str(namespace)
                     )
                     print(f"[DEBUG] Upsert response: {response}")
                     pinecone_vectors = []
@@ -449,61 +490,69 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                     try:
                         time.sleep(2)
                         ns_stats = index.describe_index_stats()
-                        if namespace in ns_stats['namespaces']:
-                            print(f"[DEBUG] Namespace '{namespace}' now has: {ns_stats['namespaces'][namespace]['vector_count']} vectors")
+                        if namespace in ns_stats["namespaces"]:
+                            print(
+                                f"[DEBUG] Namespace '{namespace}' now has: {ns_stats['namespaces'][namespace]['vector_count']} vectors"
+                            )
                         else:
-                            print(f"Namespace not immediately available - try again later")
+                            print(
+                                f"Namespace not immediately available - try again later"
+                            )
                     except Exception as e:
                         print(f"Error getting stats: {e}")
 
                 except Exception as e:
                     print(f"[ERROR] Upsert error: {e}")
-                    stats['failed_chunks'] += len(pinecone_vectors)
+                    stats["failed_chunks"] += len(pinecone_vectors)
                     pinecone_vectors = []
-            
+
             if i == len(docs) - 1 and pinecone_vectors:
-                print(f"[WARN] Final document skipped with {len(pinecone_vectors)} pending vectors")
+                print(
+                    f"[WARN] Final document skipped with {len(pinecone_vectors)} pending vectors"
+                )
 
             print("Creating DB CHUNK")
             db_chunk = ChatBotsDocChunks(
-                bot_id= data.bot_id,
-                user_id= data.user_id,
-                source= metadata["source"],
-                content= text,
-                metaData= str(metadata),
-                chunk_index= vector_id,
-                char_count= len(text),
-                link_id= data.id,
-                content_hash= content_hash
+                bot_id=data.bot_id,
+                user_id=data.user_id,
+                source=metadata["source"],
+                content=text,
+                metaData=str(metadata),
+                chunk_index=vector_id,
+                char_count=len(text),
+                link_id=data.id,
+                content_hash=content_hash,
             )
             print("SAVING DB CHUNK")
             db.add(db_chunk)
-            stats['chunks_processed'] += 1
+            stats["chunks_processed"] += 1
 
         except Exception as e:
             print(f"[ERROR] Error storing chunk {i}: {e}")
-            stats['failed_chunks'] += 1
+            stats["failed_chunks"] += 1
             continue
     if pinecone_vectors:
         try:
-            print(f"[DEBUG] Upserting FINAL batch of {len(pinecone_vectors)} vectors to '{namespace}'")
-            response = index.upsert(
-                vectors=pinecone_vectors,
-                namespace=str(namespace))
+            print(
+                f"[DEBUG] Upserting FINAL batch of {len(pinecone_vectors)} vectors to '{namespace}'"
+            )
+            response = index.upsert(vectors=pinecone_vectors, namespace=str(namespace))
             print(f"[DEBUG] Final upsert response: {response}")
-            
+
             # Optional: Namespace stats check
             try:
                 time.sleep(2)
                 ns_stats = index.describe_index_stats()
-                if namespace in ns_stats['namespaces']:
-                    print(f"[DEBUG] Namespace '{namespace}' now has: {ns_stats['namespaces'][namespace]['vector_count']} vectors")
+                if namespace in ns_stats["namespaces"]:
+                    print(
+                        f"[DEBUG] Namespace '{namespace}' now has: {ns_stats['namespaces'][namespace]['vector_count']} vectors"
+                    )
             except Exception as e:
                 print(f"Error getting stats: {e}")
-                
+
         except Exception as e:
             print(f"[ERROR] Final upsert failed: {e}")
-            stats['failed_chunks'] += len(pinecone_vectors)
+            stats["failed_chunks"] += len(pinecone_vectors)
         finally:
             pinecone_vectors = []  # Prevent duplicate processing
 
@@ -516,12 +565,7 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
 def process_and_store_docs(data, db: Session) -> dict:
     """Process documents and return metadata including character counts"""
     documents = []
-    stats = {
-        'total_chars': 0,
-        'total_chunks': 0,
-        'sources': set(),
-        'file_types': set()
-    }
+    stats = {"total_chars": 0, "total_chunks": 0, "sources": set(), "file_types": set()}
 
     try:
         print("=== Start: process_and_store_docs ===")
@@ -530,21 +574,34 @@ def process_and_store_docs(data, db: Session) -> dict:
         # Handle web content
         if data.target_link:
             print("Target link detected:", data.target_link)
+            # Clean the base URL by removing any query parameters/fragments
+            base_url = data.target_link.split("?")[0].split("#")[0]
+
             if data.train_from == "Full website":
                 print("Training from full website...")
+
+                # Define a URL filter to exclude any URL with query parameters
+                def url_filter(url: str) -> bool:
+                    # Extract the part before the fragment (#)
+                    base_part = url.split("#", 1)[0]
+                    # Check if this base part contains a query parameter (?)
+                    return "?" not in base_part
+
                 loader = RecursiveUrlLoader(
-                    url=data.target_link,
+                    url=base_url,
                     max_depth=3,
-                    extractor=lambda x: BeautifulSoup(x, "html.parser").text
+                    extractor=lambda x: BeautifulSoup(x, "html.parser").text,
+                    link_regex=r"^[^\?]*$",  # Apply the custom filter
+                    prevent_outside=True,  # Ensure we stay within the base domain
                 )
-                stats['source_type'] = 'website'
+                stats["source_type"] = "website"
             else:
                 print("Training from single page...")
                 loader = WebBaseLoader(data.target_link)
-                stats['source_type'] = 'single_page'
+                stats["source_type"] = "single_page"
             documents = loader.load()
             print(f"Loaded {len(documents)} documents from web.")
-            stats['sources'].add(data.target_link)
+            stats["sources"].add(data.target_link)
 
         # Handle file uploads
         elif data.document_link:
@@ -555,9 +612,9 @@ def process_and_store_docs(data, db: Session) -> dict:
             documents = loader.load()
             print(f"Loaded {len(documents)} documents from file.")
             file_type = os.path.splitext(file_path)[1][1:]  # Get extension without dot
-            stats['file_types'].add(file_type)
-            stats['source_type'] = 'file'
-            stats['sources'].add(file_path)
+            stats["file_types"].add(file_type)
+            stats["source_type"] = "file"
+            stats["sources"].add(file_path)
 
         if not documents:
             raise ValueError("No data loaded from link or file")
@@ -571,42 +628,49 @@ def process_and_store_docs(data, db: Session) -> dict:
         print("Splitting documents into chunks...")
         split_docs = split_documents(cleaned_docs)
         print(f"Generated {len(split_docs)} chunks.")
-        stats['total_chunks'] = len(split_docs)
+        stats["total_chunks"] = len(split_docs)
 
         # Store in vector DB and SQL while counting characters
         print("Storing documents...")
         store_results = store_documents(split_docs, data, db)
-        stats['total_chars'] = store_results['total_chars']
-        print("Total characters stored:", stats['total_chars'])
+        stats["total_chars"] = store_results["total_chars"]
+        print("Total characters stored:", stats["total_chars"])
 
         # Convert sets to lists for JSON serialization
-        stats['sources'] = list(stats['sources'])
-        stats['file_types'] = list(stats['file_types'])
+        stats["sources"] = list(stats["sources"])
+        stats["file_types"] = list(stats["file_types"])
 
         print("=== End: process_and_store_docs ===")
-        return stats['total_chars']
+        return stats["total_chars"]
 
     except Exception as e:
         print(f"Error processing documents: {e}")
         raise
 
+
 # Delete Doc
-def delete_documents_from_pinecone(bot_id: int, doc_link_ids: List[str], db: Session) -> dict:
+def delete_documents_from_pinecone(
+    bot_id: int, doc_link_ids: List[str], db: Session
+) -> dict:
     """
     Delete document vectors from Pinecone namespace based on source links
     Returns: {'deleted_count': int, 'errors': int}
     """
     namespace = f"bot_{bot_id}"
-    stats = {'deleted_count': 0, 'errors': 0}
+    stats = {"deleted_count": 0, "errors": 0}
     print(f"[DEBUG] Namespace for deletion: {namespace}")
     print(f"[DEBUG] Document links to delete: {doc_link_ids}")
 
     try:
         # Get all chunks from DB that match the doc_links
-        chunks = db.query(ChatBotsDocChunks).filter(
-            ChatBotsDocChunks.bot_id == bot_id,
-            ChatBotsDocChunks.link_id.in_(doc_link_ids)
-        ).all()
+        chunks = (
+            db.query(ChatBotsDocChunks)
+            .filter(
+                ChatBotsDocChunks.bot_id == bot_id,
+                ChatBotsDocChunks.link_id.in_(doc_link_ids),
+            )
+            .all()
+        )
         print(f"[DEBUG] Found {len(chunks)} matching chunks in DB.")
 
         if not chunks:
@@ -616,35 +680,36 @@ def delete_documents_from_pinecone(bot_id: int, doc_link_ids: List[str], db: Ses
         # Prepare vector IDs for deletion
         batch_size = 500
         vector_ids = [str(chunk.chunk_index) for chunk in chunks]
-        chunk_ids = [chunk.id  for chunk in chunks]
+        chunk_ids = [chunk.id for chunk in chunks]
         print(f"[DEBUG] Total vector IDs to delete: {len(vector_ids)}")
 
         for i in range(0, len(vector_ids), batch_size):
-            batch_ids = vector_ids[i:i + batch_size]
+            batch_ids = vector_ids[i : i + batch_size]
             try:
                 print(f"[DEBUG] Deleting batch {i//batch_size + 1}: {batch_ids}")
                 index.delete(ids=batch_ids, namespace=namespace)
-                stats['deleted_count'] += len(batch_ids)
+                stats["deleted_count"] += len(batch_ids)
                 print(f"[DEBUG] Deleted batch {i//batch_size + 1} successfully.")
             except Exception as e:
                 print(f"[ERROR] Error deleting batch {i//batch_size + 1}: {e}")
-                stats['errors'] += len(batch_ids)
+                stats["errors"] += len(batch_ids)
 
         # Delete from database
         print(f"[DEBUG] Deleting {len(chunk_ids)} chunks from DB.")
-        db.query(ChatBotsDocChunks).filter(
-            ChatBotsDocChunks.id.in_(chunk_ids)
-        ).delete(synchronize_session=False)
+        db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.id.in_(chunk_ids)).delete(
+            synchronize_session=False
+        )
 
         db.commit()
         print(f"[INFO] Deletion complete. Stats: {stats}")
-        
+
     except Exception as e:
         print(f"Error in delete_documents_from_pinecone: {e}")
         db.rollback()
-        stats['errors'] += len(doc_link_ids)
-        
+        stats["errors"] += len(doc_link_ids)
+
     return stats
+
 
 def clear_all_pinecone_namespaces(db: Session) -> dict:
     """
@@ -657,11 +722,13 @@ def clear_all_pinecone_namespaces(db: Session) -> dict:
     # Get unique bot_ids from the DB
     try:
         ns_stats = index.describe_index_stats()
-        all_namespaces = ns_stats.get('namespaces', {}).keys()
-        print(f"[DEBUG] Found {len(all_namespaces)} bot_ids for namespace deletion: {all_namespaces}")
+        all_namespaces = ns_stats.get("namespaces", {}).keys()
+        print(
+            f"[DEBUG] Found {len(all_namespaces)} bot_ids for namespace deletion: {all_namespaces}"
+        )
     except Exception as e:
         print(f"[ERROR] Failed to fetch bot_ids: {e}")
-        return {'namespaces_cleared': 0, 'errors': [str(e)]}
+        return {"namespaces_cleared": 0, "errors": [str(e)]}
 
     for bot_id in all_namespaces:
         namespace = f"{bot_id}"
@@ -674,28 +741,34 @@ def clear_all_pinecone_namespaces(db: Session) -> dict:
             print(f"[ERROR] {error_msg}")
             errors.append(error_msg)
 
-    return {'namespaces_cleared': namespaces_cleared, 'errors': errors}
-
+    return {"namespaces_cleared": namespaces_cleared, "errors": errors}
 
 
 ############################################
-# training 
+# training
 ############################################
 
 
 def get_response_from_faqs(user_msg: str, bot_id: int, db: Session):
     try:
-        cleaned_msg = user_msg.lower().strip().replace('?', '')
+        cleaned_msg = user_msg.lower().strip().replace("?", "")
         pattern = f"%{cleaned_msg}%"
-        faq = db.query(ChatBotsFaqs).filter(
-            ChatBotsFaqs.bot_id == bot_id,
-            func.lower(ChatBotsFaqs.question).like(pattern)
-        ).first()
+        faq = (
+            db.query(ChatBotsFaqs)
+            .filter(
+                ChatBotsFaqs.bot_id == bot_id,
+                func.lower(ChatBotsFaqs.question).like(pattern),
+            )
+            .first()
+        )
         return faq if faq else None
     except Exception as e:
         return None
 
-def get_docs_tuned_like_response(user_msg: str, bot_id: int, db: Session) ->  Optional[str]:
+
+def get_docs_tuned_like_response(
+    user_msg: str, bot_id: int, db: Session
+) -> Optional[str]:
     # Fetch relevant document chunks
     chunks = db.query(ChatBotsDocChunks).filter_by(bot_id=bot_id).all()
     if not chunks:
@@ -707,16 +780,20 @@ def get_docs_tuned_like_response(user_msg: str, bot_id: int, db: Session) ->  Op
 
     # LangChain chat messages
     messages = [
-        SystemMessage(content="You are a helpful assistant. Use only the provided context to answer."),
-        HumanMessage(content=f"""
+        SystemMessage(
+            content="You are a helpful assistant. Use only the provided context to answer."
+        ),
+        HumanMessage(
+            content=f"""
         Context:
         {context}
 
         Question: {user_msg}
 
         If the answer is not found in the context, respond with "I don't know".
-        """)
-        ]
+        """
+        ),
+    ]
 
     try:
         response = llm(messages)
@@ -730,5 +807,3 @@ def get_docs_tuned_like_response(user_msg: str, bot_id: int, db: Session) ->  Op
     except Exception as e:
         print("LangChain/OpenAI error:", e)
         return None
-    
-    
