@@ -574,17 +574,13 @@ def process_and_store_docs(data, db: Session) -> dict:
         # Handle web content
         if data.target_link:
             print("Target link detected:", data.target_link)
-            # Clean the base URL by removing any query parameters/fragments
-            base_url = data.target_link.split("?")[0].split("#")[0]
-
             if data.train_from == "Full website":
                 print("Training from full website...")
-
                 loader = RecursiveUrlLoader(
-                    url=base_url,
+                    url=data.target_link,
                     max_depth=3,
                     extractor=lambda x: BeautifulSoup(x, "html.parser").text,
-                    link_regex=r"^(?!.*\?).*$",  # Apply the custom filter
+                    # link_regex=r"^(?!.*\?).*$",  # exclude links with query parameters
                 )
                 stats["source_type"] = "website"
             else:
