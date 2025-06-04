@@ -580,19 +580,11 @@ def process_and_store_docs(data, db: Session) -> dict:
             if data.train_from == "Full website":
                 print("Training from full website...")
 
-                # Define a URL filter to exclude any URL with query parameters
-                def url_filter(url: str) -> bool:
-                    # Extract the part before the fragment (#)
-                    base_part = url.split("#", 1)[0]
-                    # Check if this base part contains a query parameter (?)
-                    return "?" not in base_part
-
                 loader = RecursiveUrlLoader(
                     url=base_url,
                     max_depth=3,
                     extractor=lambda x: BeautifulSoup(x, "html.parser").text,
                     link_regex=r"^[^\?]*$",  # Apply the custom filter
-                    prevent_outside=True,  # Ensure we stay within the base domain
                 )
                 stats["source_type"] = "website"
             else:
