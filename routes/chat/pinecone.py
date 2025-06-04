@@ -67,32 +67,20 @@ def hybrid_retrieval(
         # Vector Search
         query_vector = embedding_model.embed_query(query)
 
-<<<<<<< HEAD
-        # print(f"Query vector shape: {len(query_vector)}")
-        # print(f"First few values: {query_vector[:5]}")  # Sanity check the values
-=======
         print(f"Query vector shape: {len(query_vector)}")
         print(f"First few values: {query_vector[:5]}")  # Sanity check the values
->>>>>>> origin/main
 
         # Check index stats first
         index_stats = index.describe_index_stats()
         print("NAMESPACE INDEX STATS", index_stats)
 
         # Check if your namespace exists and has vectors
-<<<<<<< HEAD
-        # if f"bot_{bot_id}" in index_stats['namespaces']:
-        #     print(f"Namespace has {index_stats['namespaces'][f'bot_{bot_id}']['vector_count']} vectors")
-        # else:
-        #     print("Namespace doesn't exist or is empty")
-=======
         if f"bot_{bot_id}" in index_stats["namespaces"]:
             print(
                 f"Namespace has {index_stats['namespaces'][f'bot_{bot_id}']['vector_count']} vectors"
             )
         else:
             print("Namespace doesn't exist or is empty")
->>>>>>> origin/main
 
         vector_results = index.query(
             vector=query_vector,
@@ -101,11 +89,7 @@ def hybrid_retrieval(
             include_metadata=True,
         )
 
-<<<<<<< HEAD
-        # print("Vector results acc to query: ", vector_results)
-=======
         print("Vector results acc to query: ", vector_results)
->>>>>>> origin/main
 
         # test_results = index.query(
         #     vector=query_vector,
@@ -123,9 +107,6 @@ def hybrid_retrieval(
 
         for match in vector_results.matches:
             if hasattr(match, "metadata") and match.metadata.get("content"):
-<<<<<<< HEAD
-                all_texts.append(match.metadata["content"])
-=======
                 metadata = match.metadata or {}
                 text_content = (
                     f"source: '{metadata.get('source', '')}', "
@@ -134,7 +115,6 @@ def hybrid_retrieval(
                     f"content: '{metadata.get('content', '')}'"
                 )
                 all_texts.append(text_content)
->>>>>>> origin/main
                 valid_matches.append(match)
         print("collect matches content and metadata", all_texts, valid_matches)
         if not all_texts:
@@ -198,10 +178,6 @@ def generate_response(
             return "I couldn't find relevant information in my knowledge base."
         return "Here's what I found:\n" + "\n\n".join([f"- {text}" for text in context])
 
-<<<<<<< HEAD
-    prompt_template = """
-    You are a specialized assistant deployed on the Yashraa platform, trained to generate expert-level responses with professional clarity. Your behavior is guided by domain-specific fine-tuning, creativity calibration, and explicit instructions provided by the chatbot owner.
-=======
     prompt_template = """You are an friendly intelligent domain-specific support assistant embedded on a website. Your job is to respond to user for their messages, if he has greeted you greet him back, for other queries reply only with what’s verified in the given inputs, while formatting everything clearly in professional, semantic HTML. Never fabricate data. Never assume.
 
     At every user turn, you are provided the following runtime variables:
@@ -224,7 +200,6 @@ def generate_response(
     
     • creativity — Integer (0–100) controlling response creativity. 0 = strict factual, 100 = freeform.
     creativity: {creativity}
->>>>>>> origin/main
 
     ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
     🔒 OUTPUT RULES
@@ -321,11 +296,7 @@ def generate_response(
     encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
     context_str = "\n".join(context)
 
-<<<<<<< HEAD
-    print("Context String: ", context_str)
-=======
     # print("Context String: ",context_str )
->>>>>>> origin/main
 
     # Create a mutable copy of context for truncation
     context_list = list(context)  # Ensure we're working with a list
@@ -350,13 +321,8 @@ def generate_response(
     #     return "I don't have enough information to answer that question."
 
     # Use invoke instead of predict
-<<<<<<< HEAD
     openai_request_tokens = len(encoder.encode(prompt))
     print("OPENAI TOKENS: ", openai_request_tokens)
-=======
-    openai_tokens = len(encoder.encode(prompt))
-    # print("OPENAI TOKENS: ",openai_tokens)
->>>>>>> origin/main
     try:
 
         print(
@@ -375,7 +341,6 @@ def generate_response(
             response_content = response.content
         else:
             response_content = str(response)
-<<<<<<< HEAD
         print("Returning")
         openai_response_tokens = len(encoder.encode(response_content))
         request_tokens = len(encoder.encode(query))
@@ -394,14 +359,6 @@ def generate_response(
             openai_request_tokens,
             0,
         )
-=======
-        # print("Returning")
-        return response_content, openai_tokens
-
-    except Exception as e:
-        print(f"Error generating response: {e}")
-        return "I encountered an error while processing your request.", openai_tokens
->>>>>>> origin/main
 
 
 ############################################
@@ -524,19 +481,6 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
 
             embedding = embedding_model.embed_query(text)
 
-<<<<<<< HEAD
-            pinecone_vectors.append(
-                {"id": str(uuid.uuid4()), "values": embedding, "metadata": metadata}
-            )
-            existing_hashes.add(content_hash)
-
-            if len(pinecone_vectors) >= batch_size or i == len(docs) - 1:
-                try:
-                    # Explicit namespace handling
-                    response = index.upsert(
-                        vectors=pinecone_vectors,
-                        namespace=str(namespace),  # Force string conversion
-=======
             vector_id = str(uuid.uuid4())
 
             pinecone_vectors.append(
@@ -548,7 +492,6 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 try:
                     print(
                         f"[DEBUG] Upserting {len(pinecone_vectors)} vectors to namespace '{namespace}'"
->>>>>>> origin/main
                     )
                     response = index.upsert(
                         vectors=pinecone_vectors, namespace=str(namespace)
@@ -556,18 +499,6 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                     print(f"[DEBUG] Upsert response: {response}")
                     pinecone_vectors = []
 
-<<<<<<< HEAD
-                    # Immediate verification
-                    ns_stats = index.describe_index_stats()
-                    print(
-                        f"Namespace '{namespace}' now has: {ns_stats['namespaces'].get(namespace, {}).get('vector_count', 0)} vectors"
-                    )
-
-                except Exception as e:
-                    print(f"Upsert error: {e}")
-                    stats["failed_chunks"] += len(pinecone_vectors)
-
-=======
                     try:
                         time.sleep(2)
                         ns_stats = index.describe_index_stats()
@@ -593,33 +524,22 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 )
 
             print("Creating DB CHUNK")
->>>>>>> origin/main
             db_chunk = ChatBotsDocChunks(
                 bot_id=data.bot_id,
                 user_id=data.user_id,
                 source=metadata["source"],
                 content=text,
                 metaData=str(metadata),
-<<<<<<< HEAD
-                chunk_index=i,
-                char_count=len(text),  # Store char count per chunk
-=======
                 chunk_index=vector_id,
                 char_count=len(text),
                 link_id=data.id,
                 content_hash=content_hash,
->>>>>>> origin/main
             )
             print("SAVING DB CHUNK")
             db.add(db_chunk)
             stats["chunks_processed"] += 1
 
         except Exception as e:
-<<<<<<< HEAD
-            print(f"Error storing chunk {i}: {e}")
-            stats["failed_chunks"] += 1
-            continue
-=======
             print(f"[ERROR] Error storing chunk {i}: {e}")
             stats["failed_chunks"] += 1
             continue
@@ -647,7 +567,6 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
             stats["failed_chunks"] += len(pinecone_vectors)
         finally:
             pinecone_vectors = []  # Prevent duplicate processing
->>>>>>> origin/main
 
     db.commit()
     print(f"[INFO] Final stats: {stats}")
@@ -671,14 +590,9 @@ def process_and_store_docs(data, db: Session) -> dict:
                 print("Training from full website...")
                 loader = RecursiveUrlLoader(
                     url=data.target_link,
-<<<<<<< HEAD
-                    max_depth=2,
-                    extractor=lambda x: BeautifulSoup(x, "html.parser").text,
-=======
                     max_depth=3,
                     extractor=lambda x: BeautifulSoup(x, "html.parser").text,
                     # link_regex=r"^(?!.*\?).*$",  # exclude links with query parameters
->>>>>>> origin/main
                 )
                 stats["source_type"] = "website"
             else:
@@ -736,11 +650,7 @@ def process_and_store_docs(data, db: Session) -> dict:
 
 # Delete Doc
 def delete_documents_from_pinecone(
-<<<<<<< HEAD
-    bot_id: int, doc_links: List[str], db: Session
-=======
     bot_id: int, doc_link_ids: List[str], db: Session
->>>>>>> origin/main
 ) -> dict:
     """
     Delete document vectors from Pinecone namespace based on source links
@@ -748,11 +658,8 @@ def delete_documents_from_pinecone(
     """
     namespace = f"bot_{bot_id}"
     stats = {"deleted_count": 0, "errors": 0}
-<<<<<<< HEAD
-=======
     print(f"[DEBUG] Namespace for deletion: {namespace}")
     print(f"[DEBUG] Document links to delete: {doc_link_ids}")
->>>>>>> origin/main
 
     try:
         # Get all chunks from DB that match the doc_links
@@ -760,34 +667,21 @@ def delete_documents_from_pinecone(
             db.query(ChatBotsDocChunks)
             .filter(
                 ChatBotsDocChunks.bot_id == bot_id,
-<<<<<<< HEAD
-                ChatBotsDocChunks.source.in_(doc_links),
-            )
-            .all()
-        )
-=======
                 ChatBotsDocChunks.link_id.in_(doc_link_ids),
             )
             .all()
         )
         print(f"[DEBUG] Found {len(chunks)} matching chunks in DB.")
->>>>>>> origin/main
 
         if not chunks:
             print("[INFO] No chunks found to delete.")
             return stats
 
-<<<<<<< HEAD
-        # Delete from Pinecone in batches
-        batch_size = 500
-        vector_ids = [str(chunk.id) for chunk in chunks]
-=======
         # Prepare vector IDs for deletion
         batch_size = 500
         vector_ids = [str(chunk.chunk_index) for chunk in chunks]
         chunk_ids = [chunk.id for chunk in chunks]
         print(f"[DEBUG] Total vector IDs to delete: {len(vector_ids)}")
->>>>>>> origin/main
 
         for i in range(0, len(vector_ids), batch_size):
             batch_ids = vector_ids[i : i + batch_size]
@@ -795,14 +689,6 @@ def delete_documents_from_pinecone(
                 print(f"[DEBUG] Deleting batch {i//batch_size + 1}: {batch_ids}")
                 index.delete(ids=batch_ids, namespace=namespace)
                 stats["deleted_count"] += len(batch_ids)
-<<<<<<< HEAD
-            except Exception as e:
-                print(f"Error deleting batch {i}: {e}")
-                stats["errors"] += len(batch_ids)
-
-        # Delete from database
-        db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.id.in_(vector_ids)).delete(
-=======
                 print(f"[DEBUG] Deleted batch {i//batch_size + 1} successfully.")
             except Exception as e:
                 print(f"[ERROR] Error deleting batch {i//batch_size + 1}: {e}")
@@ -811,30 +697,20 @@ def delete_documents_from_pinecone(
         # Delete from database
         print(f"[DEBUG] Deleting {len(chunk_ids)} chunks from DB.")
         db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.id.in_(chunk_ids)).delete(
->>>>>>> origin/main
             synchronize_session=False
         )
 
         db.commit()
-<<<<<<< HEAD
-=======
         print(f"[INFO] Deletion complete. Stats: {stats}")
->>>>>>> origin/main
 
     except Exception as e:
         print(f"Error in delete_documents_from_pinecone: {e}")
         db.rollback()
-<<<<<<< HEAD
-        stats["errors"] += len(doc_links)
-=======
         stats["errors"] += len(doc_link_ids)
->>>>>>> origin/main
 
     return stats
 
 
-<<<<<<< HEAD
-=======
 def clear_all_pinecone_namespaces(db: Session) -> dict:
     """
     Deletes all vectors from all Pinecone namespaces corresponding to all bots.
@@ -868,7 +744,6 @@ def clear_all_pinecone_namespaces(db: Session) -> dict:
     return {"namespaces_cleared": namespaces_cleared, "errors": errors}
 
 
->>>>>>> origin/main
 ############################################
 # training
 ############################################
