@@ -10,6 +10,7 @@ import base64
 import json
 import hmac
 
+from routes.subscriptions.token_usage import create_token_usage
 from routes.subscriptions.transactions import update_transaction
 from routes.subscriptions.user_credits import create_user_credit_entry
 
@@ -112,7 +113,18 @@ async def process_cashfree_payload(payload: dict, db: Session):
     )
 
     # Add entry in user credits table about updation of plan
-    user_credit = create_user_credit_entry(trans_id=transaction.id, db=db)
+    if payload.get("type") == "PAYMENT_SUCCESS_WEBHOOK":
+        user_credit = create_user_credit_entry(trans_id=transaction.id, db=db)
+
+        success, token_entires = create_token_usage(
+            credit_id=user_credit.id, transaction_id=transaction.id, db=db
+        )
+
+        return {
+            "success": success,
+            "token_entries": token_entires,
+            "details": "payment updated successfully",
+        }, 200
 
 
 async def process_paypal_payload(payload: dict, db: Session):

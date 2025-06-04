@@ -1,4 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Response, Form, Query,Body
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    BackgroundTasks,
+    Request,
+    Response,
+    Form,
+    Query,
+    Body,
+)
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from models.activityLogModel.activityLogModel import ActivityLog
@@ -7,7 +18,12 @@ from jose import JWTError, jwt
 from uuid import uuid4
 import json
 from models.authModel.authModel import AuthUser
-from models.adminModel.adminModel import PaymentGateway, SubscriptionPlans, TokenBots, BotProducts
+from models.adminModel.adminModel import (
+    PaymentGateway,
+    SubscriptionPlans,
+    TokenBots,
+    BotProducts,
+)
 from models.adminModel.roles_and_permission import RolePermission
 from sqlalchemy.exc import SQLAlchemyError
 from models.activityLogModel.activityLogModel import ActivityLog
@@ -15,9 +31,17 @@ from models.chatModel.sharing import ChatBotSharing
 from models.chatModel.chatModel import ChatBots
 
 from schemas.authSchema.authSchema import User, UserUpdate
-from schemas.adminSchema.adminSchema import PostEmail, PaymentGatewaySchema, PlansSchema, TokenBotsSchema, BotProductSchema,RolePermissionInput, RolePermissionResponse
+from schemas.adminSchema.adminSchema import (
+    PostEmail,
+    PaymentGatewaySchema,
+    PlansSchema,
+    TokenBotsSchema,
+    BotProductSchema,
+    RolePermissionInput,
+    RolePermissionResponse,
+)
 from sqlalchemy.orm import Session
-from config import get_db,settings
+from config import get_db, settings
 from typing import Optional, Dict, List
 from sqlalchemy import func, or_, desc, asc
 import httpx
@@ -34,9 +58,12 @@ router = APIRouter()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 @router.put("/users/{user_id}/base-rate")
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
-async def update_base_rate(user_id: int, request: Request,data: User, db: Session = Depends(get_db)):
+async def update_base_rate(
+    user_id: int, request: Request, data: User, db: Session = Depends(get_db)
+):
     user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
 
     if not user:
@@ -52,8 +79,8 @@ async def update_base_rate(user_id: int, request: Request,data: User, db: Sessio
         "data": {
             "id": user.id,
             "email": user.email,
-            "base_rate_per_token": str(user.base_rate_per_token)
-        }
+            "base_rate_per_token": str(user.base_rate_per_token),
+        },
     }
 
 
@@ -62,7 +89,9 @@ async def update_base_rate(user_id: int, request: Request,data: User, db: Sessio
 async def get_all_users(
     request: Request,
     db: Session = Depends(get_db),
-    search: Optional[str] = Query(None, description="Search by document_link or target_link"),
+    search: Optional[str] = Query(
+        None, description="Search by document_link or target_link"
+    ),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),
@@ -76,7 +105,9 @@ async def get_all_users(
         now = datetime.utcnow()
         start_of_month = datetime(now.year, now.month, 1)
 
-        total_signups = db.query(AuthUser).filter(AuthUser.created_at >= start_of_month).count()
+        total_signups = (
+            db.query(AuthUser).filter(AuthUser.created_at >= start_of_month).count()
+        )
         query = db.query(AuthUser).filter()
 
         # Apply search
@@ -98,13 +129,12 @@ async def get_all_users(
         total_pages = (total_count + limit - 1) // limit
         results = query.offset((page - 1) * limit).limit(limit).all()
 
-
         return {
             "current_page": page,
             "total_pages": total_pages,
             "total_count": total_count,
             "data": results,
-            "total_signups": total_signups
+            "total_signups": total_signups,
         }
 
     except HTTPException as http_exc:
@@ -112,10 +142,15 @@ async def get_all_users(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # update user
 @router.put("/update-user-admin", response_model=User)
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
-async def update_chatbot(data:User, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+async def update_chatbot(
+    data: User,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
         user = db.query(AuthUser).filter(AuthUser.id == int(data.id)).first()
         if not user:
@@ -123,7 +158,7 @@ async def update_chatbot(data:User, db: Session = Depends(get_db),current_user: 
 
         if data.status:
             user.status = data.status
-        if data.tokenUsed==0:
+        if data.tokenUsed == 0:
             user.tokenUsed = int(data.tokenUsed)
 
         if data.fullName:
@@ -138,11 +173,11 @@ async def update_chatbot(data:User, db: Session = Depends(get_db),current_user: 
         db.commit()
         db.refresh(user)
         log_entry = ActivityLog(
-        user_id=current_user.id,
-        username=current_user.fullName,
-        role=current_user.role,
-        action=f"{data.status}",
-        log_activity=f"Account status updated to {data.status}",
+            user_id=current_user.id,
+            username=current_user.fullName,
+            role=current_user.role,
+            action=f"{data.status}",
+            log_activity=f"Account status updated to {data.status}",
         )
         db.add(log_entry)
         db.commit()
@@ -153,9 +188,10 @@ async def update_chatbot(data:User, db: Session = Depends(get_db),current_user: 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.put("/update-client-admin", response_model=User)
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
-async def update_chatbot(data:User,request: Request, db: Session = Depends(get_db)):
+async def update_chatbot(data: User, request: Request, db: Session = Depends(get_db)):
     try:
         user = db.query(AuthUser).filter(AuthUser.id == int(data.id)).first()
         if not user:
@@ -164,7 +200,7 @@ async def update_chatbot(data:User,request: Request, db: Session = Depends(get_d
         if data.status:
             user.status = data.status
 
-        if data.tokenUsed==0:
+        if data.tokenUsed == 0:
             user.tokenUsed = int(data.tokenUsed)
 
         if data.fullName:
@@ -185,23 +221,32 @@ async def update_chatbot(data:User,request: Request, db: Session = Depends(get_d
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # create new subscription plan
 @router.post("/create-subscription-plans", response_model=PlansSchema)
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
-async def create_subscription_plans(data:PlansSchema, request: Request, db: Session = Depends(get_db)):
+async def create_subscription_plans(
+    data: PlansSchema, request: Request, db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         id = data.id
         if id:
-            existing_plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id == data.id).first()
+            existing_plan = (
+                db.query(SubscriptionPlans)
+                .filter(SubscriptionPlans.id == data.id)
+                .first()
+            )
             if not existing_plan:
                 raise HTTPException(status_code=404, detail="Plan not found")
 
             existing_plan.name = data.name
             existing_plan.pricing = data.pricing
-            existing_plan.token_limits = data.token_limits
+            existing_plan.token_per_unit = data.token_per_unit
+            existing_plan.chatbots_allowed = data.chatbots_allowed
+            existing_plan.duration_days = data.token_per_unit
             existing_plan.features = data.features
             existing_plan.users_active = data.users_active
 
@@ -212,9 +257,11 @@ async def create_subscription_plans(data:PlansSchema, request: Request, db: Sess
             new_plan = SubscriptionPlans(
                 name=data.name,
                 pricing=data.pricing,
-                token_limits=data.token_limits,
+                token_per_unit=data.token_per_unit,
+                chatbots_allowed=data.chatbots_allowed,
+                duration_days=data.duration_days,
                 features=data.features,
-                users_active=data.users_active
+                users_active=data.users_active,
             )
             db.add(new_plan)
             db.commit()
@@ -226,12 +273,11 @@ async def create_subscription_plans(data:PlansSchema, request: Request, db: Sess
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 @router.post("/subscription-plans/{plan_id}/status")
 async def update_plan_status(
-    plan_id: int,
-    is_active: bool = Body(..., embed=True),
-    db: Session = Depends(get_db)
+    plan_id: int, is_active: bool = Body(..., embed=True), db: Session = Depends(get_db)
 ):
     plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id == plan_id).first()
     if not plan:
@@ -244,15 +290,13 @@ async def update_plan_status(
     return {
         "success": True,
         "message": f"Subscription plan {'activated' if is_active else 'deactivated'} successfully.",
-        "data": {"id": plan.id, "is_active": plan.is_active}
+        "data": {"id": plan.id, "is_active": plan.is_active},
     }
+
 
 @router.get("/subscription-plans")
 @public_route()
-async def get_all_subscription_plans(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def get_all_subscription_plans(request: Request, db: Session = Depends(get_db)):
     try:
         plans = db.query(SubscriptionPlans).all()
 
@@ -262,7 +306,9 @@ async def get_all_subscription_plans(
                 "id": plan.id,
                 "name": plan.name,
                 "pricing": plan.pricing,
-                "token_limits": plan.token_limits,
+                "token_per_unit": plan.token_per_unit,
+                "chatbots_allowed": plan.chatbots_allowed,
+                "duration_days": plan.duration_days,
                 "features": plan.features,
                 "users_active": plan.users_active,
                 "is_active": plan.is_active,  # ✅ Include activation status
@@ -275,7 +321,7 @@ async def get_all_subscription_plans(
         return {
             "success": True,
             "message": "Subscription plans fetched successfully.",
-            "data": formatted_plans
+            "data": formatted_plans,
         }
     except SQLAlchemyError as db_err:
         raise HTTPException(status_code=500, detail=f"Database error: {str(db_err)}")
@@ -284,16 +330,20 @@ async def get_all_subscription_plans(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Something went wrong: {str(e)}")
 
+
 @router.delete("/delete-subscription-plan/{plan_id}")
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
-async def delete_subscription_plan(plan_id: int, request: Request, db: Session = Depends(get_db)):
+async def delete_subscription_plan(
+    plan_id: int, request: Request, db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-
-        plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id==plan_id).first()
+        plan = (
+            db.query(SubscriptionPlans).filter(SubscriptionPlans.id == plan_id).first()
+        )
         if plan:
             db.delete(plan)
             db.commit()
@@ -303,9 +353,12 @@ async def delete_subscription_plan(plan_id: int, request: Request, db: Session =
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # create new subscription plan
 @router.post("/create-token-bots", response_model=TokenBotsSchema)
-async def create_subscription_plans(data:TokenBotsSchema, request: Request, db: Session = Depends(get_db)):
+async def create_subscription_plans(
+    data: TokenBotsSchema, request: Request, db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
@@ -339,11 +392,14 @@ async def create_subscription_plans(data:TokenBotsSchema, request: Request, db: 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/get-all-token-bots")
 async def get_all_token_bots(
     request: Request,
     db: Session = Depends(get_db),
-    search: Optional[str] = Query(None, description="Search by document_link or target_link"),
+    search: Optional[str] = Query(
+        None, description="Search by document_link or target_link"
+    ),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),
@@ -375,12 +431,11 @@ async def get_all_token_bots(
         total_pages = (total_count + limit - 1) // limit
         results = query.offset((page - 1) * limit).limit(limit).all()
 
-
         return {
             "current_page": page,
             "total_pages": total_pages,
             "total_count": total_count,
-            "data": results
+            "data": results,
         }
 
     except HTTPException as http_exc:
@@ -388,15 +443,17 @@ async def get_all_token_bots(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.delete("/delete-token-bot/{token_bot_id}")
-async def delete_token_bots(token_bot_id: int, request: Request, db: Session = Depends(get_db)):
+async def delete_token_bots(
+    token_bot_id: int, request: Request, db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-
-        token_bot = db.query(TokenBots).filter(TokenBots.id==token_bot_id).first()
+        token_bot = db.query(TokenBots).filter(TokenBots.id == token_bot_id).first()
         if token_bot:
             db.delete(token_bot)
             db.commit()
@@ -406,11 +463,9 @@ async def delete_token_bots(token_bot_id: int, request: Request, db: Session = D
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/get-top-consumption-users", response_model=List[User])
-async def get_top_consumption_users(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def get_top_consumption_users(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         if not token:
@@ -419,9 +474,12 @@ async def get_top_consumption_users(
         user_id = int(payload.get("user_id"))
         # get top 10 most token consumption users
         top_users = (
-            db.query(AuthUser).filter(AuthUser.tokenUsed != None)
-            .order_by(desc(AuthUser.tokenUsed)).limit(10).all()
-            )
+            db.query(AuthUser)
+            .filter(AuthUser.tokenUsed != None)
+            .order_by(desc(AuthUser.tokenUsed))
+            .limit(10)
+            .all()
+        )
 
         return top_users
     except HTTPException as http_exc:
@@ -429,9 +487,10 @@ async def get_top_consumption_users(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # update token bot
 @router.put("/update-bot-token", response_model=TokenBotsSchema)
-async def update_chatbot(data:TokenBotsSchema, db: Session = Depends(get_db)):
+async def update_chatbot(data: TokenBotsSchema, db: Session = Depends(get_db)):
     try:
         token_bot = db.query(TokenBots).filter(TokenBots.id == int(data.id)).first()
         if not token_bot:
@@ -447,16 +506,21 @@ async def update_chatbot(data:TokenBotsSchema, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # create update bot product
 @router.post("/create-update-bot-product", response_model=BotProductSchema)
-async def create_update_bot_product(data:BotProductSchema, request: Request, db: Session = Depends(get_db)):
+async def create_update_bot_product(
+    data: BotProductSchema, request: Request, db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         id = data.id
         if id:
-            existing_product = db.query(BotProducts).filter(BotProducts.id == data.id).first()
+            existing_product = (
+                db.query(BotProducts).filter(BotProducts.id == data.id).first()
+            )
             if not existing_product:
                 raise HTTPException(status_code=404, detail="Product not found")
 
@@ -467,8 +531,7 @@ async def create_update_bot_product(data:BotProductSchema, request: Request, db:
             return existing_product
         else:
             new_bot_product = BotProducts(
-                product_name=data.product_name,
-                active=data.active
+                product_name=data.product_name, active=data.active
             )
             db.add(new_bot_product)
             db.commit()
@@ -480,11 +543,14 @@ async def create_update_bot_product(data:BotProductSchema, request: Request, db:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/get-bot-products")
 async def get_bot_products(
     request: Request,
     db: Session = Depends(get_db),
-    search: Optional[str] = Query(None, description="Search by document_link or target_link"),
+    search: Optional[str] = Query(
+        None, description="Search by document_link or target_link"
+    ),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),
@@ -516,12 +582,11 @@ async def get_bot_products(
         total_pages = (total_count + limit - 1) // limit
         results = query.offset((page - 1) * limit).limit(limit).all()
 
-
         return {
             "current_page": page,
             "total_pages": total_pages,
             "total_count": total_count,
-            "data": results
+            "data": results,
         }
 
     except HTTPException as http_exc:
@@ -529,11 +594,9 @@ async def get_bot_products(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/get-admin-users", response_model=List[User])
-async def get_top_consumption_users(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def get_top_consumption_users(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         if not token:
@@ -542,9 +605,7 @@ async def get_top_consumption_users(
         user_id = int(payload.get("user_id"))
         # get top 10 most token consumption users
         admins = ["Super Admin", "Billing Admin", "Product Admin", "Support Admin"]
-        admin_users = (
-            db.query(AuthUser).filter(AuthUser.role.in_(admins)).all()
-            )
+        admin_users = db.query(AuthUser).filter(AuthUser.role.in_(admins)).all()
 
         return admin_users
     except HTTPException as http_exc:
@@ -552,11 +613,9 @@ async def get_top_consumption_users(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/get-client-users", response_model=List[User])
-async def get_non_admin_users(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def get_non_admin_users(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         if not token:
@@ -565,7 +624,13 @@ async def get_non_admin_users(
         user_id = int(payload.get("user_id"))
 
         # Define admin roles
-        admins = ["Admin","Super Admin", "Billing Admin", "Product Admin", "Support Admin"]
+        admins = [
+            "Admin",
+            "Super Admin",
+            "Billing Admin",
+            "Product Admin",
+            "Support Admin",
+        ]
 
         # Query users with no role or role not in admin list
         non_admin_users = (
@@ -584,9 +649,7 @@ async def get_non_admin_users(
 @router.get("/get-uninvited-users")
 @public_route()
 async def get_uninvited_users(
-    request: Request,
-    bot_id: int,
-    db: Session = Depends(get_db)
+    request: Request, bot_id: int, db: Session = Depends(get_db)
 ):
     """
     Get all users who haven't been invited to the specified chatbot.
@@ -618,42 +681,65 @@ async def get_uninvited_users(
             has_access = True
         else:
             # Check if user is invited to this chatbot
-            sharing = db.query(ChatBotSharing).filter(
-                ChatBotSharing.bot_id == bot_id,
-                ChatBotSharing.shared_user_id == user_id,
-                ChatBotSharing.status == "active"
-            ).first()
+            sharing = (
+                db.query(ChatBotSharing)
+                .filter(
+                    ChatBotSharing.bot_id == bot_id,
+                    ChatBotSharing.shared_user_id == user_id,
+                    ChatBotSharing.status == "active",
+                )
+                .first()
+            )
             if sharing:
                 has_access = True
 
         if not has_access:
-            raise HTTPException(status_code=403, detail="You don't have access to this chatbot")
+            raise HTTPException(
+                status_code=403, detail="You don't have access to this chatbot"
+            )
 
         # Find all users who have already been invited to this chatbot
-        invited_user_ids = db.query(ChatBotSharing.shared_user_id).filter(
-            ChatBotSharing.bot_id == bot_id,
-            ChatBotSharing.shared_user_id.isnot(None)
-        ).all()
+        invited_user_ids = (
+            db.query(ChatBotSharing.shared_user_id)
+            .filter(
+                ChatBotSharing.bot_id == bot_id,
+                ChatBotSharing.shared_user_id.isnot(None),
+            )
+            .all()
+        )
 
-        invited_emails = db.query(ChatBotSharing.shared_email).filter(
-            ChatBotSharing.bot_id == bot_id,
-            ChatBotSharing.shared_email.isnot(None)
-        ).all()
+        invited_emails = (
+            db.query(ChatBotSharing.shared_email)
+            .filter(
+                ChatBotSharing.bot_id == bot_id, ChatBotSharing.shared_email.isnot(None)
+            )
+            .all()
+        )
 
         # Extract the IDs and emails from the query results
-        invited_user_ids = [user_id[0] for user_id in invited_user_ids if user_id[0] is not None]
+        invited_user_ids = [
+            user_id[0] for user_id in invited_user_ids if user_id[0] is not None
+        ]
         invited_emails = [email[0] for email in invited_emails if email[0] is not None]
 
         # Get all users except:
         # 1. The current user making the request
         # 2. The chatbot owner
         # 3. Users who have already been invited
-        uninvited_users = db.query(AuthUser).filter(
-            AuthUser.id != user_id,  # Exclude the current user
-            AuthUser.id != chatbot.user_id,  # Exclude the chatbot owner
-            ~AuthUser.id.in_(invited_user_ids) if invited_user_ids else True,  # Exclude already invited users by ID
-            ~AuthUser.email.in_(invited_emails) if invited_emails else True  # Exclude already invited users by email
-        ).all()
+        uninvited_users = (
+            db.query(AuthUser)
+            .filter(
+                AuthUser.id != user_id,  # Exclude the current user
+                AuthUser.id != chatbot.user_id,  # Exclude the chatbot owner
+                (
+                    ~AuthUser.id.in_(invited_user_ids) if invited_user_ids else True
+                ),  # Exclude already invited users by ID
+                (
+                    ~AuthUser.email.in_(invited_emails) if invited_emails else True
+                ),  # Exclude already invited users by email
+            )
+            .all()
+        )
 
         return uninvited_users
 
@@ -661,6 +747,7 @@ async def get_uninvited_users(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/get-invited-users")
 @public_route()
@@ -671,7 +758,7 @@ async def get_invited_users(
     page_size: int = 10,
     search: str = None,
     status: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Get paginated users who have been invited to chatbots owned by the current user.
@@ -687,8 +774,10 @@ async def get_invited_users(
         user_id = int(payload.get("user_id"))
 
         # Build the base query for sharing records
-        query = db.query(ChatBotSharing).join(ChatBots).filter(
-            ChatBots.user_id == user_id  # Only chatbots owned by current user
+        query = (
+            db.query(ChatBotSharing)
+            .join(ChatBots)
+            .filter(ChatBots.user_id == user_id)  # Only chatbots owned by current user
         )
 
         # Apply status filter
@@ -706,13 +795,15 @@ async def get_invited_users(
         if search:
             search_term = f"%{search}%"
             # Join with AuthUser to search in user names
-            query = query.outerjoin(AuthUser, ChatBotSharing.shared_user_id == AuthUser.id)
+            query = query.outerjoin(
+                AuthUser, ChatBotSharing.shared_user_id == AuthUser.id
+            )
             query = query.filter(
                 or_(
                     ChatBotSharing.shared_email.ilike(search_term),
                     AuthUser.fullName.ilike(search_term),
                     AuthUser.email.ilike(search_term),
-                    ChatBots.chatbot_name.ilike(search_term)
+                    ChatBots.chatbot_name.ilike(search_term),
                 )
             )
 
@@ -738,12 +829,16 @@ async def get_invited_users(
                 "updated_at": sharing.updated_at,
                 "shared_email": sharing.shared_email,
                 "user_name": None,
-                "user_id": sharing.shared_user_id
+                "user_id": sharing.shared_user_id,
             }
 
             # If there's a shared_user_id, get the user details
             if sharing.shared_user_id:
-                user = db.query(AuthUser).filter(AuthUser.id == sharing.shared_user_id).first()
+                user = (
+                    db.query(AuthUser)
+                    .filter(AuthUser.id == sharing.shared_user_id)
+                    .first()
+                )
                 if user:
                     user_info["user_name"] = user.fullName or "Unknown User"
                     user_info["shared_email"] = user.email
@@ -763,8 +858,8 @@ async def get_invited_users(
                 "total_items": total_count,
                 "total_pages": total_pages,
                 "has_next": has_next,
-                "has_prev": has_prev
-            }
+                "has_prev": has_prev,
+            },
         }
 
     except HTTPException as http_exc:
@@ -772,12 +867,11 @@ async def get_invited_users(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.delete("/revoke-access/{sharing_id}")
 @public_route()
 async def revoke_access(
-    request: Request,
-    sharing_id: int,
-    db: Session = Depends(get_db)
+    request: Request, sharing_id: int, db: Session = Depends(get_db)
 ):
     """
     Revoke access for a specific sharing record.
@@ -793,21 +887,25 @@ async def revoke_access(
         user_id = int(payload.get("user_id"))
 
         # Find the sharing record
-        sharing = db.query(ChatBotSharing).filter(
-            ChatBotSharing.id == sharing_id
-        ).first()
+        sharing = (
+            db.query(ChatBotSharing).filter(ChatBotSharing.id == sharing_id).first()
+        )
 
         if not sharing:
             raise HTTPException(status_code=404, detail="Sharing record not found")
 
         # Verify the user owns the chatbot
-        chatbot = db.query(ChatBots).filter(
-            ChatBots.id == sharing.bot_id,
-            ChatBots.user_id == user_id
-        ).first()
+        chatbot = (
+            db.query(ChatBots)
+            .filter(ChatBots.id == sharing.bot_id, ChatBots.user_id == user_id)
+            .first()
+        )
 
         if not chatbot:
-            raise HTTPException(status_code=403, detail="You don't have permission to revoke this access")
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to revoke this access",
+            )
 
         # Update the status to revoked
         sharing.status = "revoked"
@@ -819,7 +917,7 @@ async def revoke_access(
         return {
             "success": True,
             "message": "Access revoked successfully",
-            "sharing_id": sharing_id
+            "sharing_id": sharing_id,
         }
 
     except HTTPException as http_exc:
@@ -827,9 +925,12 @@ async def revoke_access(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.put("/update-admin-user", response_model=UserUpdate)
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
-async def update_admin_user(data: UserUpdate, request: Request, db: Session = Depends(get_db)):
+async def update_admin_user(
+    data: UserUpdate, request: Request, db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         if not token:
@@ -871,7 +972,7 @@ async def update_admin_user(data: UserUpdate, request: Request, db: Session = De
             username=username,
             role=role,
             action="update",
-            log_activity="Updated admin user details."
+            log_activity="Updated admin user details.",
         )
         db.add(log_entry)
         db.commit()
@@ -885,7 +986,9 @@ async def update_admin_user(data: UserUpdate, request: Request, db: Session = De
 
 
 @router.put("/update-client-user", response_model=UserUpdate)
-async def update_client_user(data: UserUpdate, request: Request, db: Session = Depends(get_db)):
+async def update_client_user(
+    data: UserUpdate, request: Request, db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
@@ -930,7 +1033,7 @@ async def delete_admin_user(
     id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     try:
         token = request.cookies.get("access_token")
@@ -947,7 +1050,7 @@ async def delete_admin_user(
                 username=current_user.fullName,
                 role=current_user.role,
                 action="delete",
-                log_activity=f"Deleted user email {adminUser.email}"
+                log_activity=f"Deleted user email {adminUser.email}",
             )
             db.add(log_entry)
             db.commit()
@@ -970,8 +1073,7 @@ async def delete_client_user(id: int, request: Request, db: Session = Depends(ge
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-
-        clientUser = db.query(AuthUser).filter(AuthUser.id==id).first()
+        clientUser = db.query(AuthUser).filter(AuthUser.id == id).first()
         if clientUser:
             db.delete(clientUser)
             db.commit()
@@ -986,7 +1088,9 @@ async def delete_client_user(id: int, request: Request, db: Session = Depends(ge
 async def get_admin_logs_activity(
     request: Request,
     db: Session = Depends(get_db),
-    date_filter: Optional[str] = Query(None, description="Filter up to this date (YYYY-MM-DD)")
+    date_filter: Optional[str] = Query(
+        None, description="Filter up to this date (YYYY-MM-DD)"
+    ),
 ):
     try:
         token = request.cookies.get("access_token")
@@ -1002,7 +1106,6 @@ async def get_admin_logs_activity(
 
         # last_suspended_admin = db.query(AuthUser).filter(AuthUser.role.in_(admins), AuthUser.status == "Suspend").order_by(desc(AuthUser.updated_at)).first()
 
-
         query = db.query(AuthUser).filter(AuthUser.role.in_(admins))
 
         if date_filter:
@@ -1010,13 +1113,23 @@ async def get_admin_logs_activity(
                 parsed_date = datetime.strptime(date_filter, "%Y-%m-%d")
                 query = query.filter(AuthUser.created_at <= parsed_date)
             except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+                raise HTTPException(
+                    status_code=400, detail="Invalid date format. Use YYYY-MM-DD"
+                )
 
         last_added_admin = query.order_by(AuthUser.created_at.desc()).first()
         last_role_updated = query.order_by(AuthUser.updated_at.desc()).first()
-        last_suspended_admin = query.filter(AuthUser.status == "Suspend").order_by(AuthUser.updated_at.desc()).first()
+        last_suspended_admin = (
+            query.filter(AuthUser.status == "Suspend")
+            .order_by(AuthUser.updated_at.desc())
+            .first()
+        )
 
-        results = {"last_added_admin":last_added_admin, "last_role_updated":last_role_updated, "last_suspended_admin":last_suspended_admin}
+        results = {
+            "last_added_admin": last_added_admin,
+            "last_role_updated": last_role_updated,
+            "last_suspended_admin": last_suspended_admin,
+        }
 
         return results
     except HTTPException as http_exc:
@@ -1024,16 +1137,21 @@ async def get_admin_logs_activity(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # create update payment gateway
 @router.post("/create-update-payment-gateway", response_model=PaymentGatewaySchema)
-async def create_update_payment_gateway(data:PaymentGatewaySchema, request: Request, db: Session = Depends(get_db)):
+async def create_update_payment_gateway(
+    data: PaymentGatewaySchema, request: Request, db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         id = data.id
         if id:
-            existing_payment = db.query(PaymentGateway).filter(PaymentGateway.id == data.id).first()
+            existing_payment = (
+                db.query(PaymentGateway).filter(PaymentGateway.id == data.id).first()
+            )
             if not existing_payment:
                 raise HTTPException(status_code=404, detail="Product not found")
 
@@ -1049,9 +1167,7 @@ async def create_update_payment_gateway(data:PaymentGatewaySchema, request: Requ
             return existing_payment
         else:
             new_payment_gateway = PaymentGateway(
-                payment_name=data.payment_name,
-                status=data.status,
-                api_key=data.api_key
+                payment_name=data.payment_name, status=data.status, api_key=data.api_key
             )
             db.add(new_payment_gateway)
             db.commit()
@@ -1062,6 +1178,7 @@ async def create_update_payment_gateway(data:PaymentGatewaySchema, request: Requ
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # get payment gateway
 @router.get("/get-payments-gateway", response_model=List[PaymentGatewaySchema])
@@ -1078,14 +1195,19 @@ async def get_payments_gateway(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # delete payment gateway
 @router.delete("/delete-payments-gateway/{id}")
-async def delete_payments_gateway(id: int, request: Request, db: Session = Depends(get_db)):
+async def delete_payments_gateway(
+    id: int, request: Request, db: Session = Depends(get_db)
+):
     try:
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        payment_gateway = db.query(PaymentGateway).filter(PaymentGateway.id==id).first()
+        payment_gateway = (
+            db.query(PaymentGateway).filter(PaymentGateway.id == id).first()
+        )
         if payment_gateway:
             db.delete(payment_gateway)
             db.commit()
@@ -1098,7 +1220,11 @@ async def delete_payments_gateway(id: int, request: Request, db: Session = Depen
 
 
 @router.post("/assign", response_model=RolePermissionResponse)
-def assign_custom_permissions(data: RolePermissionInput, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+def assign_custom_permissions(
+    data: RolePermissionInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     print("User object:", current_user)
     print("User fields:", current_user.__dict__)
 
@@ -1116,18 +1242,15 @@ def assign_custom_permissions(data: RolePermissionInput, db: Session = Depends(g
     db.commit()
     db.refresh(role_obj)
     log_entry = ActivityLog(
-            user_id=current_user.id,
-            username=current_user.fullName,
-            role=current_user.role,
-            action="role_updated",
-            log_activity="Updated Permissions for role " + data.role
-        )
+        user_id=current_user.id,
+        username=current_user.fullName,
+        role=current_user.role,
+        action="role_updated",
+        log_activity="Updated Permissions for role " + data.role,
+    )
     db.add(log_entry)
     db.commit()
-    return {
-        "role": role_obj.role,
-        "permissions": role_obj.permissions
-    }
+    return {"role": role_obj.role, "permissions": role_obj.permissions}
 
 
 @router.get("/get", response_model=RolePermissionResponse)
@@ -1141,21 +1264,20 @@ def get_role_permissions(role: str, db: Session = Depends(get_db)):
         if role in system_roles:
             return {
                 "role": role,
-                "permissions": []  # Return empty by default if not found
+                "permissions": [],  # Return empty by default if not found
             }
         else:
             raise HTTPException(status_code=404, detail="Role not found")
 
-    return {
-        "role": role_obj.role,
-        "permissions": role_obj.permissions
-    }
+    return {"role": role_obj.role, "permissions": role_obj.permissions}
 
 
 # Roles
 @router.get("/roles_permissions")
 @public_route()
-async def fetch_roles(request: Request, response: Response, db: Session = Depends(get_db)):
+async def fetch_roles(
+    request: Request, response: Response, db: Session = Depends(get_db)
+):
     try:
 
         token = request.cookies.get("access_token")
@@ -1172,7 +1294,11 @@ async def fetch_roles(request: Request, response: Response, db: Session = Depend
         if not role:
             raise HTTPException(status_code=200, detail="User has no role")
 
-        permissions = db.query(RolePermission).filter(func.lower(RolePermission.role) == func.lower(role)).first()
+        permissions = (
+            db.query(RolePermission)
+            .filter(func.lower(RolePermission.role) == func.lower(role))
+            .first()
+        )
         if not permissions:
             raise HTTPException(status_code=200, detail="User has no permissions")
 
@@ -1180,7 +1306,6 @@ async def fetch_roles(request: Request, response: Response, db: Session = Depend
 
     except HTTPException as http_exc:
         error_response = JSONResponse(
-            content={"detail": http_exc.detail},
-            status_code=http_exc.status_code
+            content={"detail": http_exc.detail}, status_code=http_exc.status_code
         )
         return error_response

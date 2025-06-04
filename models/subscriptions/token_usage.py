@@ -8,7 +8,7 @@ class TokenUsage(Base):
     __tablename__ = "token_usage"
 
     id = Column(Integer, primary_key=True, index=True)
-    bot_id = Column(Integer, ForeignKey("chatbots.id"))
+    bot_id = Column(Integer, ForeignKey("chat_bots.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
     user_credit_id = Column(Integer, ForeignKey("user_credits.id"))
 
@@ -38,7 +38,7 @@ class TokenUsageHistory(Base):
     __tablename__ = "history_token_usage"
 
     id = Column(Integer, primary_key=True, index=True)
-    bot_id = Column(Integer, ForeignKey("chatbots.id"))
+    bot_id = Column(Integer, ForeignKey("chat_bots.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
     user_credit_id = Column(Integer, ForeignKey("user_credits.id"))
 

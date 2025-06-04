@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from typing import Optional
 from datetime import datetime
 from config import get_db
+from models.adminModel.adminModel import SubscriptionPlans
+from models.authModel.authModel import AuthUser
 from models.paymentModel.paymentModel import (
     PaymentVerificationRequest,
     PaymentOrderRequest,
@@ -29,6 +31,8 @@ CASHFREE_BASE_URL = (
     f"https://{'sandbox' if CASHFREE_ENV == 'TEST' else 'api'}.cashfree.com/pg"
 )
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+
+notify_url = "https://3018-122-176-88-30.ngrok-free.app/webhook/payments/cashfree"
 
 
 def generate_cashfree_auth_headers():
@@ -68,19 +72,31 @@ async def create_payment_order(
         f"Cashfree Configuration - App ID: {CASHFREE_APP_ID}, Env: {CASHFREE_ENV}, API Version: {CASHFREE_API_VERSION}"
     )
 
+    user = db.query(AuthUser).filter(AuthUser.id == order_data.customer_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    plan = (
+        db.query(SubscriptionPlans)
+        .filter(SubscriptionPlans.id == order_data.plan_id)
+        .first()
+    )
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
     payload = {
         "order_id": generate_order_id(),
-        "order_amount": order_data.order_amount,
+        "order_amount": plan.pricing,
         "order_currency": "INR",
         "customer_details": {
             "customer_id": str(order_data.customer_id),
-            "customer_name": order_data.customer_name,
-            "customer_email": order_data.customer_email,
-            "customer_phone": "+91" + str(order_data.customer_phone),
+            "customer_name": user.fullName,
+            "customer_email": user.email,
+            "customer_phone": "9855507091",
         },
         "order_meta": {
             "return_url": order_data.return_url,
-            "notify_url": order_data.notify_url,
+            "notify_url": notify_url,
         },
     }
 
