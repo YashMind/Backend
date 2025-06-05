@@ -12,6 +12,7 @@ from fastapi import (
 )
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+import tiktoken
 from models.subscriptions.token_usage import TokenUsage
 from models.subscriptions.userCredits import UserCredits
 from routes.subscriptions.token_usage import (
@@ -19,7 +20,7 @@ from routes.subscriptions.token_usage import (
     update_token_usage_on_consumption,
     verify_token_limit_available,
 )
-from schemas.chatSchema.tokenAndCreditSchema import ChatMessageTokens
+from schemas.chatSchema.tokensSchema import ChatMessageTokens, ChatMessageTokensToday
 from utils.utils import decode_access_token, get_current_user
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
@@ -78,7 +79,7 @@ from routes.chat.celery_worker import process_document_task
 from decorators.product_status import check_product_status
 import secrets
 import string
-from datetime import datetime
+from datetime import datetime, time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import smtplib
@@ -1584,13 +1585,89 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
         user_id = int(payload.get("user_id"))
 
         credits = db.query(UserCredits).filter_by(user_id=user_id).first()
-        token_usage = db.query(TokenUsage).filter_by(user_id=user_id).all()
+        token_usages = db.query(TokenUsage).filter_by(user_id=user_id).all()
 
-        return {"credits": credits, "token_usage": token_usage}
+        total_token_consumption = (
+            token_usages[0].combined_token_consumption
+            if token_usages and len(token_usages) > 0
+            else 0
+        )
+
+        return {
+            "credits": credits,
+            "token_usage": token_usages,
+            "total_token_consumption": total_token_consumption,
+        }
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         print(str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tokens/{bot_id}/today", response_model=ChatMessageTokensToday)
+async def chat_message_tokens(
+    request: Request, bot_id: int, db: Session = Depends(get_db)
+):
+    try:
+        # Get today's date
+        today = datetime.now().date()
+
+        # Calculate the start and end of today
+        start_of_day = datetime.combine(today, time.min)
+        end_of_day = datetime.combine(today, time.max)
+
+        # Get all messages for the bot from today
+        messages = (
+            db.query(ChatMessage)
+            .filter(
+                and_(
+                    ChatMessage.bot_id == bot_id,
+                    ChatMessage.created_at >= start_of_day,
+                    ChatMessage.created_at <= end_of_day,
+                )
+            )
+            .all()
+        )
+
+        if not messages:
+            return ChatMessageTokensToday(request_tokens=0, response_tokens=0, users=0)
+
+        # Separate user and bot messages
+        user_messages = []
+        bot_messages = []
+        user_ids = set()
+
+        for message in messages:
+            if message.sender == "user":
+                user_messages.append(message.message)
+                user_ids.add(message.user_id)
+            elif message.sender == "bot":
+                bot_messages.append(message.message)
+
+        # Initialize encoder
+        encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
+
+        # Calculate tokens for user messages (requests)
+        request_tokens = 0
+        if user_messages:
+            combined_user_text = " ".join(user_messages)
+            request_tokens = len(encoder.encode(combined_user_text))
+
+        # Calculate tokens for bot messages (responses)
+        response_tokens = 0
+        if bot_messages:
+            combined_bot_text = " ".join(bot_messages)
+            response_tokens = len(encoder.encode(combined_bot_text))
+
+        return ChatMessageTokensToday(
+            request_tokens=request_tokens,
+            response_tokens=response_tokens,
+            users=len(user_ids),
+        )
+
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
