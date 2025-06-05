@@ -464,7 +464,8 @@ async def delete_token_bots(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/get-top-consumption-users", response_model=List[User])
+@router.get("/get-top-consumption-users")
+@check_permissions(["token-analytics"])
 async def get_top_consumption_users(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
@@ -472,6 +473,7 @@ async def get_top_consumption_users(request: Request, db: Session = Depends(get_
             raise HTTPException(status_code=401, detail="Unauthorized")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
+
         # get top 10 most token consumption users
         top_users = (
             db.query(AuthUser)
@@ -481,7 +483,16 @@ async def get_top_consumption_users(request: Request, db: Session = Depends(get_
             .all()
         )
 
+        # Replace plan ID with full plan object for each user
+        for user in top_users:
+            user.plan = (
+                db.query(SubscriptionPlans)
+                .filter(SubscriptionPlans.id == user.plan)
+                .first()
+            )
+
         return top_users
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:

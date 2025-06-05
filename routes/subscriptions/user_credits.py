@@ -34,6 +34,8 @@ def create_user_credit_entry(trans_id: int, db: Session = Depends(get_db)):
         db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
     )
 
+    db.query(User).filter(User.id == user.id).update({User.plan: plan.id})
+
     if current_credit and trans_id == current_credit.trans_id:
         print("Credit entry already updated under same transaction")
         return current_credit

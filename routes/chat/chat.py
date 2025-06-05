@@ -12,11 +12,14 @@ from fastapi import (
 )
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from models.subscriptions.token_usage import TokenUsage
+from models.subscriptions.userCredits import UserCredits
 from routes.subscriptions.token_usage import (
     generate_token_usage,
     update_token_usage_on_consumption,
     verify_token_limit_available,
 )
+from schemas.chatSchema.tokenAndCreditSchema import ChatMessageTokens
 from utils.utils import decode_access_token, get_current_user
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
@@ -44,8 +47,6 @@ from schemas.chatSchema.chatSchema import (
     DeleteDocLinksRequest,
     ChatbotLeads,
     DeleteChatbotLeadsRequest,
-    ChatMessageTokens,
-    BotTokens,
 )
 from schemas.chatSchema.sharingSchema import (
     DirectSharingRequest,
@@ -1582,62 +1583,10 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-        bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+        credits = db.query(UserCredits).filter_by(user_id=user_id).first()
+        token_usage = db.query(TokenUsage).filter_by(user_id=user_id).all()
 
-        bot_tokens_list = []
-        total_tokens = 0
-
-        for bot in bots:
-            messages = (
-                db.query(ChatMessage)
-                .filter(
-                    ChatMessage.bot_id == bot.id,
-                    ChatMessage.user_id == user_id,
-                    ChatMessage.sender == "user",
-                )
-                .all()
-            )
-
-            # Get current date info
-            now = datetime.utcnow()
-            today = now.date()
-            first_of_month = today.replace(day=1)
-
-            # Initialize counters
-            total_token_count = 0
-            today_token_count = 0
-            monthly_token_count = 0
-
-            for msg in messages:
-                if not msg.message:
-                    continue
-
-                word_count = len(msg.message.strip().split())
-                total_token_count += word_count
-
-                # Ensure message.created_at is a datetime
-                created_at = (
-                    msg.created_at.date() if hasattr(msg, "created_at") else None
-                )
-                if created_at:
-                    if created_at == today:
-                        today_token_count += word_count
-                    if created_at >= first_of_month:
-                        monthly_token_count += word_count
-
-            bot_tokens_list.append(
-                BotTokens(
-                    bot_id=str(bot.id),
-                    tokens=total_token_count,
-                    token_today=today_token_count,
-                    token_monthly=monthly_token_count,
-                    messages=len(messages),
-                )
-            )
-            total_tokens += total_token_count
-
-        return ChatMessageTokens(total_tokens=total_tokens, bots=bot_tokens_list)
-
+        return {"credits": credits, "token_usage": token_usage}
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:

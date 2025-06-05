@@ -1,6 +1,7 @@
 from sqlalchemy.exc import SQLAlchemyError
 from typing import Tuple, Union
 from sqlalchemy.orm import Session
+from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBots
 from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
 from models.subscriptions.transactionModel import Transaction
@@ -343,6 +344,10 @@ def update_token_usage_on_consumption(
 
         total_token_consumption = bot_token_usage.combined_token_consumption
         print("total_token_consumption", total_token_consumption)
+
+        db.query(AuthUser).filter(AuthUser.id == bot_token_usage.user_id).update(
+            {AuthUser.tokenUsed: total_token_consumption}
+        )
 
         credits_consumed = total_token_consumption / credit.token_per_unit
         print("credits_consumed", credits_consumed)

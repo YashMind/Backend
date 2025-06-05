@@ -10,6 +10,7 @@ import base64
 import json
 import hmac
 
+from routes.subscriptions.failed_payment import handle_failed_payment
 from routes.subscriptions.token_usage import create_token_usage
 from routes.subscriptions.transactions import update_transaction
 from routes.subscriptions.user_credits import create_user_credit_entry
@@ -125,6 +126,9 @@ async def process_cashfree_payload(payload: dict, db: Session):
             "token_entries": token_entires,
             "details": "payment updated successfully",
         }, 200
+    if payload.get("type") == "PAYMENT_FAILED_WEBHOOK":
+        # Add payment failed entry in activity logs and support tickets
+        handle_failed_payment(transaction.id, raw_data, db=db)
 
 
 async def process_paypal_payload(payload: dict, db: Session):

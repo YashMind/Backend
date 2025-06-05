@@ -1,5 +1,16 @@
-from sqlalchemy import Column, Integer, Text, String, Boolean, DateTime, func, JSON,Float
+from sqlalchemy import (
+    Column,
+    Integer,
+    Text,
+    String,
+    Boolean,
+    DateTime,
+    func,
+    JSON,
+    Float,
+)
 from config import Base
+
 
 class AuthUser(Base):
     __tablename__ = "users"
@@ -23,4 +34,3 @@ class AuthUser(Base):
     last_active = Column(DateTime(timezone=True), nullable=True)
     role_permissions = Column(JSON, nullable=True)
     base_rate_per_token = Column(Float, nullable=True, default=0.0)
-
