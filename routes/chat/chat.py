@@ -13,6 +13,7 @@ from fastapi import (
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 import tiktoken
+from models.adminModel.toolsModal import ToolsUsed
 from models.subscriptions.token_usage import TokenUsage
 from models.subscriptions.userCredits import UserCredits
 from routes.subscriptions.token_usage import (
@@ -65,10 +66,7 @@ from config import get_db, settings
 from typing import Optional, List
 from collections import defaultdict
 import os
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import HumanMessage, AIMessage
 from routes.chat.pinecone import (
-    clear_all_pinecone_namespaces,
     get_response_from_faqs,
     hybrid_retrieval,
     generate_response,
@@ -85,7 +83,6 @@ from email.mime.text import MIMEText
 import smtplib
 from models.authModel.authModel import AuthUser
 
-llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
 router = APIRouter()
 
@@ -497,8 +494,6 @@ async def chat_message(
         token_limit_availabe, message = verify_token_limit_available(
             bot_id=bot_id, db=db
         )
-        # token_record = db.query(ChatTotalToken).filter(ChatTotalToken.user_id==user_id , ChatTotalToken.bot_id==bot_id).first()
-        # currently we are only checking if the reacord in this table exsits then it should not exceed limit. once subscriptions implemented we will return user with no token limit if the record not exists
         if not token_limit_availabe:
             raise HTTPException(
                 status_code=400, detail=f"Token limit exceeded: {message}"
@@ -559,6 +554,8 @@ async def chat_message(
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
 
+            active_tool = db.query(ToolsUsed).filter_by(status=True).first()
+
             if any(score > 0.6 for score in scores):
                 print("using openai with context")
                 use_openai = True
@@ -569,6 +566,7 @@ async def chat_message(
                     dict_ins_prompt,
                     creativity,
                     text_content,
+                    active_tool=active_tool,
                 )
                 answer = generated_res[0]
                 openai_request_tokens = generated_res[1]
@@ -583,7 +581,13 @@ async def chat_message(
                 # Full OpenAI fallback
                 use_openai = True
                 generated_res = generate_response(
-                    user_msg, [], use_openai, dict_ins_prompt, creativity, text_content
+                    user_msg,
+                    [],
+                    use_openai,
+                    dict_ins_prompt,
+                    creativity,
+                    text_content,
+                    active_tool=active_tool,
                 )
                 answer = generated_res[0]
                 openai_request_tokens = generated_res[1]
@@ -592,14 +596,6 @@ async def chat_message(
                 print("ANSWER", answer, openai_request_tokens)
 
             response_content = answer
-
-        # ✅ Always compute tokens after final response is ready
-        user_tokens = len(user_msg.strip().split())
-        response_tokens = len(
-            response_content.strip().split()
-            if response_content
-            else "No response found"
-        )
 
         # Save user and bot messages
         user_message = ChatMessage(

@@ -78,6 +78,22 @@ def seed_payment_gateways(db: Session):
         db.add(PaymentGateway(**plan))
 
 
+def seed_ai_tools_used(db: Session):
+    default_tools = [
+        {"id": 1, "tool": "ChatGPT", "model": "gpt-3.5-turbo", "status": 0},
+        {"id": 2, "tool": "ChatGPT", "model": "gpt-4", "status": 0},
+        {"id": 3, "tool": "ChatGPT", "model": "gpt-4o", "status": 0},
+        {"id": 4, "tool": "Gemini", "model": "gemini-pro", "status": 0},
+        {"id": 5, "tool": "Gemini", "model": "gemini-1.5-pro", "status": 0},
+        {"id": 6, "tool": "DeepSeek", "model": "deepseek-chat", "status": 0},
+        {"id": 7, "tool": "DeepSeek", "model": "deepseek-coder", "status": 0},
+    ]
+
+    db.query(ToolsUsed).delete()
+    for tool in default_tools:
+        db.add(ToolsUsed(**tool))
+
+
 def seed_products(db: Session):
     default_products = [
         {"name": "Chatbot", "status": "active"},
@@ -93,29 +109,29 @@ def seed_products(db: Session):
             db.add(Product(**product))
 
 
-def seed_tools(db: Session):
-    # Define only the tools you want to keep
-    default_tools = [
-        {"name": "ChatGpt", "status": "deactive"},
-        {"name": "Gemini", "status": "deactive"},
-        {"name": "DeepSeek", "status": "deactive"},
-    ]
+# def seed_tools(db: Session):
+#     # Define only the tools you want to keep
+#     default_tools = [
+#         {"name": "ChatGpt", "status": "deactive"},
+#         {"name": "Gemini", "status": "deactive"},
+#         {"name": "DeepSeek", "status": "deactive"},
+#     ]
 
-    # Keep track of tool names you want to preserve
-    tool_names_to_keep = [tool["name"] for tool in default_tools]
+#     # Keep track of tool names you want to preserve
+#     tool_names_to_keep = [tool["name"] for tool in default_tools]
 
-    # Delete tools not in the current list
-    db.query(ToolsUsed).filter(~ToolsUsed.name.in_(tool_names_to_keep)).delete(
-        synchronize_session=False
-    )
+#     # Delete tools not in the current list
+#     db.query(ToolsUsed).filter(~ToolsUsed.name.in_(tool_names_to_keep)).delete(
+#         synchronize_session=False
+#     )
 
-    # Upsert logic for current tools
-    for tool in default_tools:
-        existing = db.query(ToolsUsed).filter_by(name=tool["name"]).first()
-        if existing:
-            existing.status = tool["status"]
-        else:
-            db.add(ToolsUsed(**tool))
+#     # Upsert logic for current tools
+#     for tool in default_tools:
+#         existing = db.query(ToolsUsed).filter_by(name=tool["name"]).first()
+#         if existing:
+#             existing.status = tool["status"]
+#         else:
+#             db.add(ToolsUsed(**tool))
 
 
 def seed_volume_discounts(db: Session):
@@ -174,7 +190,8 @@ def main():
     # seed_tools(db)
     # seed_volume_discounts(db)
     # seed_roles_and_permissions(db)
-    seed_payment_gateways(db)
+    # seed_payment_gateways(db)
+    seed_ai_tools_used(db=db)
     db.commit()
     db.close()
     print("✅ All seeds applied successfully.")
