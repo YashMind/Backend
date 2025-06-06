@@ -80,17 +80,28 @@ async def create_payment_order(
     if not user:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    plan = (
-        db.query(SubscriptionPlans)
-        .filter(SubscriptionPlans.id == order_data.plan_id)
-        .first()
-    )
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
+    amount = 0
+    type = None
+    if order_data.plan_id:
+        plan = (
+            db.query(SubscriptionPlans)
+            .filter(SubscriptionPlans.id == order_data.plan_id)
+            .first()
+        )
+
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan not found")
+
+        amount = plan.pricing
+        type = "plan"
+
+    if order_data.credit:
+        amount = order_data.credit
+        type = "credit"
 
     payload = {
         "order_id": generate_order_id(),
-        "order_amount": plan.pricing,
+        "order_amount": amount,
         "order_currency": "INR",
         "customer_details": {
             "customer_id": str(order_data.customer_id),
@@ -102,6 +113,7 @@ async def create_payment_order(
             "return_url": order_data.return_url,
             "notify_url": notify_url,
         },
+        "order_tags": {"type": type},
     }
 
     print("Creating order with payload:", json.dumps(payload, indent=2))

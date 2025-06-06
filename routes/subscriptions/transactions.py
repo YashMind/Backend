@@ -12,6 +12,7 @@ async def create_transaction(
     user_id: int,
     amount: float,
     currency: str,
+    type: str,
     # Optional fields
     plan_id: int = None,
     provider_payment_id: str = None,
@@ -41,6 +42,7 @@ async def create_transaction(
         plan_id=plan_id,
         amount=amount,
         currency=currency,
+        type=type,
         provider_payment_id=provider_payment_id,
         provider_transaction_id=provider_transaction_id,
         status=status,

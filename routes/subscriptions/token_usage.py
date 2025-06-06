@@ -334,8 +334,8 @@ def update_token_usage_on_consumption(
         consumption_stats = (
             consumed_token.request_token * 0.5
             + consumed_token.response_token * 0.3
-            + consumed_token.open_ai_request_token * 0.2
-            + consumed_token.open_ai_response_token * 0.5
+            # + consumed_token.open_ai_request_token * 0.2
+            # + consumed_token.open_ai_response_token * 0.5
         )
         for subordinate_bot in subordinate_bots:
             subordinate_bot.combined_token_consumption += consumption_stats

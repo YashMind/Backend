@@ -23,6 +23,9 @@ class Transaction(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     plan_id = Column(Integer, ForeignKey("subscription_plans.id"), nullable=True)
 
+    # Transaction Type plan or topup
+    transaction_type = Column(Enum("plan", "topup"), nullable=False)
+
     # Payment essentials
     amount = Column(Numeric(15, 2), nullable=False)  # Supports 999,999,999,999.99
     currency = Column(String(3), default="INR")
