@@ -61,15 +61,11 @@ def seed_payment_gateways(db: Session):
             "id": 1,
             "payment_name": "Cashfree",
             "status": "active",
-            "created_at": "2025-06-05T12:00:00Z",
-            "updated_at": "2025-06-05T12:00:00Z",
         },
         {
             "id": 2,
             "payment_name": "PayPal",
             "status": "inactive",
-            "created_at": "2025-06-05T12:00:00Z",
-            "updated_at": "2025-06-05T12:00:00Z",
         },
     ]
 
