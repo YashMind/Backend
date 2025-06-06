@@ -2,6 +2,7 @@ from typing import List
 from pydantic import BaseModel
 from datetime import datetime
 
+
 class TokenUsageSchema(BaseModel):
     id: int
     bot_id: int
@@ -24,6 +25,8 @@ class TokenUsageSchema(BaseModel):
 
     class Config:
         from_attributes = True
+        orm_mode = True
+
 
 class UserCreditsSchema(BaseModel):
     id: int
@@ -40,12 +43,15 @@ class UserCreditsSchema(BaseModel):
 
     class Config:
         from_attributes = True
+        orm_mode = True
+
 
 class ChatMessageTokens(BaseModel):
     credits: UserCreditsSchema
     token_usage: List[TokenUsageSchema]
     total_token_consumption: int
-    
+
+
 class ChatMessageTokensToday(BaseModel):
     request_tokens: int
     response_tokens: int

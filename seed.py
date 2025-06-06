@@ -190,7 +190,7 @@ def main():
     # seed_tools(db)
     # seed_volume_discounts(db)
     # seed_roles_and_permissions(db)
-    # seed_payment_gateways(db)
+    seed_payment_gateways(db)
     seed_ai_tools_used(db=db)
     db.commit()
     db.close()

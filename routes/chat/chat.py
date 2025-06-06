@@ -1576,30 +1576,45 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         if not token:
+            print("Access token missing from cookies.")
             raise HTTPException(status_code=401, detail="Access token missing")
+
         payload = decode_access_token(token)
-        user_id = int(payload.get("user_id"))
+        user_id = payload.get("user_id")
+
+        if user_id is None:
+            print("User ID missing in decoded token payload:", payload)
+            raise HTTPException(status_code=401, detail="Invalid access token")
+
+        user_id = int(user_id)
+        print(f"Decoded user_id: {user_id}")
 
         credits = db.query(UserCredits).filter_by(user_id=user_id).first()
-        token_usages = db.query(TokenUsage).filter_by(user_id=user_id).all()
+        print(f"Fetched credits: {credits}")
+        if not credits:
+            print("User credits not found")
+            raise HTTPException(status_code=404, detail="No Credit History Found")
 
-        total_token_consumption = (
-            token_usages[0].combined_token_consumption
-            if token_usages and len(token_usages) > 0
-            else 0
+        token_usages = db.query(TokenUsage).filter_by(user_id=user_id).all()
+        print(f"Fetched {len(token_usages)} token usage records")
+
+        total_token_consumption = sum(
+            usage.combined_token_consumption or 0 for usage in token_usages
+        )
+        print(f"Total token consumption: {total_token_consumption}")
+
+        return ChatMessageTokens(
+            credits=credits,
+            token_usage=token_usages,
+            total_token_consumption=total_token_consumption,
         )
 
-        return {
-            "credits": credits,
-            "token_usage": token_usages,
-            "total_token_consumption": total_token_consumption,
-        }
-
     except HTTPException as http_exc:
+        print(f"HTTPException: {http_exc.detail}")
         raise http_exc
     except Exception as e:
-        print(str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        print("Unhandled exception in /tokens endpoint:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 @router.get("/tokens/{bot_id}/today", response_model=ChatMessageTokensToday)
