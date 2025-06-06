@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from fastapi import HTTPException, Depends, Request, status
 from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
@@ -5,21 +6,31 @@ from jose import JWTError, jwt
 from typing import Optional
 from sqlalchemy.orm import Session
 from config import get_db
-from routes.chat.pinecone import get_response_from_faqs
+from models.adminModel.toolsModal import ToolsUsed
+from models.chatModel.tuning import DBInstructionPrompt
+from routes.chat.pinecone import (
+    generate_response,
+    get_response_from_faqs,
+    hybrid_retrieval,
+)
 from models.authModel.authModel import AuthUser
 from langchain.chat_models import ChatOpenAI
-from models.chatModel.chatModel import ChatSession, ChatMessage
+from models.chatModel.chatModel import ChatBots, ChatSession, ChatMessage
 from langchain.schema import HumanMessage, AIMessage
 from email.mime.text import MIMEText
 import smtplib
 import httpx
+
+from routes.subscriptions.token_usage import (
+    update_token_usage_on_consumption,
+    verify_token_limit_available,
+)
 
 SECRET_KEY = "ADMIN@1234QWER"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 20160  # 2 weeks
 RESET_PASSWORD_TOKEN_EXPIRE_MINUTES = 15
 
-llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
 def get_response_from_chatbot(data, platform, db: Session):
     try:
@@ -30,75 +41,157 @@ def get_response_from_chatbot(data, platform, db: Session):
         if not user_msg:
             raise HTTPException(status_code=400, detail="Message required")
 
-        try:
-            chat = db.query(ChatSession).filter_by(token=token).first()
-            if not chat:
-                chat = ChatSession(token=token, platform=platform, bot_id=bot_id)
-                db.add(chat)
-                db.commit()
-        except Exception as e:
-            print("Error in ChatSession block:", str(e))
-            raise
+        token_limit_availabe, message = verify_token_limit_available(
+            bot_id=bot_id, db=db
+        )
+        if not token_limit_availabe:
+            # raise HTTPException(
+            #     status_code=400, detail=f"Token limit exceeded: {message}"
+            # )
+            return "Sorry can't reply you at the moment, Token Limit exceeded"
 
-        try:
-            response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
-            docs_tuned_response = False  # Placeholder
-            pinecone_answer = False  # Placeholder
-        except Exception as e:
-            print("Error in external knowledge blocks:", str(e))
-            raise
+        chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
+        if not chatbot:
+            raise HTTPException(status_code=404, detail="ChatBot not found")
 
-        if response_from_faqs:
-            response_content = response_from_faqs.answer
-        elif pinecone_answer and len(pinecone_answer.strip()) > 0:
-            response_content = pinecone_answer
-        elif docs_tuned_response:
-            response_content = docs_tuned_response
-        else:
-            try:
-                messages = db.query(ChatMessage).filter_by(chat_id=chat.id).order_by(ChatMessage.created_at.asc()).all()
-                langchain_messages = [
-                    HumanMessage(content=m.message) if m.sender == 'user' else AIMessage(content=m.message)
-                    for m in messages
-                ]
-                langchain_messages.append(HumanMessage(content=user_msg))
-                response = llm.invoke(langchain_messages)
-                response_content = response.content if response and response.content else "No response"
-            except Exception as e:
-                print("Error invoking LLM or processing messages:", str(e))
-                raise
+        chat = db.query(ChatSession).filter_by(token=token).first()
+        if not chat:
+            chat = ChatSession(token=token, platform=platform, bot_id=bot_id)
+            db.add(chat)
+            db.commit()
 
-        try:
-            user_message = ChatMessage(bot_id=bot_id, chat_id=chat.id, sender="user", message=user_msg)
-            bot_message = ChatMessage(bot_id=bot_id, chat_id=chat.id, sender="bot", message=response_content)
+        (
+            request_tokens,
+            response_tokens,
+            openai_request_tokens,
+            openai_response_tokens,
+        ) = (0, 0, 0, 0)
+        response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
+
+        response_content = response_from_faqs.answer if response_from_faqs else None
+
+        if not response_content:
+            print("No response found from FAQ")
+            # Hybrid retrieval
+            context_texts, scores = hybrid_retrieval(user_msg, bot_id)
+
+            instruction_prompts = (
+                db.query(DBInstructionPrompt)
+                .filter(DBInstructionPrompt.bot_id == bot_id)
+                .all()
+            )
+            dict_ins_prompt = [
+                {prompt.type: prompt.prompt} for prompt in instruction_prompts
+            ]
+            # print("DICT INSTRUCTION PROMPTS",dict_ins_prompt)
+
+            creativity = chatbot.creativity
+            text_content = chatbot.text_content
+
+            answer = None
+            print("Hybrid retrieval results: ", context_texts, scores)
+            # Determine answer source
+
+            active_tool = db.query(ToolsUsed).filter_by(status=True).first()
+
+            if any(score > 0.6 for score in scores):
+                print("using openai with context")
+                use_openai = True
+                generated_res = generate_response(
+                    user_msg,
+                    context_texts[:3],
+                    use_openai,
+                    dict_ins_prompt,
+                    creativity,
+                    text_content,
+                    active_tool=active_tool,
+                )
+                answer = generated_res[0]
+                openai_request_tokens = generated_res[1]
+                openai_response_tokens = generated_res[2]
+                request_tokens = generated_res[3]
+                print("ANSWER", answer, openai_request_tokens)
+
+            else:
+                print(
+                    "no direct scores from hybrid retrieval and using openai independently"
+                )
+                # Full OpenAI fallback
+                use_openai = True
+                generated_res = generate_response(
+                    user_msg,
+                    [],
+                    use_openai,
+                    dict_ins_prompt,
+                    creativity,
+                    text_content,
+                    active_tool=active_tool,
+                )
+                answer = generated_res[0]
+                openai_request_tokens = generated_res[1]
+                openai_response_tokens = generated_res[2]
+                request_tokens = generated_res[3]
+                print("ANSWER", answer, openai_request_tokens)
+
+            response_content = answer
+
+            user_message = ChatMessage(
+                bot_id=bot_id, chat_id=chat.id, sender="user", message=user_msg
+            )
+            bot_message = ChatMessage(
+                bot_id=bot_id, chat_id=chat.id, sender="bot", message=response_content
+            )
+
             db.add_all([user_message, bot_message])
             db.commit()
             db.refresh(bot_message)
+
+            # Update Token consumption
+            bot_message.input_tokens = request_tokens
+            bot_message.output_tokens = openai_response_tokens
+            bot_message.open_ai_request_tokens = openai_request_tokens
+            bot_message.open_ai_response_tokens = openai_response_tokens
+
+            consumed_token = SimpleNamespace(
+                request_token=request_tokens,
+                response_token=openai_response_tokens,
+                open_ai_request_token=openai_request_tokens,
+                open_ai_response_token=openai_response_tokens,
+            )
+            update_token_usage_on_consumption(
+                consumed_token=consumed_token,
+                consumed_token_type=f"{platform}_bot",
+                bot_id=bot_id,
+                db=db,
+            )
             return response_content
-        except Exception as e:
-            print("Error saving messages:", str(e))
-            raise
 
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print("Unhandled Exception:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     try:
         to_encode = data.copy()
-        expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+        expire = datetime.utcnow() + (
+            expires_delta
+            if expires_delta
+            else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
         to_encode.update({"exp": expire})
         return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
-    
+
+
 def decode_access_token(token: str):
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)):
     token = request.cookies.get("access_token")
@@ -108,7 +201,7 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
             detail="No access token provided",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -121,32 +214,42 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
         if user_id is None:
             raise credentials_exception
         # orm
-        user = db.query(AuthUser).filter(AuthUser.id==user_id).first()
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
         if user is None:
             raise credentials_exception
-        # user['id'] = str(user.id)  
+        # user['id'] = str(user.id)
         return user
     except JWTError:
         raise credentials_exception
-    
+
+
 def create_reset_token(data: dict, expires_delta: Optional[timedelta] = None):
     try:
         to_encode = data.copy()
-        expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=RESET_PASSWORD_TOKEN_EXPIRE_MINUTES))
+        expire = datetime.utcnow() + (
+            expires_delta
+            if expires_delta
+            else timedelta(minutes=RESET_PASSWORD_TOKEN_EXPIRE_MINUTES)
+        )
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt
     except JWTError as jwt_exc:
         raise HTTPException(status_code=500, detail="Token creation error") from jwt_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="An unexpected error occurred while creating the token") from e
-    
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while creating the token",
+        ) from e
+
+
 def decode_reset_access_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("sub")
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 def send_reset_email(email: str, token: str):
     try:
@@ -161,11 +264,17 @@ def send_reset_email(email: str, token: str):
             server.starttls()
             server.login("your-email@yourdomain.com", "your-email-password")
             server.sendmail("no-reply@yourdomain.com", email, message.as_string())
-    
+
     except smtplib.SMTPException as smtp_exc:
-        raise HTTPException(status_code=500, detail="Failed to send reset email") from smtp_exc
+        raise HTTPException(
+            status_code=500, detail="Failed to send reset email"
+        ) from smtp_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail="An unexpected error occurred while sending the email") from e
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while sending the email",
+        ) from e
+
 
 async def get_country_from_ip(ip: str):
     try:
@@ -181,5 +290,3 @@ async def get_country_from_ip(ip: str):
     except Exception as e:
         print("IP API error", e)
         return "Unknown"
-
-    

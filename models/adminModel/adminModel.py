@@ -1,18 +1,22 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, func
 from config import Base
 
+
 class SubscriptionPlans(Base):
     __tablename__ = "subscription_plans"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=True)
     pricing = Column(Integer, nullable=True)
-    token_limits = Column(Integer, nullable=False)
+    token_per_unit = Column(Integer, nullable=False)
+    chatbots_allowed = Column(Integer, nullable=False)
+    duration_days = Column(Integer, nullable=False)
     features = Column(String(255), nullable=True)
     users_active = Column(Integer, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
 
 class TokenBots(Base):
     __tablename__ = "token_bots"
@@ -25,6 +29,7 @@ class TokenBots(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+
 class BotProducts(Base):
     __tablename__ = "bot_products"
 
@@ -33,6 +38,7 @@ class BotProducts(Base):
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
 
 class PaymentGateway(Base):
     __tablename__ = "payment_gateway"

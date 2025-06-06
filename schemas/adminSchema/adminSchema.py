@@ -3,38 +3,50 @@ from typing import Optional
 from datetime import timedelta, datetime
 from typing import List
 
+
 class PostEmail(BaseModel):
     title: str
     description: str
-    recipients: List[EmailStr] 
+    recipients: List[EmailStr]
+
 
 class PlansSchema(BaseModel):
     id: Optional[int] = None
     name: Optional[str] = None
     pricing: Optional[int] = None
-    token_limits: Optional[int] = False
+    token_per_unit: Optional[int] = False
+    chatbots_allowed: Optional[int] = False
+    duration_days: Optional[int] = False
     features: Optional[str] = None
     users_active: Optional[int] = None
+
 
 class TokenBotsSchema(BaseModel):
     id: Optional[int] = None
     name: Optional[str] = None
     pricing: Optional[int] = None
-    token_limits: Optional[int] = None
+    token_per_unit: Optional[int] = False
+    chatbots_allowed: Optional[int] = False
+    duration_days: Optional[int] = False
     active: Optional[bool] = None
+
 
 class BotProductSchema(BaseModel):
     id: Optional[int] = None
     product_name: Optional[str] = None
     active: Optional[bool] = None
 
+
 class RolePermissionInput(BaseModel):
     role: str
     permissions: List[str]
 
+
 class RolePermissionResponse(BaseModel):
     role: str
     permissions: List[str]
+
+
 class PaymentGatewaySchema(BaseModel):
     id: Optional[int] = None
     payment_name: Optional[str] = None

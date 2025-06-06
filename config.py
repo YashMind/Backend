@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()  # loads from .env
 
+
 class Settings:
     DB_USERNAME = os.getenv("DB_USERNAME")
     DB_PASSWORD = os.getenv("DB_PASSWORD")
@@ -17,7 +18,7 @@ class Settings:
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
     SMTP_HOST = os.getenv("SMTP_HOST")
     SMTP_PORT = os.getenv("SMTP_PORT")
-    
+
     # SMTP2GO_USERNAME = os.getenv("SMTP2GO_USERNAME")
     # SMTP2GO_PASSWORD = os.getenv("SMTP2GO_PASSWORD")
     # EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
@@ -29,22 +30,27 @@ class Settings:
 
     # JWT config
     SECRET_KEY = os.getenv("SECRET_KEY")
-    JWT_ALGORITHM = os.getenv("DB_ALGORITHM", "HS512") # default from your config
+    JWT_ALGORITHM = os.getenv("DB_ALGORITHM", "HS512")  # default from your config
 
     # Slack tokens
-    SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
-    SLACK_SIGNING_SECRET = os.getenv('SLACK_SIGNING_SECRET')
-    SLACK_CLIENT_ID= os.getenv('SLACK_CLIENT_ID')
-    SLACK_CLIENT_SECRET= os.getenv('SLACK_CLIENT_SECRET')
-    SLACK_REDIRECT_URI= os.getenv('SLACK_REDIRECT_URI')
+    SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+    SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET")
+    SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID")
+    SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET")
+    SLACK_REDIRECT_URI = os.getenv("SLACK_REDIRECT_URI")
 
-
-    TWILIO_ACCOUNT_SID=os.getenv('TWILIO_ACCOUNT_SID')
-    TWILIO_AUTH_TOKEN=os.getenv('TWILIO_AUTH_TOKEN')
-    TWILIO_NUMBER=os.getenv('TWILIO_NUMBER')
+    TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+    TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+    TWILIO_NUMBER = os.getenv("TWILIO_NUMBER")
 
     # Frontend URL for invitation links
-    FRONTEND_URL=os.getenv('FRONTEND_URL', 'http://localhost:3000')
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+    CASHFREE_ENV = os.getenv("CASHFREE_ENV")
+    CASHFREE_APP_ID = os.getenv("CASHFREE_APP_ID")
+    CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY")
+    CASHFREE_API_VERSION = os.getenv("CASHFREE_API_VERSION")
+
 
 settings = Settings()
 
@@ -59,6 +65,7 @@ async def get_db():
         yield db
     finally:
         db.close()
+
 
 def get_db_sync():
     """Synchronous version of get_db for sync endpoints"""

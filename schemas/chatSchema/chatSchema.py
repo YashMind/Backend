@@ -1,16 +1,14 @@
-
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum as PyEnum
 
 
-
-
 class PlanEnum(str, PyEnum):
     basic = "basic"
     pro = "pro"
     ent = "ent"
+
 
 class ChatTotalTokenCreate(BaseModel):
     user_id: int
@@ -19,10 +17,12 @@ class ChatTotalTokenCreate(BaseModel):
     token_consumed: int
     plan: PlanEnum
 
+
 class ChatMessageBase(BaseModel):
     chat_id: int
     message: str
     sender: str
+
 
 class ChatMessageRead(ChatMessageBase):
     id: Optional[int] = None
@@ -31,12 +31,13 @@ class ChatMessageRead(ChatMessageBase):
     user_id: Optional[int] = None
     sender: Optional[str] = None
     input_tokens: Optional[int] = None
-    output_tokens: Optional[int]= None
+    output_tokens: Optional[int] = None
     created_at: Optional[datetime] = None
     message: Optional[str] = None
 
     class Config:
         orm_mode = True
+
 
 # Chat Session Schema
 class ChatSessionCreate(BaseModel):
@@ -58,6 +59,7 @@ class ChatSessionRead(BaseModel):
 class ChatSessionWithMessages(ChatSessionRead):
     messages: List[ChatMessageRead]
 
+
 class CreateBot(BaseModel):
     id: Optional[int] = None
     chatbot_name: Optional[str] = None
@@ -78,8 +80,10 @@ class CreateBot(BaseModel):
     class Config:
         orm_mode = True
 
+
 class DeleteChatsRequest(BaseModel):
     chat_ids: List[int]
+
 
 class QuestionAnswer(BaseModel):
     id: Optional[int] = None
@@ -90,12 +94,14 @@ class QuestionAnswer(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
+
 class CreateBotFaqs(BaseModel):
     bot_id: int
     questions: Optional[List[QuestionAnswer]] = None
 
     class Config:
         orm_mode = True
+
 
 class FaqResponse(BaseModel):
     id: int
@@ -128,10 +134,14 @@ class CreateBotDocLinks(BaseModel):
     class Config:
         orm_mode = True
 
+
 class DeleteDocLinksRequest(BaseModel):
     doc_ids: List[int]
+
+
 class DeleteChatbotLeadsRequest(BaseModel):
     lead_ids: List[int]
+
 
 class ChatbotLeads(BaseModel):
     id: Optional[int] = None
@@ -148,16 +158,3 @@ class ChatbotLeads(BaseModel):
 
     class Config:
         orm_mode = True
-        
-
-class BotTokens(BaseModel):
-    bot_id: Optional[str] = None
-    users: Optional[str] = None
-    tokens: Optional[int] = None
-    token_today: Optional[int] = None
-    token_monthly: Optional[int] = None
-    messages: Optional[int] = None
-    
-class ChatMessageTokens(BaseModel):
-    total_tokens: Optional[int]= None
-    bots: Optional[List[BotTokens]]

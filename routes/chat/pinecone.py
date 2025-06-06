@@ -19,6 +19,7 @@ import regex
 from sqlalchemy.orm import Session
 from langchain.document_loaders import WebBaseLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from models.adminModel.toolsModal import ToolsUsed
 from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBotsDocChunks, ChatBotsFaqs
 from pathlib import Path
@@ -44,12 +45,15 @@ import uuid
 import pinecone
 from rank_bm25 import BM25Okapi
 import tiktoken
+from config import SessionLocal
 
-load_dotenv()
 
-llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.2)
 pc = pinecone.Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("yashraa-ai")  # Use your index name
+
+
+def get_llm(model_name, temperature=0.2):
+    return ChatOpenAI(model=model_name, temperature=temperature)
 
 
 # # Initialize OpenAI Embeddings
@@ -168,6 +172,7 @@ def generate_response(
     instruction_prompts,
     creativity,
     text_content,
+    active_tool,
 ) -> Tuple[str, int]:
     # Convert context to list if it's a tuple
     context = list(context) if isinstance(context, tuple) else context
@@ -321,8 +326,13 @@ def generate_response(
     #     return "I don't have enough information to answer that question."
 
     # Use invoke instead of predict
-    openai_tokens = len(encoder.encode(prompt))
-    # print("OPENAI TOKENS: ",openai_tokens)
+    openai_request_tokens = len(encoder.encode(prompt))
+    print("OPENAI TOKENS: ", openai_request_tokens)
+
+    llm = get_llm(
+        active_tool.model if active_tool else "gpt-3.5-turbo", temperature=0.5
+    )
+
     try:
 
         print(
@@ -341,12 +351,24 @@ def generate_response(
             response_content = response.content
         else:
             response_content = str(response)
-        # print("Returning")
-        return response_content, openai_tokens
+        print("Returning")
+        openai_response_tokens = len(encoder.encode(response_content))
+        request_tokens = len(encoder.encode(query))
+
+        return (
+            response_content,
+            openai_request_tokens,
+            openai_response_tokens,
+            request_tokens,
+        )
 
     except Exception as e:
         print(f"Error generating response: {e}")
-        return "I encountered an error while processing your request.", openai_tokens
+        return (
+            "I encountered an error while processing your request.",
+            openai_request_tokens,
+            0,
+        )
 
 
 ############################################
@@ -754,44 +776,44 @@ def get_response_from_faqs(user_msg: str, bot_id: int, db: Session):
         return None
 
 
-def get_docs_tuned_like_response(
-    user_msg: str, bot_id: int, db: Session
-) -> Optional[str]:
-    # Fetch relevant document chunks
-    chunks = db.query(ChatBotsDocChunks).filter_by(bot_id=bot_id).all()
-    if not chunks:
-        return None
+# def get_docs_tuned_like_response(
+#     user_msg: str, bot_id: int, db: Session
+# ) -> Optional[str]:
+#     # Fetch relevant document chunks
+#     chunks = db.query(ChatBotsDocChunks).filter_by(bot_id=bot_id).all()
+#     if not chunks:
+#         return None
 
-    context = "\n\n".join([chunk.content for chunk in chunks if chunk.content])
+#     context = "\n\n".join([chunk.content for chunk in chunks if chunk.content])
 
-    print("context ", context)
+#     print("context ", context)
 
-    # LangChain chat messages
-    messages = [
-        SystemMessage(
-            content="You are a helpful assistant. Use only the provided context to answer."
-        ),
-        HumanMessage(
-            content=f"""
-        Context:
-        {context}
+#     # LangChain chat messages
+#     messages = [
+#         SystemMessage(
+#             content="You are a helpful assistant. Use only the provided context to answer."
+#         ),
+#         HumanMessage(
+#             content=f"""
+#         Context:
+#         {context}
 
-        Question: {user_msg}
+#         Question: {user_msg}
 
-        If the answer is not found in the context, respond with "I don't know".
-        """
-        ),
-    ]
+#         If the answer is not found in the context, respond with "I don't know".
+#         """
+#         ),
+#     ]
 
-    try:
-        response = llm(messages)
-        answer = response.content.strip()
-        normalized_answer = answer.lower().strip().strip(string.punctuation)
-        if normalized_answer == "i don't know":
-            return None
-        else:
-            print("ans ", answer)
-            return answer
-    except Exception as e:
-        print("LangChain/OpenAI error:", e)
-        return None
+#     try:
+#         response = llm(messages)
+#         answer = response.content.strip()
+#         normalized_answer = answer.lower().strip().strip(string.punctuation)
+#         if normalized_answer == "i don't know":
+#             return None
+#         else:
+#             print("ans ", answer)
+#             return answer
+#     except Exception as e:
+#         print("LangChain/OpenAI error:", e)
+#         return None

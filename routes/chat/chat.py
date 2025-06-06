@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from fastapi import (
     APIRouter,
     Body,
@@ -11,6 +12,16 @@ from fastapi import (
 )
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+import tiktoken
+from models.adminModel.toolsModal import ToolsUsed
+from models.subscriptions.token_usage import TokenUsage
+from models.subscriptions.userCredits import UserCredits
+from routes.subscriptions.token_usage import (
+    generate_token_usage,
+    update_token_usage_on_consumption,
+    verify_token_limit_available,
+)
+from schemas.chatSchema.tokensSchema import ChatMessageTokens, ChatMessageTokensToday
 from utils.utils import decode_access_token, get_current_user
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
@@ -38,8 +49,6 @@ from schemas.chatSchema.chatSchema import (
     DeleteDocLinksRequest,
     ChatbotLeads,
     DeleteChatbotLeadsRequest,
-    ChatMessageTokens,
-    BotTokens,
 )
 from schemas.chatSchema.sharingSchema import (
     DirectSharingRequest,
@@ -57,10 +66,7 @@ from config import get_db, settings
 from typing import Optional, List
 from collections import defaultdict
 import os
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import HumanMessage, AIMessage
 from routes.chat.pinecone import (
-    clear_all_pinecone_namespaces,
     get_response_from_faqs,
     hybrid_retrieval,
     generate_response,
@@ -71,13 +77,12 @@ from routes.chat.celery_worker import process_document_task
 from decorators.product_status import check_product_status
 import secrets
 import string
-from datetime import datetime
+from datetime import datetime, time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import smtplib
 from models.authModel.authModel import AuthUser
 
-llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
 
 router = APIRouter()
 
@@ -168,8 +173,17 @@ async def create_chatbot(request: Request, db: Session = Depends(get_db)):
             token=generated_token,
         )
         db.add(new_chatbot)
+        db.flush()
+
+        token_usage, message = generate_token_usage(
+            bot_id=new_chatbot.id, user_id=new_chatbot.user_id, db=db
+        )
+        if not token_usage:
+            raise HTTPException(status_code=404, detail=message)
+
         db.commit()
         db.refresh(new_chatbot)
+
         return new_chatbot
 
     except HTTPException as http_exc:
@@ -477,22 +491,25 @@ async def chat_message(
         if not chatbot:
             raise HTTPException(status_code=404, detail="ChatBot not found")
 
-        token_record = (
-            db.query(ChatTotalToken)
-            .filter(ChatTotalToken.user_id == user_id, ChatTotalToken.bot_id == bot_id)
-            .first()
+        token_limit_availabe, message = verify_token_limit_available(
+            bot_id=bot_id, db=db
         )
-        # currently we are only checking if the reacord in this table exsits then it should not exceed limit. once subscriptions implemented we will return user with no token limit if the record not exists
-        if token_record:
-            if token_record.total_token <= token_record.user_message_tokens:
-                raise HTTPException(status_code=400, detail="Token limit exceeded")
+        if not token_limit_availabe:
+            raise HTTPException(
+                status_code=400, detail=f"Token limit exceeded: {message}"
+            )
 
         # Verify chat belongs to user
         chat = db.query(ChatSession).filter(ChatSession.id == chat_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
 
-        user_tokens, response_tokens, openai_tokens = 0, 0, 0
+        (
+            request_tokens,
+            response_tokens,
+            openai_request_tokens,
+            openai_response_tokens,
+        ) = (0, 0, 0, 0)
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
         # # fallback to Pinecone if no FAQ match found
         # final_answer = response_from_faqs.answer if response_from_faqs else retrieve_answers(user_msg, bot_id)
@@ -537,6 +554,8 @@ async def chat_message(
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
 
+            active_tool = db.query(ToolsUsed).filter_by(status=True).first()
+
             if any(score > 0.6 for score in scores):
                 print("using openai with context")
                 use_openai = True
@@ -547,10 +566,13 @@ async def chat_message(
                     dict_ins_prompt,
                     creativity,
                     text_content,
+                    active_tool=active_tool,
                 )
                 answer = generated_res[0]
-                openai_tokens = generated_res[1]
-                print("ANSWER", answer, openai_tokens)
+                openai_request_tokens = generated_res[1]
+                openai_response_tokens = generated_res[2]
+                request_tokens = generated_res[3]
+                print("ANSWER", answer, openai_request_tokens)
 
             else:
                 print(
@@ -559,21 +581,21 @@ async def chat_message(
                 # Full OpenAI fallback
                 use_openai = True
                 generated_res = generate_response(
-                    user_msg, [], use_openai, dict_ins_prompt, creativity, text_content
+                    user_msg,
+                    [],
+                    use_openai,
+                    dict_ins_prompt,
+                    creativity,
+                    text_content,
+                    active_tool=active_tool,
                 )
                 answer = generated_res[0]
-                openai_tokens = generated_res[1]
-                print("ANSWER", answer, openai_tokens)
+                openai_request_tokens = generated_res[1]
+                openai_response_tokens = generated_res[2]
+                request_tokens = generated_res[3]
+                print("ANSWER", answer, openai_request_tokens)
 
             response_content = answer
-
-        # ✅ Always compute tokens after final response is ready
-        user_tokens = len(user_msg.strip().split())
-        response_tokens = len(
-            response_content.strip().split()
-            if response_content
-            else "No response found"
-        )
 
         # Save user and bot messages
         user_message = ChatMessage(
@@ -596,35 +618,24 @@ async def chat_message(
         db.refresh(bot_message)
         print("BOT MESSAGE SAVED")
 
-        bot_message.input_tokens = user_tokens
-        bot_message.output_tokens = response_tokens
-        bot_message.open_ai_tokens = openai_tokens
+        # Update Token consumption
+        bot_message.input_tokens = request_tokens
+        bot_message.output_tokens = openai_response_tokens
+        bot_message.open_ai_request_tokens = openai_request_tokens
+        bot_message.open_ai_response_tokens = openai_response_tokens
 
-        # ✅ Update ChatTotalToken
-        token_record = (
-            db.query(ChatTotalToken)
-            .filter(ChatTotalToken.user_id == user_id, ChatTotalToken.bot_id == bot_id)
-            .first()
+        consumed_token = SimpleNamespace(
+            request_token=request_tokens,
+            response_token=openai_response_tokens,
+            open_ai_request_token=openai_request_tokens,
+            open_ai_response_token=openai_response_tokens,
         )
-        print("TOKEN RECORDS GENERATING")
-        if token_record:
-            token_record.user_message_tokens += user_tokens
-            token_record.response_tokens += response_tokens
-            token_record.openai_tokens += openai_tokens
-            token_record.updated_at = func.now()
-        else:
-            token_record = ChatTotalToken(
-                user_id=user_id,
-                bot_id=bot_id,
-                total_token=10000,  # default total
-                user_message_tokens=user_tokens,
-                response_tokens=response_tokens,
-                openai_tokens=openai_tokens,
-                plan="basic",
-            )
-            db.add(token_record)
-
-        db.commit()
+        update_token_usage_on_consumption(
+            consumed_token=consumed_token,
+            consumed_token_type="direct_bot",
+            bot_id=bot_id,
+            db=db,
+        )
 
         return bot_message
     except HTTPException as http_exc:
@@ -1569,66 +1580,90 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
 
-        bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+        credits = db.query(UserCredits).filter_by(user_id=user_id).first()
+        token_usages = db.query(TokenUsage).filter_by(user_id=user_id).all()
 
-        bot_tokens_list = []
-        total_tokens = 0
+        total_token_consumption = (
+            token_usages[0].combined_token_consumption
+            if token_usages and len(token_usages) > 0
+            else 0
+        )
 
-        for bot in bots:
-            messages = (
-                db.query(ChatMessage)
-                .filter(
-                    ChatMessage.bot_id == bot.id,
-                    ChatMessage.user_id == user_id,
-                    ChatMessage.sender == "user",
-                )
-                .all()
-            )
-
-            # Get current date info
-            now = datetime.utcnow()
-            today = now.date()
-            first_of_month = today.replace(day=1)
-
-            # Initialize counters
-            total_token_count = 0
-            today_token_count = 0
-            monthly_token_count = 0
-
-            for msg in messages:
-                if not msg.message:
-                    continue
-
-                word_count = len(msg.message.strip().split())
-                total_token_count += word_count
-
-                # Ensure message.created_at is a datetime
-                created_at = (
-                    msg.created_at.date() if hasattr(msg, "created_at") else None
-                )
-                if created_at:
-                    if created_at == today:
-                        today_token_count += word_count
-                    if created_at >= first_of_month:
-                        monthly_token_count += word_count
-
-            bot_tokens_list.append(
-                BotTokens(
-                    bot_id=str(bot.id),
-                    tokens=total_token_count,
-                    token_today=today_token_count,
-                    token_monthly=monthly_token_count,
-                    messages=len(messages),
-                )
-            )
-            total_tokens += total_token_count
-
-        return ChatMessageTokens(total_tokens=total_tokens, bots=bot_tokens_list)
+        return {
+            "credits": credits,
+            "token_usage": token_usages,
+            "total_token_consumption": total_token_consumption,
+        }
 
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         print(str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tokens/{bot_id}/today", response_model=ChatMessageTokensToday)
+async def chat_message_tokens(
+    request: Request, bot_id: int, db: Session = Depends(get_db)
+):
+    try:
+        # Get today's date
+        today = datetime.now().date()
+
+        # Calculate the start and end of today
+        start_of_day = datetime.combine(today, time.min)
+        end_of_day = datetime.combine(today, time.max)
+
+        # Get all messages for the bot from today
+        messages = (
+            db.query(ChatMessage)
+            .filter(
+                and_(
+                    ChatMessage.bot_id == bot_id,
+                    ChatMessage.created_at >= start_of_day,
+                    ChatMessage.created_at <= end_of_day,
+                )
+            )
+            .all()
+        )
+
+        if not messages:
+            return ChatMessageTokensToday(request_tokens=0, response_tokens=0, users=0)
+
+        # Separate user and bot messages
+        user_messages = []
+        bot_messages = []
+        user_ids = set()
+
+        for message in messages:
+            if message.sender == "user":
+                user_messages.append(message.message)
+                user_ids.add(message.user_id)
+            elif message.sender == "bot":
+                bot_messages.append(message.message)
+
+        # Initialize encoder
+        encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
+
+        # Calculate tokens for user messages (requests)
+        request_tokens = 0
+        if user_messages:
+            combined_user_text = " ".join(user_messages)
+            request_tokens = len(encoder.encode(combined_user_text))
+
+        # Calculate tokens for bot messages (responses)
+        response_tokens = 0
+        if bot_messages:
+            combined_bot_text = " ".join(bot_messages)
+            response_tokens = len(encoder.encode(combined_bot_text))
+
+        return ChatMessageTokensToday(
+            request_tokens=request_tokens,
+            response_tokens=response_tokens,
+            users=len(user_ids),
+        )
+
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
