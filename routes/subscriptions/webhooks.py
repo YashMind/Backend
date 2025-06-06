@@ -15,7 +15,7 @@ from routes.subscriptions.token_usage import create_token_usage
 from routes.subscriptions.transactions import update_transaction
 from routes.subscriptions.user_credits import create_user_credit_entry
 
-router = APIRouter(prefix="/webhook/payments")
+router = APIRouter()
 
 
 async def verify_cashfree_webhook(request: Request):

@@ -67,7 +67,7 @@ app.include_router(volumn_router, prefix="/api/admin")
 app.include_router(apikeys_router, prefix="/api/admin")
 app.include_router(cashfree_router, prefix="/api/payment/cashfree")
 app.include_router(token_credits_router, prefix="/api/admin")
-app.include_router(subscription_router)
+app.include_router(subscription_router, prefix="/api/webhook/payments")
 
 if __name__ == "__main__":
     import uvicorn
