@@ -17,6 +17,7 @@ from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBots
 from models.chatModel.integrations import ZapierIntegration
 from schemas.authSchema.authSchema import User
+from schemas.chatSchema.integrationsSchema import ZapierMessageRequest
 from utils.utils import get_current_user, get_response_from_chatbot
 
 router = APIRouter()
@@ -132,12 +133,10 @@ async def verify_zapier_token(
     }
 
 
-# 3. Message Handling Endpoint
 @router.post("/message")
 async def handle_zapier_message(
-    message: str = Form(..., alias="Body"),  # Zapier will send as form data
+    body: ZapierMessageRequest,
     api_token: str = Header(..., alias="X-API-Token"),
-    # session_id: str = Form(...),  # Unique identifier for conversation session
     db: Session = Depends(get_db),
 ):
     # Verify token and get integration
@@ -150,9 +149,9 @@ async def handle_zapier_message(
     # Get bot response (reusing your core logic)
     response = get_response_from_chatbot(
         data={
-            "message": message,
+            "message": body.message,
             "bot_id": integration.bot_id,
-            "token": api_token,  # Use session_id to maintain conversation context
+            "token": api_token,
         },
         platform="zapier",
         db=db,

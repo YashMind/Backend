@@ -42,7 +42,7 @@ async def create_transaction(
         plan_id=plan_id,
         amount=amount,
         currency=currency,
-        type=type,
+        transaction_type=type,
         provider_payment_id=provider_payment_id,
         provider_transaction_id=provider_transaction_id,
         status=status,

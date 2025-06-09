@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Column, Integer, String, Float, DateTime
+from sqlalchemy import ForeignKey, Column, Integer, String, Float, DateTime, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from config import Base
@@ -21,6 +21,18 @@ class UserCredits(Base):
 
     token_per_unit = Column(Float)
     chatbots_allowed = Column(Integer)
+
+    top_up_transactions = relationship(
+        "Transaction", secondary="user_credits_topups", backref="credited_users"
+    )
+
+
+user_credits_topups = Table(
+    "user_credits_topups",
+    Base.metadata,
+    Column("user_credits_id", Integer, ForeignKey("user_credits.id")),
+    Column("transaction_id", Integer, ForeignKey("transactions.id")),
+)
 
 
 class HistoryUserCredits(Base):

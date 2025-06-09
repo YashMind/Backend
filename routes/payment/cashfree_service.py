@@ -17,6 +17,7 @@ from models.paymentModel.paymentModel import (
     PaymentOrderRequest,
 )
 from sqlalchemy.orm import Session
+from models.subscriptions.userCredits import UserCredits
 from routes.subscriptions.transactions import create_transaction
 
 router = APIRouter()
@@ -33,7 +34,7 @@ CASHFREE_BASE_URL = (
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 notify_url = (
-    "https://eb64-122-176-88-30.ngrok-free.app/webhook/payments/cashfree"
+    "https://32c0-122-176-88-30.ngrok-free.app/webhook/payments/cashfree"
     if CASHFREE_ENV == "TEST"
     else "https://yashraa.ai/webhook/payments/cashfree"
 )
@@ -81,8 +82,10 @@ async def create_payment_order(
         raise HTTPException(status_code=404, detail="Customer not found")
 
     amount = 0
+    plan_id = None
     type = None
     if order_data.plan_id:
+        print("plan_id found")
         plan = (
             db.query(SubscriptionPlans)
             .filter(SubscriptionPlans.id == order_data.plan_id)
@@ -93,11 +96,31 @@ async def create_payment_order(
             raise HTTPException(status_code=404, detail="Plan not found")
 
         amount = plan.pricing
+        plan_id = plan.id
         type = "plan"
 
     if order_data.credit:
+        print("Credit Found")
         amount = order_data.credit
-        type = "credit"
+
+        type = "topup"
+
+        credit = db.query(UserCredits).filter_by(user_id=user.id).first()
+        if not credit:
+            raise HTTPException(status_code=404, detail="No plan found")
+
+        if credit.expiry_date < datetime.now():
+            raise HTTPException(
+                status_code=404,
+                detail="Current plan is expired. No active plan to add credits",
+            )
+
+        plan_id = credit.plan_id
+
+    if not (order_data.plan_id or order_data.credit):
+        raise HTTPException(
+            status_code=400, detail="Either plan_id or credit must be provided"
+        )
 
     payload = {
         "order_id": generate_order_id(),
@@ -171,7 +194,8 @@ async def create_payment_order(
             user_id=int(cashfree_response["customer_details"]["customer_id"]),
             amount=cashfree_response["order_amount"],
             currency=cashfree_response["order_currency"],
-            plan_id=order_data.plan_id,
+            type=cashfree_response["order_tags"]["type"],
+            plan_id=plan_id,
             status="pending",
         )
 

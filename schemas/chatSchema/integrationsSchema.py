@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from datetime import datetime
 
+
 class SlackInstallationCreate(BaseModel):
     bot_id: str
     team_id: str
@@ -9,3 +10,7 @@ class SlackInstallationCreate(BaseModel):
     authed_user_id: str
     access_token: str
     installed_at: datetime
+
+
+class ZapierMessageRequest(BaseModel):
+    message: str
