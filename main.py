@@ -5,6 +5,7 @@ from routes.chat.tuning import router as tuning_router
 from routes.chat.appearance import router as appearance_router
 from routes.chat.slack import router as slack_router
 from routes.chat.whatsapp import router as whatsapp_router
+from routes.chat.zapier import router as zapier_router
 from routes.admin.admin import router as admin_router
 from routes.supportTickets.routes import router as support_router
 from fastapi.staticfiles import StaticFiles
@@ -59,6 +60,7 @@ app.include_router(slack_router, prefix="/api/slack")
 app.include_router(support_router, prefix="/api/tickets")
 app.include_router(activity_log_router, prefix="/api/activity")
 app.include_router(whatsapp_router, prefix="/api/whatsapp")
+app.include_router(zapier_router, prefix="/api/zapier")
 app.include_router(announcement_router, prefix="/api/admin")
 app.include_router(notice_router, prefix="/api/admin")
 app.include_router(product_router, prefix="/api/admin")

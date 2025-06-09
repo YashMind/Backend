@@ -14,6 +14,7 @@ class TokenUsage(Base):
 
     token_limit = Column(Integer)
     combined_token_consumption = Column(Integer)
+    topup_transaction_id = Column(Integer, ForeignKey("transactions.id"))
 
     open_ai_request_token = Column(Integer, default=0)
     open_ai_response_token = Column(Integer, default=0)

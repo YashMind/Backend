@@ -249,6 +249,198 @@ def create_token_usage(
         return False, error_msg
 
 
+"""Update Token useage for a topup"""
+
+
+def update_token_usage_topup(
+    credit_id: int, transaction_id: int, db: Session
+) -> Tuple[bool, Union[str, dict]]:
+    """
+    Creates token usage records for a new subscription with comprehensive error handling.
+
+    Args:
+        credit_id: ID of the UserCredit record
+        transaction_id: ID of the Transaction record
+        db: SQLAlchemy database session
+
+    Returns:
+        Tuple: (success: bool, message: str/details: dict)
+    """
+    try:
+        # Validate input parameters
+        if not all(
+            isinstance(param, int) and param > 0
+            for param in [credit_id, transaction_id]
+        ):
+            error_msg = "Invalid input parameters: credit_id and transaction_id must be positive integers"
+            print(error_msg)
+            return False, error_msg
+
+        if not db or not isinstance(db, Session):
+            error_msg = "Invalid database session provided"
+            print(error_msg)
+            return False, error_msg
+
+        # Begin nested transaction
+        db.begin_nested()
+
+        # Fetch credit and transaction records with error handling
+        credit, transaction = None, None
+        try:
+            credit = db.query(UserCredits).filter(UserCredits.id == credit_id).first()
+            transaction = (
+                db.query(Transaction).filter(Transaction.id == transaction_id).first()
+            )
+
+            if not credit:
+                error_msg = f"Credit record not found with ID: {credit_id}"
+                print(error_msg)
+                db.rollback()
+                return False, error_msg
+
+            if not transaction:
+                error_msg = f"Transaction record not found with ID: {transaction_id}"
+                print(error_msg)
+                db.rollback()
+                return False, error_msg
+
+        except SQLAlchemyError as e:
+            error_msg = f"Database error while fetching records: {str(e)}"
+            print(error_msg)
+            db.rollback()
+            return False, error_msg
+
+        user_id = transaction.user_id
+        processed_bots = []
+        failed_bots = []
+
+        try:
+            bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+
+            if not bots:
+                print(f"No bots found for user ID: {user_id}")
+                return (
+                    True,
+                    "No bots found for user - token usage initialization not required",
+                )
+
+            for bot in bots:
+                try:
+                    # Process each bot in a nested transaction
+                    db.begin_nested()
+
+                    existing_usage = (
+                        db.query(TokenUsage)
+                        .filter(
+                            TokenUsage.bot_id == bot.id, TokenUsage.user_id == user_id
+                        )
+                        .first()
+                    )
+
+                    if (
+                        existing_usage
+                        and existing_usage.topup_transaction_id == transaction.id
+                    ):
+                        error_msg = f"The token usage of bot {bot.id} has already been updated under same user credit and topup transaction"
+                        print(error_msg)
+                        continue
+
+                    if existing_usage:
+                        # Reset existing usage
+                        try:
+                            existing_usage.token_limit = (
+                                credit.credits_purchased * credit.token_per_unit
+                            )
+                            db.flush()  # Test update before proceeding
+                        except SQLAlchemyError as e:
+                            db.rollback()
+                            error_msg = f"Failed to reset token usage for bot {bot.id}: {str(e)}"
+                            print(error_msg)
+                            failed_bots.append(bot.id)
+                            continue
+
+                    else:
+                        # Create new token usage
+                        try:
+                            new_usage = TokenUsage(
+                                bot_id=bot.id,
+                                user_id=user_id,
+                                user_credit_id=credit_id,
+                                token_limit=credit.credits_purchased
+                                * credit.token_per_unit,
+                                combined_token_consumption=0,
+                                **{
+                                    field: 0
+                                    for field in [
+                                        "open_ai_request_token",
+                                        "open_ai_response_token",
+                                        "user_request_token",
+                                        "user_response_token",
+                                        "whatsapp_request_tokens",
+                                        "whatsapp_response_tokens",
+                                        "slack_request_tokens",
+                                        "slack_response_tokens",
+                                        "wordpress_request_tokens",
+                                        "wordpress_response_tokens",
+                                        "zapier_request_tokens",
+                                        "zapier_response_tokens",
+                                    ]
+                                },
+                            )
+                            db.add(new_usage)
+                            db.flush()
+                        except SQLAlchemyError as e:
+                            db.rollback()
+                            error_msg = f"Failed to create token usage for bot {bot.id}: {str(e)}"
+                            print(error_msg)
+                            failed_bots.append(bot.id)
+                            continue
+
+                    processed_bots.append(bot.id)
+                    db.commit()  # Commit the nested transaction for this bot
+
+                except Exception as e:
+                    db.rollback()
+                    error_msg = f"Unexpected error processing bot {bot.id}: {str(e)}"
+                    print(error_msg)
+                    failed_bots.append(bot.id)
+                    continue
+
+            # Final commit if all operations succeeded
+            db.commit()
+
+            if failed_bots:
+                success_msg = (
+                    f"Token usage processed with partial success. "
+                    f"Processed bots: {processed_bots}, Failed bots: {failed_bots}"
+                )
+                print(success_msg)
+                return True, {
+                    "success_count": len(processed_bots),
+                    "failed_count": len(failed_bots),
+                    "processed_bots": processed_bots,
+                    "failed_bots": failed_bots,
+                }
+
+            print(f"Successfully processed token usage for bots: {processed_bots}")
+            return True, {
+                "success_count": len(processed_bots),
+                "processed_bots": processed_bots,
+            }
+
+        except SQLAlchemyError as e:
+            db.rollback()
+            error_msg = f"Database error during bot processing: {str(e)}"
+            print(error_msg)
+            return False, error_msg
+
+    except Exception as e:
+        db.rollback()
+        error_msg = f"Unexpected error in create_token_usage: {str(e)}"
+        print(error_msg)
+        return False, error_msg
+
+
 """Verify if token consumption limit available"""
 
 
@@ -332,10 +524,10 @@ def update_token_usage_on_consumption(
 
         # update all subordinate bots combined token usage data
         consumption_stats = (
-            consumed_token.request_token * 0.5
-            + consumed_token.response_token * 0.3
-            + consumed_token.open_ai_request_token * 0.2
-            + consumed_token.open_ai_response_token * 0.5
+            consumed_token.request_token
+            + consumed_token.response_token
+            # + consumed_token.open_ai_request_token * 0.2
+            # + consumed_token.open_ai_response_token * 0.5
         )
         for subordinate_bot in subordinate_bots:
             subordinate_bot.combined_token_consumption += consumption_stats

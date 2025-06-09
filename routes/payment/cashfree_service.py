@@ -17,6 +17,7 @@ from models.paymentModel.paymentModel import (
     PaymentOrderRequest,
 )
 from sqlalchemy.orm import Session
+from models.subscriptions.userCredits import UserCredits
 from routes.subscriptions.transactions import create_transaction
 
 router = APIRouter()
@@ -80,17 +81,48 @@ async def create_payment_order(
     if not user:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    plan = (
-        db.query(SubscriptionPlans)
-        .filter(SubscriptionPlans.id == order_data.plan_id)
-        .first()
-    )
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
+    amount = 0
+    plan_id = None
+    type = None
+    if order_data.plan_id:
+        plan = (
+            db.query(SubscriptionPlans)
+            .filter(SubscriptionPlans.id == order_data.plan_id)
+            .first()
+        )
+
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan not found")
+
+        amount = plan.pricing
+        plan_id = plan.id
+        type = "plan"
+
+    if order_data.credit:
+        amount = order_data.credit
+
+        type = "topup"
+
+        credit = db.query(UserCredits).filter_by(user_id=user.id).first()
+        if not credit:
+            raise HTTPException(status_code=404, detail="No plan found")
+
+        if credit.expiry_date < datetime.now():
+            raise HTTPException(
+                status_code=404,
+                detail="Current plan is expired. No active plan to add credits",
+            )
+
+        plan_id = credit.plan_id
+
+    if not (order_data.plan_id or order_data.credit):
+        raise HTTPException(
+            status_code=400, detail="Either plan_id or credit must be provided"
+        )
 
     payload = {
         "order_id": generate_order_id(),
-        "order_amount": plan.pricing,
+        "order_amount": amount,
         "order_currency": "INR",
         "customer_details": {
             "customer_id": str(order_data.customer_id),
@@ -102,6 +134,7 @@ async def create_payment_order(
             "return_url": order_data.return_url,
             "notify_url": notify_url,
         },
+        "order_tags": {"type": type},
     }
 
     print("Creating order with payload:", json.dumps(payload, indent=2))
@@ -159,7 +192,8 @@ async def create_payment_order(
             user_id=int(cashfree_response["customer_details"]["customer_id"]),
             amount=cashfree_response["order_amount"],
             currency=cashfree_response["order_currency"],
-            plan_id=order_data.plan_id,
+            type=cashfree_response["order_tags"]["type"],
+            plan_id=plan_id,
             status="pending",
         )
 

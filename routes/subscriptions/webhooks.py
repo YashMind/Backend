@@ -11,9 +11,15 @@ import json
 import hmac
 
 from routes.subscriptions.failed_payment import handle_failed_payment
-from routes.subscriptions.token_usage import create_token_usage
+from routes.subscriptions.token_usage import (
+    create_token_usage,
+    update_token_usage_topup,
+)
 from routes.subscriptions.transactions import update_transaction
-from routes.subscriptions.user_credits import create_user_credit_entry
+from routes.subscriptions.user_credits import (
+    create_user_credit_entry,
+    update_user_credit_entry_topup,
+)
 
 router = APIRouter()
 
@@ -60,6 +66,9 @@ async def process_cashfree_payload(payload: dict, db: Session):
     payment = data.get("payment", {})
     gateway = data.get("payment_gateway_details", {})
     customer = data.get("customer_details", {})
+
+    order_tags = order.get("order_tags")
+    transaction_type = order_tags.get("type")
 
     # Identification parameters
     order_id = order.get("order_id")
@@ -115,11 +124,20 @@ async def process_cashfree_payload(payload: dict, db: Session):
 
     # Add entry in user credits table about updation of plan
     if payload.get("type") == "PAYMENT_SUCCESS_WEBHOOK":
-        user_credit = create_user_credit_entry(trans_id=transaction.id, db=db)
 
-        success, token_entires = create_token_usage(
-            credit_id=user_credit.id, transaction_id=transaction.id, db=db
-        )
+        if transaction_type == "plan":
+            user_credit = create_user_credit_entry(trans_id=transaction.id, db=db)
+
+            success, token_entires = create_token_usage(
+                credit_id=user_credit.id, transaction_id=transaction.id, db=db
+            )
+
+        if transaction_type == "topup":
+            user_credit = update_user_credit_entry_topup(trans_id=transaction.id, db=db)
+
+            success, token_entires = update_token_usage_topup(
+                credit_id=user_credit.id, transaction_id=transaction.id, db=db
+            )
 
         return {
             "success": success,

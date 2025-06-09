@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
 from fastapi import Depends, HTTPException
 from config import get_db
 from sqlalchemy.orm import Session
@@ -81,3 +82,75 @@ def create_user_credit_entry(trans_id: int, db: Session = Depends(get_db)):
     db.refresh(new_credit)
 
     return new_credit
+
+
+def update_user_credit_entry_topup(trans_id: int, db: Session = Depends(get_db)):
+    """Create a user credit entry."""
+    print(f"Received top-up request for transaction ID: {trans_id}")
+
+    # Verify transaction exists
+    transaction = db.query(Transaction).filter(Transaction.id == trans_id).first()
+    if not transaction:
+        print("Transaction not found")
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    print(f"Found transaction: {transaction}")
+
+    # Verify transaction is a top-up
+    if transaction.transaction_type != "topup":
+        print(f"Invalid transaction type: {transaction.transaction_type}")
+        raise HTTPException(status_code=400, detail="Transaction is not a top-up")
+
+    user_id = transaction.user_id
+    plan_id = transaction.plan_id
+    print(f"Transaction is for user ID: {user_id}, plan ID: {plan_id}")
+
+    # Verify user exists
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        print("User not found")
+        raise HTTPException(status_code=404, detail="User not found")
+    print(f"Found user: {user}")
+
+    # Verify plan exists
+    plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id == plan_id).first()
+    if not plan:
+        print("Subscription plan not found")
+        raise HTTPException(status_code=404, detail="Subscription plan not found")
+    print(f"Found plan: {plan}")
+
+    # Fetch user's current credit entry
+    current_credit = (
+        db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
+    )
+    if not current_credit:
+        print("No existing credit entry found for user")
+        raise HTTPException(status_code=404, detail="Credit entry not found")
+    print(f"Current credit entry: {current_credit}")
+
+    if any(tx.id == trans_id for tx in current_credit.top_up_transactions):
+        print(f"Transaction ID {trans_id} already exists in user's top-up transactions")
+        return current_credit
+
+    if trans_id == current_credit.trans_id:
+        print("Credit entry already updated under the same transaction")
+        return current_credit
+
+    if current_credit.expiry_date < datetime.now():
+        print("Plan has already expired on:", current_credit.expiry_date)
+        return current_credit
+
+    new_credits = Decimal(transaction.amount)
+    print(f"Calculated new credits: {new_credits}")
+
+    current_credit.credits_purchased += new_credits
+    current_credit.credit_balance = (
+        current_credit.credits_purchased - current_credit.credits_consumed
+    )
+    current_credit.top_up_transactions.append(transaction)
+    print(f"Updated credit entry: {current_credit}")
+
+    db.add(current_credit)
+    db.commit()
+    print("Credit entry successfully updated and committed")
+
+    return current_credit
