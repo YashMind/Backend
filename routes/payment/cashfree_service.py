@@ -85,7 +85,6 @@ async def create_payment_order(
     plan_id = None
     type = None
     if order_data.plan_id:
-        print("plan_id found")
         plan = (
             db.query(SubscriptionPlans)
             .filter(SubscriptionPlans.id == order_data.plan_id)
@@ -100,7 +99,6 @@ async def create_payment_order(
         type = "plan"
 
     if order_data.credit:
-        print("Credit Found")
         amount = order_data.credit
 
         type = "topup"
