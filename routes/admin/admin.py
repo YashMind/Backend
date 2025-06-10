@@ -13,7 +13,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from models.activityLogModel.activityLogModel import ActivityLog
-from utils.utils import decode_access_token, get_current_user
+from utils.utils import decode_access_token, get_country_from_ip, get_current_user
 from jose import JWTError, jwt
 from uuid import uuid4
 import json
@@ -243,10 +243,11 @@ async def create_subscription_plans(
                 raise HTTPException(status_code=404, detail="Plan not found")
 
             existing_plan.name = data.name
-            existing_plan.pricing = data.pricing
+            existing_plan.pricingInr = data.pricingInr
+            existing_plan.pricingDollar = data.pricingDollar
             existing_plan.token_per_unit = data.token_per_unit
             existing_plan.chatbots_allowed = data.chatbots_allowed
-            existing_plan.duration_days = data.token_per_unit
+            existing_plan.duration_days = data.duration_days
             existing_plan.features = data.features
             existing_plan.users_active = data.users_active
 
@@ -256,7 +257,8 @@ async def create_subscription_plans(
         else:
             new_plan = SubscriptionPlans(
                 name=data.name,
-                pricing=data.pricing,
+                pricingInr=data.pricingInr,
+                pricingDollar=data.pricingDollar,
                 token_per_unit=data.token_per_unit,
                 chatbots_allowed=data.chatbots_allowed,
                 duration_days=data.duration_days,
@@ -295,8 +297,10 @@ async def update_plan_status(
 
 
 @router.get("/subscription-plans")
-@public_route()
-async def get_all_subscription_plans(request: Request, db: Session = Depends(get_db)):
+@check_permissions(["subscription-plans"])
+async def get_all_subscription_plans_admin(
+    request: Request, db: Session = Depends(get_db)
+):
     try:
         plans = db.query(SubscriptionPlans).all()
 
@@ -305,7 +309,8 @@ async def get_all_subscription_plans(request: Request, db: Session = Depends(get
             {
                 "id": plan.id,
                 "name": plan.name,
-                "pricing": plan.pricing,
+                "pricingInr": plan.pricingInr,
+                "pricingDollar": plan.pricingDollar,
                 "token_per_unit": plan.token_per_unit,
                 "chatbots_allowed": plan.chatbots_allowed,
                 "duration_days": plan.duration_days,
@@ -317,6 +322,60 @@ async def get_all_subscription_plans(request: Request, db: Session = Depends(get
             }
             for plan in plans
         ]
+
+        return {
+            "success": True,
+            "message": "Subscription plans fetched successfully.",
+            "data": formatted_plans,
+        }
+    except SQLAlchemyError as db_err:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(db_err)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Something went wrong: {str(e)}")
+
+
+@router.get("/subscription-plans/public")
+@public_route()
+async def get_all_subscription_plans_public(
+    request: Request, db: Session = Depends(get_db)
+):
+    try:
+        plans = (
+            db.query(SubscriptionPlans)
+            .filter(SubscriptionPlans.is_active == True)
+            .all()
+        )
+
+        client_ip = request.client.host
+        country = await get_country_from_ip(ip=client_ip)
+
+        print("Country: ", country)
+
+        formatted_plans = []
+        # Format plans with relevant fields
+        for plan in plans:
+            pricing = plan.pricingDollar
+            currency = "USD"
+            if country == "IN":
+                pricing = plan.pricingInr
+                currency = "INR"
+            formatted_plan = {
+                "id": plan.id,
+                "name": plan.name,
+                "pricing": pricing,
+                "currency": currency,
+                "token_per_unit": plan.token_per_unit,
+                "chatbots_allowed": plan.chatbots_allowed,
+                "duration_days": plan.duration_days,
+                "features": plan.features,
+                "users_active": plan.users_active,
+                "is_active": plan.is_active,  # ✅ Include activation status
+                "created_at": plan.created_at,
+                "updated_at": plan.updated_at,
+            }
+            formatted_plans.append(formatted_plan)
 
         return {
             "success": True,

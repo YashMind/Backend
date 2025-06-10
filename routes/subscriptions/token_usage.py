@@ -541,7 +541,9 @@ def update_token_usage_on_consumption(
             {AuthUser.tokenUsed: total_token_consumption}
         )
 
-        credits_consumed = total_token_consumption / credit.token_per_unit
+        credits_consumed = (total_token_consumption // credit.token_per_unit) + (
+            1 if total_token_consumption % credit.token_per_unit > 0 else 0
+        )
         print("credits_consumed", credits_consumed)
 
         balance_credits = credit.credits_purchased - credits_consumed

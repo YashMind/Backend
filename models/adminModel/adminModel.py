@@ -7,7 +7,8 @@ class SubscriptionPlans(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=True)
-    pricing = Column(Integer, nullable=True)
+    pricingInr = Column(Integer, nullable=True)
+    pricingDollar = Column(Integer, nullable=True)
     token_per_unit = Column(Integer, nullable=False)
     chatbots_allowed = Column(Integer, nullable=False)
     duration_days = Column(Integer, nullable=False)

@@ -19,6 +19,7 @@ from models.paymentModel.paymentModel import (
 from sqlalchemy.orm import Session
 from models.subscriptions.userCredits import UserCredits
 from routes.subscriptions.transactions import create_transaction
+from utils.utils import get_country_from_ip
 
 router = APIRouter()
 load_dotenv()
@@ -60,11 +61,11 @@ def generate_order_id() -> str:
 
 @router.post("/create-order")
 async def create_payment_order(
-    order_data: PaymentOrderRequest, db: Session = Depends(get_db)
+    request: Request, order_data: PaymentOrderRequest, db: Session = Depends(get_db)
 ):
     """Create a payment order in Cashfree"""
     url = f"{CASHFREE_BASE_URL}/orders"
-
+    client_ip = request.client.host
     # Validate environment variables
     if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
         raise HTTPException(
@@ -84,6 +85,9 @@ async def create_payment_order(
     amount = 0
     plan_id = None
     type = None
+    country = await get_country_from_ip(ip=client_ip)
+
+    print("Country: ", country)
     if order_data.plan_id:
         plan = (
             db.query(SubscriptionPlans)
@@ -94,7 +98,11 @@ async def create_payment_order(
         if not plan:
             raise HTTPException(status_code=404, detail="Plan not found")
 
-        amount = plan.pricing
+        amount = plan.pricingDollar
+        currency = "USD"
+        if country == "IN":
+            amount = plan.pricingInr
+            currency = "INR"
         plan_id = plan.id
         type = "plan"
 
@@ -123,7 +131,7 @@ async def create_payment_order(
     payload = {
         "order_id": generate_order_id(),
         "order_amount": amount,
-        "order_currency": "INR",
+        "order_currency": currency,
         "customer_details": {
             "customer_id": str(order_data.customer_id),
             "customer_name": user.fullName,
