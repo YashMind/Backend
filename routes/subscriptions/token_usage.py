@@ -65,7 +65,7 @@ def create_token_usage(
 
         except SQLAlchemyError as e:
             error_msg = f"Database error while fetching records: {str(e)}"
-            print(error_msg)
+            print(f"#########    {error_msg}    #########")
             db.rollback()
             return False, error_msg
 

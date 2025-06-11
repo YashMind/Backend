@@ -1,3 +1,4 @@
+import httpx
 from models.subscriptions.transactionModel import Transaction
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
@@ -146,14 +147,74 @@ async def process_cashfree_payload(payload: dict, db: Session):
         }, 200
     if payload.get("type") == "PAYMENT_FAILED_WEBHOOK":
         # Add payment failed entry in activity logs and support tickets
-        handle_failed_payment(transaction.id, raw_data, db=db)
+        handle_failed_payment(transaction_id=transaction.id, raw_data=raw_data, db=db)
 
 
 async def process_paypal_payload(payload: dict, db: Session):
+    print("Received PayPal Payload:", payload)
+
     resource = payload.get("resource", {})
     event_type = payload.get("event_type", "")
+    print(f"Event Type: {event_type}")
 
-    if "PAYMENT.CAPTURE" in event_type:
+    if event_type == "CHECKOUT.ORDER.APPROVED":
+        print("Order has been approved by buyer. Attempting to capture payment...")
+
+        # Find the capture link
+        capture_link = next(
+            (
+                link["href"]
+                for link in resource.get("links", [])
+                if link["rel"] == "capture"
+            ),
+            None,
+        )
+        print("Capture link found:", capture_link)
+
+        if not capture_link:
+            print("No capture link found in resource.")
+            return JSONResponse(
+                content={"error": "No capture link found"}, status_code=400
+            )
+
+        try:
+            # Get PayPal access token
+            print("Requesting PayPal access token...")
+            async with httpx.AsyncClient() as client:
+                token_response = await client.post(
+                    "https://api-m.sandbox.paypal.com/v1/oauth2/token",
+                    auth=(settings.PAYPAL_CLIENT_ID, settings.PAYPAL_CLIENT_SECRET),
+                    data={"grant_type": "client_credentials"},
+                    headers={"Accept": "application/json"},
+                )
+                token_response.raise_for_status()
+                token_data = token_response.json()
+                access_token = token_data["access_token"]
+                print("Access token retrieved:", access_token)
+
+                # Call the capture endpoint
+                print("Calling capture endpoint...")
+                capture_response = await client.post(
+                    capture_link,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {access_token}",
+                    },
+                )
+                capture_response.raise_for_status()
+                capture_result = capture_response.json()
+                print("Capture response received:", capture_result)
+
+        except httpx.HTTPError as e:
+            print("HTTP Error during capture:", str(e))
+            return JSONResponse(
+                content={"error": "Capture request failed"}, status_code=500
+            )
+
+    if event_type == "PAYMENT.CAPTURE.COMPLETED":
+        print("Payment has been captured successfully.")
+        print(f"Resource: ################# {resource} #################")
+        # Now process capture result like PAYMENT.CAPTURE
         status_map = {
             "COMPLETED": "success",
             "DECLINED": "failed",
@@ -161,37 +222,94 @@ async def process_paypal_payload(payload: dict, db: Session):
             "REFUNDED": "refunded",
             "CANCELLED": "cancelled",
         }
-        status = status_map.get(resource.get("status"))
+        status = status_map.get(resource.get("status"), "unknown")
+        print("Mapped status:", status)
+        resource = payload.get("resource", {})
+        amount_info = resource.get("amount", {})
+        breakdown = resource.get("seller_receivable_breakdown", {})
 
-        # Extract payment details
-        payment_source = resource.get("payment_source", {})
-        payment_method, details = None, None
-        if "card" in payment_source:
-            payment_method = "card"
-            details = {
-                "last_digits": payment_source["card"].get("last_digits"),
-                "brand": payment_source["card"].get("brand"),
-            }
-        elif "paypal" in payment_source:
-            payment_method = "paypal"
-            details = {"email": payment_source["paypal"].get("email_address")}
+        # Identification parameters
+        order_id = (
+            resource.get("supplementary_data", {})
+            .get("related_ids", {})
+            .get("order_id")
+        )
+        provider_payment_id = resource.get("id")  # Capture ID
+        provider_transaction_id = (
+            order_id  # Can treat PayPal Order ID as transaction ID
+        )
 
-        # Update transaction
-        return await update_transaction(
+        # Customer/User ID: Not explicitly present, so extract from custom_id or invoice_id if encoded
+        transaction_type = resource.get(
+            "custom_id"
+        )  # You may have encoded this on order creation
+        invoice_id = resource.get(
+            "invoice_id"
+        )  # Invoice ID is locally generated order_id in DB
+        user_id = None  # If you encoded user_id in invoice_id or custom_id, parse here
+
+        # Payment info
+        payment_status = resource.get("status")
+        payment_method = "paypal"
+        payment_amount = amount_info.get("value")
+        payment_currency = amount_info.get("currency_code")
+        payment_method_details = {
+            "merchant_email": resource.get("payee", {}).get("email_address"),
+            "merchant_id": resource.get("payee", {}).get("merchant_id"),
+        }
+        fees = breakdown.get("paypal_fee", {}).get("value")
+
+        # Raw data
+        raw_data = payload
+
+        transaction = await update_transaction(
             db=db,
-            provider="paypal",
-            order_id=resource.get("custom_id"),
-            provider_transaction_id=resource.get("id"),
+            order_id=invoice_id,
+            provider_payment_id=provider_payment_id,
+            provider_transaction_id=provider_transaction_id,
             status=status,
             payment_method=payment_method,
-            payment_method_details=details,
-            fees=float(
-                resource.get("seller_receivable_breakdown", {})
-                .get("paypal_fee", {})
-                .get("value", 0)
-            ),
-            raw_data=payload,
+            payment_method_details=payment_method_details,
+            fees=fees,
+            # tax=tax,
+            raw_data=raw_data,
+            provider="paypal",
+            # refund_id=refund_id,
+            # country_code=country_code
         )
+
+        if transaction_type == "plan":
+            user_credit = create_user_credit_entry(trans_id=transaction.id, db=db)
+
+            success, token_entires = create_token_usage(
+                credit_id=user_credit.id, transaction_id=transaction.id, db=db
+            )
+
+        if transaction_type == "topup":
+            user_credit = update_user_credit_entry_topup(trans_id=transaction.id, db=db)
+
+            success, token_entires = update_token_usage_topup(
+                credit_id=user_credit.id, transaction_id=transaction.id, db=db
+            )
+
+        return {
+            "success": success,
+            "token_entries": token_entires,
+            "details": "payment updated successfully",
+        }, 200
+
+    if payload.get("type") in [
+        "PAYMENT.CAPTURE.DENIED",
+        "PAYMENT.CAPTURE.PENDING",
+        "PAYMENT.CAPTURE.REFUNDED",
+        "PAYMENT.CAPTURE.REVERSED",
+    ]:
+        # Add payment failed entry in activity logs and support tickets
+        handle_failed_payment(
+            order_id=resource.get("invoice_id"), raw_data=raw_data, db=db
+        )
+
+    print("Unhandled event type:", event_type)
     return JSONResponse(content={"status": "unhandled_event"}, status_code=200)
 
 
@@ -216,6 +334,8 @@ async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
     try:
         # This is a placeholder - implement actual verification
         payload = await request.json()
+        print(payload)
+
         return await process_paypal_payload(payload, db)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
