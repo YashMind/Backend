@@ -315,12 +315,12 @@ def generate_response(
 
     # Truncate context to fit token limit more efficiently
     encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
-    context_str = "\n".join(f"{{{item}}}" for item in context)
+    context_str = "\n".join(str(item) for item in context) if context else ""
 
-    print("Context String: ",context_str )
+    print(f"Original Context String: {context_str}")
 
     # Create a mutable copy of context for truncation
-    context_list = list(context)  # Ensure we're working with a list
+    context_list = list(context) if context else []  # Ensure we're working with a list
 
     # Calculate tokens more precisely
     while True:
@@ -331,17 +331,21 @@ def generate_response(
             creativity=creativity,
             instruction_prompts=instruction_prompts,
         )
-
+        print("formatted prompt: ",prompt)
         tokens = encoder.encode(prompt)
-        if len(tokens) <= 3000 or not context_list:
+        if len(tokens) <= 5000 or not context_list:
             break
         # Remove the longest context item first
         context_list.remove(max(context_list, key=len))
-        context_str = "\n".join(f"{{{item}}}" for item in context_list)
+        context_str = "\n".join(str(item) for item in context_list)
 
 
-    # if not context_str:
-    #     return "I don't have enough information to answer that question."
+    # Final check for empty context
+    if not context_str.strip():
+        return "I don't have enough information to answer that question."
+    
+    # Debug print formatted prompt
+    print(f"Final Prompt: {prompt}")
 
     # Use invoke instead of predict
     openai_request_tokens = len(encoder.encode(prompt))
