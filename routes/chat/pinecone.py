@@ -134,7 +134,7 @@ def hybrid_retrieval(
                 )
                 all_texts.append(text_content)
                 valid_matches.append(match)
-        print("collect matches content and metadata", all_texts, valid_matches)
+        # print("collect matches content and metadata", all_texts, valid_matches)
         if not all_texts:
             print("else returning nothing")
             return [], []
@@ -317,7 +317,7 @@ def generate_response(
     encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
     context_str = "\n".join(f"{{{item}}}" for item in context)
 
-    # print("Context String: ",context_str )
+    print("Context String: ",context_str )
 
     # Create a mutable copy of context for truncation
     context_list = list(context)  # Ensure we're working with a list
