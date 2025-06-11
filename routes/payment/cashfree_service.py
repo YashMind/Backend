@@ -298,6 +298,7 @@ async def is_international(request: Request):
         client_ip = request.client.host
         print(f"Client IP: {client_ip}")
         country = get_country_from_ip(ip=client_ip)
+        print("Country", country)
         if country == "IN":
             return {"is_international": False}
 

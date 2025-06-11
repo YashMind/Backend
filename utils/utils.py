@@ -279,8 +279,8 @@ def send_reset_email(email: str, token: str):
 async def get_country_from_ip(ip: str):
     try:
         if ip.startswith("127.") or ip == "localhost":  # fallback for testing
-            ip = "8.8.8.8"  # USD
-            # ip = "117.197.0.0"  # INR
+            # ip = "8.8.8.8"  # USD
+            ip = "117.197.0.0"  # INR
 
         url = f"https://ipinfo.io/{ip}/json"
         async with httpx.AsyncClient() as client:
