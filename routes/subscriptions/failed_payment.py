@@ -6,13 +6,19 @@ from models.supportTickets.models import SupportTicket
 from send_email import send_email
 
 
-def handle_failed_payment(transaction_id: int, raw_data, db: Session):
+def handle_failed_payment(transaction_id: int, order_id: str, raw_data, db: Session):
     print(
         f"[DEBUG] Starting failed payment handler for transaction_id={transaction_id}"
     )
 
     transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
-    print(f"[DEBUG] Fetched transaction: {transaction}")
+    print(f"[DEBUG] Fetched transaction using id: {transaction}")
+
+    if not transaction:
+        transaction = (
+            db.query(Transaction).filter(Transaction.order_id == order_id).first()
+        )
+        print(f"[DEBUG] Fetched transaction using order_id: {transaction}")
 
     if not transaction:
         print("[ERROR] Transaction not found!")

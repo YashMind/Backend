@@ -19,6 +19,7 @@ from models.paymentModel.paymentModel import (
 from sqlalchemy.orm import Session
 from models.subscriptions.userCredits import UserCredits
 from routes.subscriptions.transactions import create_transaction
+from utils.utils import get_country_from_ip
 
 router = APIRouter()
 load_dotenv()
@@ -55,16 +56,16 @@ def generate_cashfree_auth_headers():
 
 def generate_order_id() -> str:
     timestamp_ms = int(datetime.now().timestamp() * 1000)
-    return f"order_{timestamp_ms}_{random.randint(0, 999)}"
+    return f"cf_{timestamp_ms}_{random.randint(0, 999)}"
 
 
 @router.post("/create-order")
 async def create_payment_order(
-    order_data: PaymentOrderRequest, db: Session = Depends(get_db)
+    request: Request, order_data: PaymentOrderRequest, db: Session = Depends(get_db)
 ):
     """Create a payment order in Cashfree"""
     url = f"{CASHFREE_BASE_URL}/orders"
-
+    client_ip = request.client.host
     # Validate environment variables
     if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
         raise HTTPException(
@@ -84,6 +85,9 @@ async def create_payment_order(
     amount = 0
     plan_id = None
     type = None
+    country = await get_country_from_ip(ip=client_ip)
+
+    print("Country: ", country)
     if order_data.plan_id:
         plan = (
             db.query(SubscriptionPlans)
@@ -94,7 +98,11 @@ async def create_payment_order(
         if not plan:
             raise HTTPException(status_code=404, detail="Plan not found")
 
-        amount = plan.pricing
+        amount = plan.pricingDollar
+        currency = "USD"
+        if country == "IN":
+            amount = plan.pricingInr
+            currency = "INR"
         plan_id = plan.id
         type = "plan"
 
@@ -123,7 +131,7 @@ async def create_payment_order(
     payload = {
         "order_id": generate_order_id(),
         "order_amount": amount,
-        "order_currency": "INR",
+        "order_currency": currency,
         "customer_details": {
             "customer_id": str(order_data.customer_id),
             "customer_name": user.fullName,
@@ -284,36 +292,15 @@ def verify_webhook_signature(payload: bytes, signature: str):
     return hmac.compare_digest(computed_signature, signature)
 
 
-@router.post("/webhook")
-async def cashfree_webhook(request: Request):
-    """Handle Cashfree payment webhooks"""
+@router.get("/is-international")
+async def is_international(request: Request):
     try:
-        payload = await request.body()
-        signature = request.headers.get("x-webhook-signature")
+        client_ip = request.client.host
+        print(f"Client IP: {client_ip}")
+        country = get_country_from_ip(ip=client_ip)
+        if country == "IN":
+            return {"is_international": False}
 
-        if not signature or not verify_webhook_signature(payload, signature):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid webhook signature",
-            )
-
-        data = json.loads(payload.decode())
-
-        # Process the webhook data
-        order_id = data.get("orderId")
-        payment_status = data.get("txStatus")
-        payment_data = data.get("payment")
-
-        print(f"Received webhook for order {order_id} with status {payment_status}")
-
-        # Here you would typically update your database
-        # Example:
-        # await update_order_status(order_id, payment_status, payment_data)
-
-        return {"status": "success", "message": "Webhook processed"}
+        return {"is_international": True}
     except Exception as e:
-        print(f"Error processing webhook: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error processing webhook: {str(e)}",
-        )
+        print(f"Error: {e}")

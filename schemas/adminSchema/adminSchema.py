@@ -13,7 +13,8 @@ class PostEmail(BaseModel):
 class PlansSchema(BaseModel):
     id: Optional[int] = None
     name: Optional[str] = None
-    pricing: Optional[int] = None
+    pricingInr: Optional[int] = None
+    pricingDollar: Optional[int] = None
     token_per_unit: Optional[int] = False
     chatbots_allowed: Optional[int] = False
     duration_days: Optional[int] = False

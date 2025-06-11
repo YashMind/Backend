@@ -90,70 +90,70 @@ async def update_transaction(
 ):
     # Find transaction using available identifiers
     transaction = None
-
-    print("FINDING transaction from order id")
-    if order_id:
-        transaction = (
-            db.query(Transaction).filter(Transaction.order_id == order_id).first()
-        )
-        print("Transaction found from order_id", transaction)
-
-    if not transaction and provider_payment_id:
-        transaction = (
-            db.query(Transaction)
-            .filter_by(provider_payment_id=provider_payment_id)
-            .first()
-        )
-    if not transaction and provider_transaction_id:
-        transaction = (
-            db.query(Transaction)
-            .filter_by(provider_transaction_id=provider_transaction_id)
-            .first()
-        )
-
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    # Update provider if needed
-    if provider and transaction.provider != provider:
-        transaction.provider = provider
-
-    # Update status if provided
-    terminal_states = ["success", "failed", "refunded", "cancelled"]
-    if status and status != transaction.status:
-        transaction.status = status
-        # Set completion time for terminal states
-        if status in terminal_states:
-            transaction.completed_at = datetime.now(timezone.utc)
-
-    # Update payment details
-    if payment_method:
-        transaction.payment_method = payment_method
-    if payment_method_details is not None:
-        transaction.payment_method_details = payment_method_details
-    if fees is not None:
-        transaction.fees = fees
-    if tax is not None:
-        transaction.tax = tax
-    if raw_data is not None:
-        transaction.provider_data = raw_data
-    if country_code:
-        transaction.country_code = country_code
-    if refund_id:
-        transaction.refund_id = refund_id
-
-    # Update provider IDs if missing
-    if provider_transaction_id and not transaction.provider_transaction_id:
-        transaction.provider_transaction_id = provider_transaction_id
-    if provider_payment_id and not transaction.provider_payment_id:
-        transaction.provider_payment_id = provider_payment_id
-
     try:
+        print("FINDING transaction from order id")
+        if order_id:
+            transaction = (
+                db.query(Transaction).filter(Transaction.order_id == order_id).first()
+            )
+            print("Transaction found from order_id", transaction)
+
+        if not transaction and provider_payment_id:
+            transaction = (
+                db.query(Transaction)
+                .filter_by(provider_payment_id=provider_payment_id)
+                .first()
+            )
+        if not transaction and provider_transaction_id:
+            transaction = (
+                db.query(Transaction)
+                .filter_by(provider_transaction_id=provider_transaction_id)
+                .first()
+            )
+
+        if not transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
+        # Update provider if needed
+        if provider and transaction.provider != provider:
+            transaction.provider = provider
+
+        # Update status if provided
+        terminal_states = ["success", "failed", "refunded", "cancelled"]
+        if status and status != transaction.status:
+            transaction.status = status
+            # Set completion time for terminal states
+            if status in terminal_states:
+                transaction.completed_at = datetime.now(timezone.utc)
+
+        # Update payment details
+        if payment_method:
+            transaction.payment_method = payment_method
+        if payment_method_details is not None:
+            transaction.payment_method_details = payment_method_details
+        if fees is not None:
+            transaction.fees = fees
+        if tax is not None:
+            transaction.tax = tax
+        if raw_data is not None:
+            transaction.provider_data = raw_data
+        if country_code:
+            transaction.country_code = country_code
+        if refund_id:
+            transaction.refund_id = refund_id
+
+        # Update provider IDs if missing
+        if provider_transaction_id and not transaction.provider_transaction_id:
+            transaction.provider_transaction_id = provider_transaction_id
+        if provider_payment_id and not transaction.provider_payment_id:
+            transaction.provider_payment_id = provider_payment_id
+
         db.commit()
         db.refresh(transaction)
         return transaction
     except Exception as e:
         db.rollback()
+        print(f"Transaction update failed: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Transaction update failed: {str(e)}"
         )

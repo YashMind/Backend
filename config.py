@@ -51,6 +51,12 @@ class Settings:
     CASHFREE_SECRET_KEY = os.getenv("CASHFREE_SECRET_KEY")
     CASHFREE_API_VERSION = os.getenv("CASHFREE_API_VERSION")
 
+    PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID")
+    PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET")
+    PAYPAL_MODE = os.getenv("PAYPAL_MODE")
+    PAYPAL_RETURN_URL = os.getenv("PAYPAL_RETURN_URL")
+    PAYPAL_CANCEL_URL = os.getenv("PAYPAL_CANCEL_URL")
+
 
 settings = Settings()
 

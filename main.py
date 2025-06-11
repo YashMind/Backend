@@ -19,6 +19,7 @@ from config import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 from routes.admin.apikeys import router as apikeys_router
 from routes.payment.cashfree_service import router as cashfree_router
+from routes.payment.paypal_payment import router as paypal_router
 from routes.subscriptions.webhooks import router as subscription_router
 from routes.admin.tokensAndCredits import router as token_credits_router
 
@@ -68,6 +69,7 @@ app.include_router(tool_router, prefix="/api/admin")
 app.include_router(volumn_router, prefix="/api/admin")
 app.include_router(apikeys_router, prefix="/api/admin")
 app.include_router(cashfree_router, prefix="/api/payment/cashfree")
+app.include_router(paypal_router, prefix="/api/payment/paypal")
 app.include_router(token_credits_router, prefix="/api/admin")
 app.include_router(subscription_router, prefix="/api/webhook/payments")
 

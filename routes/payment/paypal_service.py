@@ -1,13 +1,14 @@
-# paypal_service.py
 import os
 from paypalcheckoutsdk.core import PayPalHttpClient, SandboxEnvironment, LiveEnvironment
-from decouple import config
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class PayPalClient:
     def __init__(self):
-        self.client_id = config("PAYPAL_CLIENT_ID")
-        self.client_secret = config("PAYPAL_SECRET")
-        self.mode = config("PAYPAL_MODE", default="sandbox")
+        self.client_id = os.getenv("PAYPAL_CLIENT_ID")
+        self.client_secret = os.getenv("PAYPAL_CLIENT_SECRET")
+        self.mode = os.getenv("PAYPAL_MODE", "sandbox")
         
         if self.mode == "live":
             self.environment = LiveEnvironment(

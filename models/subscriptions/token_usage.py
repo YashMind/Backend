@@ -10,7 +10,7 @@ class TokenUsage(Base):
     id = Column(Integer, primary_key=True, index=True)
     bot_id = Column(Integer, ForeignKey("chat_bots.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
-    user_credit_id = Column(Integer, ForeignKey("user_credits.id"))
+    user_credit_id = Column(Integer)
 
     token_limit = Column(Integer)
     combined_token_consumption = Column(Integer)
@@ -41,7 +41,7 @@ class TokenUsageHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     bot_id = Column(Integer, ForeignKey("chat_bots.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
-    user_credit_id = Column(Integer, ForeignKey("user_credits.id"))
+    user_credit_id = Column(Integer)
 
     token_limit = Column(Integer)
     combined_token_consumption = Column(Integer)
