@@ -136,7 +136,7 @@ async def create_payment_order(
             "customer_id": str(order_data.customer_id),
             "customer_name": user.fullName,
             "customer_email": user.email,
-            "customer_phone": "9855507091",
+            "customer_phone": "9875905950",
         },
         "order_meta": {
             "return_url": order_data.return_url,
