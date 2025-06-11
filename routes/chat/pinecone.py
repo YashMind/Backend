@@ -323,21 +323,21 @@ def generate_response(
     context_list = list(context) if context else []  # Ensure we're working with a list
 
     # Calculate tokens more precisely
-    while True:
-        prompt = prompt_template.format(
-            context=context_str,
-            question=query,
-            text_content=text_content,
-            creativity=creativity,
-            instruction_prompts=instruction_prompts,
-        )
-        print("formatted prompt: ",prompt)
-        tokens = encoder.encode(prompt)
-        if len(tokens) <= 5000 or not context_list:
-            break
-        # Remove the longest context item first
-        context_list.remove(max(context_list, key=len))
-        context_str = "\n".join(str(item) for item in context_list)
+    # while True:
+    prompt = prompt_template.format(
+        context=context_str,
+        question=query,
+        text_content=text_content,
+        creativity=creativity,
+        instruction_prompts=instruction_prompts,
+    )
+    print("formatted prompt: ",prompt)
+        # tokens = encoder.encode(prompt)
+        # if len(tokens) <= 5000 or not context_list:
+        #     break
+        # # Remove the longest context item first
+        # context_list.remove(max(context_list, key=len))
+        # context_str = "\n".join(str(item) for item in context_list)
 
 
     # Final check for empty context
