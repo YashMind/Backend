@@ -331,12 +331,14 @@ def generate_response(
             creativity=creativity,
             instruction_prompts=instruction_prompts,
         )
+
         tokens = encoder.encode(prompt)
         if len(tokens) <= 3000 or not context_list:
             break
         # Remove the longest context item first
         context_list.remove(max(context_list, key=len))
-        context_str = " ".join(context_list)
+        context_str = "\n".join(f"{{{item}}}" for item in context_list)
+
 
     # if not context_str:
     #     return "I don't have enough information to answer that question."
