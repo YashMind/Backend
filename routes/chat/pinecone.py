@@ -21,7 +21,7 @@ from langchain.document_loaders import WebBaseLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from models.adminModel.toolsModal import ToolsUsed
 from models.authModel.authModel import AuthUser
-from models.chatModel.chatModel import ChatBotsDocChunks, ChatBotsFaqs
+from models.chatModel.chatModel import ChatBotsDocChunks, ChatBotsDocLinks, ChatBotsFaqs
 from pathlib import Path
 from difflib import SequenceMatcher
 from sqlalchemy import func
@@ -534,6 +534,29 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 )
 
             print("Creating DB CHUNK")
+            doc_link = (
+                db.query(ChatBotsDocLinks)
+                .filter(
+                    ChatBotsDocLinks.bot_id == data.bot_id,
+                    ChatBotsDocLinks.target_link == metadata["source"],
+                )
+                .first()
+            )
+            if not doc_link:
+                doc_link = ChatBotsDocLinks(
+                    bot_id=data.bot_id,
+                    user_id=data.user_id,
+                    target_link=metadata["source"],
+                    chatbot_name=data.chatbot_name,
+                    train_from=data.train_from,
+                    document_link=data.document_link,
+                    public=data.public,
+                    status="trained",
+                    chars=len(text),
+                )
+                db.add(doc_link)
+                db.flush()
+
             db_chunk = ChatBotsDocChunks(
                 bot_id=data.bot_id,
                 user_id=data.user_id,
@@ -542,7 +565,7 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 metaData=str(metadata),
                 chunk_index=vector_id,
                 char_count=len(text),
-                link_id=data.id,
+                link_id=doc_link.id,
                 content_hash=content_hash,
             )
             print("SAVING DB CHUNK")
