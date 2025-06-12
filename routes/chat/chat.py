@@ -16,6 +16,7 @@ import tiktoken
 from models.adminModel.toolsModal import ToolsUsed
 from models.subscriptions.token_usage import TokenUsage
 from models.subscriptions.userCredits import UserCredits
+from routes.chat.tuning import seed_instruction_prompts_template
 from routes.subscriptions.token_usage import (
     generate_token_usage,
     update_token_usage_on_consumption,
@@ -178,7 +179,15 @@ async def create_chatbot(request: Request, db: Session = Depends(get_db)):
         token_usage, message = generate_token_usage(
             bot_id=new_chatbot.id, user_id=new_chatbot.user_id, db=db
         )
+
         if not token_usage:
+            raise HTTPException(status_code=404, detail=message)
+
+        instruction_prompts, message = seed_instruction_prompts_template(
+            user_id=user_id, bot_id=new_chatbot.id, db=db
+        )
+
+        if not instruction_prompts:
             raise HTTPException(status_code=404, detail=message)
 
         db.commit()
