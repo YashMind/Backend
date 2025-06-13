@@ -56,6 +56,7 @@ class Settings:
     PAYPAL_MODE = os.getenv("PAYPAL_MODE")
     PAYPAL_RETURN_URL = os.getenv("PAYPAL_RETURN_URL")
     PAYPAL_CANCEL_URL = os.getenv("PAYPAL_CANCEL_URL")
+    PAYPAL_WEBHOOK_ID = os.getenv("PAYPAL_WEBHOOK_ID")
 
 
 settings = Settings()

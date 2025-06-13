@@ -16,6 +16,7 @@ import tiktoken
 from models.adminModel.toolsModal import ToolsUsed
 from models.subscriptions.token_usage import TokenUsage
 from models.subscriptions.userCredits import UserCredits
+from routes.chat.tuning import seed_instruction_prompts_template
 from routes.subscriptions.token_usage import (
     generate_token_usage,
     update_token_usage_on_consumption,
@@ -178,7 +179,15 @@ async def create_chatbot(request: Request, db: Session = Depends(get_db)):
         token_usage, message = generate_token_usage(
             bot_id=new_chatbot.id, user_id=new_chatbot.user_id, db=db
         )
+
         if not token_usage:
+            raise HTTPException(status_code=404, detail=message)
+
+        instruction_prompts, message = seed_instruction_prompts_template(
+            user_id=user_id, bot_id=new_chatbot.id, db=db
+        )
+
+        if not instruction_prompts:
             raise HTTPException(status_code=404, detail=message)
 
         db.commit()
@@ -535,7 +544,7 @@ async def chat_message(
         if not response_content:
             print("No response found from FAQ")
             # Hybrid retrieval
-            context_texts, scores = hybrid_retrieval(user_msg, bot_id)
+            context_texts, scores = hybrid_retrieval(user_msg, bot_id, db=db)
 
             instruction_prompts = (
                 db.query(DBInstructionPrompt)
@@ -1126,14 +1135,70 @@ async def get_bot_doc_links(
         user_id = int(payload.get("user_id"))
 
         query = db.query(ChatBotsDocLinks).filter(
-            ChatBotsDocLinks.user_id == user_id, ChatBotsDocLinks.bot_id == bot_id
+            ChatBotsDocLinks.user_id == user_id,
+            ChatBotsDocLinks.bot_id == bot_id,
+            ChatBotsDocLinks.train_from != "full website",
         )
 
+        # Query to get all website links (train_from = "full website")
+        website_links = (
+            db.query(ChatBotsDocLinks)
+            .filter(
+                ChatBotsDocLinks.user_id == user_id,
+                ChatBotsDocLinks.bot_id == bot_id,
+                ChatBotsDocLinks.train_from == "full website",
+            )
+            .all()
+        )
+
+        # Group website links by parent_link_id
+        website_groups = {}
+        for link in website_links:
+            parent_id = link.parent_link_id  # Use id if parent_link_id is None
+            if parent_id not in website_groups:
+                website_groups[parent_id] = []
+            website_groups[parent_id].append(link)
+
+        # Process each website group
+        websites = []
+        for parent_id, links in website_groups.items():
+            # Find the main/parent link (where id == parent_link_id or where parent_link_id is None)
+            parent_link = next(
+                (link for link in links if link.id == parent_id), links[0]
+            )
+
+            # Calculate stats for this website group
+            group_total_target_links = len(links)
+            group_total_document_links = sum(1 for link in links if link.document_link)
+
+            group_pending_count = sum(
+                1
+                for link in links
+                if link.status == "Pending" or link.status == "training"
+            )
+            group_failed_count = sum(1 for link in links if link.status == "Failed")
+            group_indexed_count = sum(1 for link in links if link.status == "Indexed")
+
+            group_total_chars = sum(link.chars or 0 for link in links)
+
+            websites.append(
+                {
+                    "source": parent_link.target_link,  # The main website URL
+                    "link": links,
+                    "total_target_links": group_total_target_links,
+                    "total_document_links": group_total_document_links,
+                    "pending_count": group_pending_count,
+                    "failed_count": group_failed_count,
+                    "indexed_count": group_indexed_count,
+                    "total_chars": group_total_chars,
+                }
+            )
         total_target_links = (
             db.query(ChatBotsDocLinks)
             .filter(
                 ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
+                ChatBotsDocLinks.train_from != "full website",
                 and_(
                     ChatBotsDocLinks.target_link.isnot(None),
                     ChatBotsDocLinks.target_link != "",
@@ -1160,6 +1225,7 @@ async def get_bot_doc_links(
             .filter(
                 ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
+                ChatBotsDocLinks.train_from != "full website",
                 and_(
                     ChatBotsDocLinks.document_link.isnot(None),
                     ChatBotsDocLinks.document_link != "",
@@ -1170,7 +1236,12 @@ async def get_bot_doc_links(
 
         total_chars = (
             db.query(func.sum(ChatBotsDocLinks.chars))
-            .filter_by(user_id=user_id, bot_id=bot_id)
+            .filter(
+                ChatBotsDocLinks.user_id == user_id,
+                ChatBotsDocLinks.bot_id == bot_id,
+                ChatBotsDocLinks.train_from
+                != "full website",  # Exclude full website documents
+            )
             .scalar()
             or 0
         )
@@ -1180,13 +1251,16 @@ async def get_bot_doc_links(
             .scalar()
             or 0
         )
-
         pending_count = (
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
                 ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
-                ChatBotsDocLinks.status == "Pending",
+                or_(
+                    ChatBotsDocLinks.status == "Pending",
+                    ChatBotsDocLinks.status == "training",
+                ),
+                ChatBotsDocLinks.train_from != "full website",
             )
             .scalar()
         )
@@ -1206,6 +1280,7 @@ async def get_bot_doc_links(
                 ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.status == "Failed",
+                ChatBotsDocLinks.train_from != "full website",
             )
             .scalar()
         )
@@ -1223,6 +1298,7 @@ async def get_bot_doc_links(
                 ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.status == "Indexed",
+                ChatBotsDocLinks.train_from != "full website",
             )
             .scalar()
         )
@@ -1258,14 +1334,20 @@ async def get_bot_doc_links(
             "current_page": page,
             "total_pages": total_pages,
             "total_count": total_count,
-            "data": results,
+            "data": [
+                {
+                    "source": "links",
+                    "link": results,
+                    "total_target_links": total_target_links,
+                    "total_document_links": total_document_links,
+                    "pending_count": pending_count,
+                    "failed_count": failed_count,
+                    "indexed_count": indexed_count,
+                    "total_chars": total_chars,
+                },
+                *websites,
+            ],
             "Indexed": 2,
-            "total_target_links": total_target_links,
-            "total_document_links": total_document_links,
-            "pending_count": pending_count,
-            "failed_count": failed_count,
-            "indexed_count": indexed_count,
-            "total_chars": total_chars,
             "user_target_links": user_target_links,
             "user_pending_count": user_pending_count,
             "user_failed_count": user_failed_count,

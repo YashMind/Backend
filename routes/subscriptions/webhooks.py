@@ -1,6 +1,6 @@
 import httpx
 from models.subscriptions.transactionModel import Transaction
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from routes.subscriptions.user_credits import (
     create_user_credit_entry,
     update_user_credit_entry_topup,
 )
+from utils.utils import get_paypal_access_token
 
 router = APIRouter()
 
@@ -58,6 +59,50 @@ async def verify_cashfree_webhook(request: Request):
 
     # Parse and return JSON if valid
     return json.loads(raw_body.decode("utf-8"))
+
+
+async def verify_paypal_webhook(
+    transmission_id: str,
+    transmission_time: str,
+    cert_url: str,
+    auth_algo: str,
+    transmission_sig: str,
+    webhook_id: str,
+    webhook_event: dict,
+    sandbox: bool = True,
+):
+    url = (
+        "https://api.sandbox.paypal.com/v1/notifications/verify-webhook-signature"
+        if sandbox
+        else "https://api.paypal.com/v1/notifications/verify-webhook-signature"
+    )
+    access_token = await get_paypal_access_token(
+        settings.PAYPAL_CLIENT_ID, settings.PAYPAL_CLIENT_SECRET, sandbox=True
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {access_token}",
+    }
+
+    payload = {
+        "transmission_id": transmission_id,
+        "transmission_time": transmission_time,
+        "cert_url": cert_url,
+        "auth_algo": auth_algo,
+        "transmission_sig": transmission_sig,
+        "webhook_id": settings.PAYPAL_WEBHOOK_ID,
+        "webhook_event": webhook_event,
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, json=payload)
+
+    if response.status_code == 200:
+        return response.json().get("verification_status") == "SUCCESS"
+    else:
+        raise Exception(
+            f"PayPal verification failed: {response.status_code} - {response.text}"
+        )
 
 
 async def process_cashfree_payload(payload: dict, db: Session):
@@ -327,15 +372,66 @@ async def cashfree_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# PayPal Webhook Handler
 @router.post("/paypal")
 async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
-    # Verify PayPal webhook (implementation depends on PayPal SDK)
     try:
-        # This is a placeholder - implement actual verification
-        payload = await request.json()
-        print(payload)
+        # Step 1: Extract and validate headers
+        headers = request.headers
+        transmission_id = headers.get("paypal-transmission-id")
+        transmission_time = headers.get("paypal-transmission-time")
+        transmission_sig = headers.get("paypal-transmission-sig")
+        cert_url = headers.get("paypal-cert-url")
+        auth_algo = headers.get("paypal-auth-algo")
 
-        return await process_paypal_payload(payload, db)
+        required_headers = [
+            transmission_id,
+            transmission_time,
+            transmission_sig,
+            cert_url,
+            auth_algo,
+        ]
+        if not all(required_headers):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing one or more required PayPal headers.",
+            )
+
+        # Step 2: Read and parse the body
+        try:
+            body_bytes = await request.body()
+            webhook_event = json.loads(body_bytes)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON payload in request body.",
+            )
+
+        # Step 4: Verify webhook
+        verified = await verify_paypal_webhook(
+            transmission_id=transmission_id,
+            transmission_time=transmission_time,
+            cert_url=cert_url,
+            auth_algo=auth_algo,
+            transmission_sig=transmission_sig,
+            webhook_event=webhook_event,
+            sandbox=True,
+        )
+
+        if not verified:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Webhook signature verification failed.",
+            )
+
+        # Step 5: Process the payload
+        return await process_paypal_payload(webhook_event, db)
+
+    except HTTPException as http_ex:
+        raise http_ex
+
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # Optional: log the error here
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected server error: {str(e)}",
+        )

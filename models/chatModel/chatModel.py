@@ -1,8 +1,18 @@
 import uuid
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text, Enum, TIMESTAMP
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Boolean,
+    ForeignKey,
+    Text,
+    Enum,
+    TIMESTAMP,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from config import Base
+
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
@@ -16,6 +26,7 @@ class ChatSession(Base):
     archived = Column(Boolean, default=False)
     messages = relationship("ChatMessage", back_populates="chat_session")
 
+
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
     id = Column(Integer, primary_key=True, index=True)
@@ -27,6 +38,7 @@ class ChatMessage(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     chat_session = relationship("ChatSession", back_populates="messages")
 
+
 class ChatBots(Base):
     __tablename__ = "chat_bots"
     id = Column(Integer, primary_key=True, index=True)
@@ -37,7 +49,7 @@ class ChatBots(Base):
     document_link = Column(String(255), nullable=True)
     public = Column(Boolean, default=False)
     text_content = Column(Text, nullable=True)
-    creativity = Column(Integer , default=0, nullable=True)
+    creativity = Column(Integer, default=0, nullable=True)
     token = Column(String(255), nullable=True)
     domains = Column(Text, nullable=True)
     limit_to = Column(Integer, nullable=True)
@@ -55,9 +67,10 @@ class ChatTotalToken(Base):
     user_message_tokens = Column(Integer, nullable=False)
     response_tokens = Column(Integer, nullable=False)
     openai_tokens = Column(Integer, nullable=False)
-    plan=Column(Enum("basic", "pro","ent", name="plan_enum"), nullable=True)
+    plan = Column(Enum("basic", "pro", "ent", name="plan_enum"), nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
+
 
 class ChatBotsFaqs(Base):
     __tablename__ = "chat_bots_faqs"
@@ -69,11 +82,17 @@ class ChatBotsFaqs(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 
+
 class ChatBotsDocLinks(Base):
     __tablename__ = "chat_bots_doc_links"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     bot_id = Column(Integer, nullable=False)
+    parent_link_id = Column(
+        Integer, ForeignKey("chat_bots_doc_links.id"), nullable=True
+    )  # Will save the parent link under which each link is created in recursive url loader of Full website training
+    # for other types of training parent link be null
+    # for full website parent link it will be same as the link id
     chatbot_name = Column(String(255), nullable=False)
     train_from = Column(String(255), nullable=True)
     target_link = Column(String(255), nullable=True)
@@ -81,10 +100,11 @@ class ChatBotsDocLinks(Base):
     public = Column(Boolean, default=False)
     text_content = Column(Text, nullable=True)
     status = Column(String(255), nullable=False)
-    chars =  Column(Integer, nullable=True)
+    chars = Column(Integer, nullable=True)
     content_hash = Column(String(64), index=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
+
 
 class ChatBotsDocChunks(Base):
     __tablename__ = "chatbot_doc_chunks"
@@ -94,13 +114,16 @@ class ChatBotsDocChunks(Base):
     bot_id = Column(Integer)
     source = Column(String(255))
     content = Column(Text)  # chunked text
-    chunk_index = Column(String(36), default=lambda: str(uuid.uuid4()), unique=True, nullable=False)
+    chunk_index = Column(
+        String(36), default=lambda: str(uuid.uuid4()), unique=True, nullable=False
+    )
     metaData = Column(Text)  # JSON string, optionally
-    content_hash= Column(String(64))
+    content_hash = Column(String(64))
     char_count = Column(Integer)
-    link_id = Column(Integer, ForeignKey('chat_bots_doc_links.id'))
+    link_id = Column(Integer, ForeignKey("chat_bots_doc_links.id"))
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
+
 
 class ChatBotLeadsModel(Base):
     __tablename__ = "chatbot_leads"
@@ -116,4 +139,3 @@ class ChatBotLeadsModel(Base):
     type = Column(String(255), nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
-

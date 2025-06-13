@@ -1,3 +1,4 @@
+from base64 import b64encode
 from types import SimpleNamespace
 from fastapi import HTTPException, Depends, Request, status
 from fastapi.responses import JSONResponse
@@ -73,7 +74,7 @@ def get_response_from_chatbot(data, platform, db: Session):
         if not response_content:
             print("No response found from FAQ")
             # Hybrid retrieval
-            context_texts, scores = hybrid_retrieval(user_msg, bot_id)
+            context_texts, scores = hybrid_retrieval(user_msg, bot_id, db=db)
 
             instruction_prompts = (
                 db.query(DBInstructionPrompt)
@@ -292,3 +293,32 @@ async def get_country_from_ip(ip: str):
     except Exception as e:
         print("IP API error", e)
         return "Unknown"
+
+
+async def get_paypal_access_token(
+    client_id: str, client_secret: str, sandbox: bool = True
+) -> str:
+    url = (
+        "https://api.sandbox.paypal.com/v1/oauth2/token"
+        if sandbox
+        else "https://api.paypal.com/v1/oauth2/token"
+    )
+
+    auth = b64encode(f"{client_id}:{client_secret}".encode()).decode()
+
+    headers = {
+        "Authorization": f"Basic {auth}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+    data = {"grant_type": "client_credentials"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, data=data)
+
+    if response.status_code == 200:
+        return response.json().get("access_token")
+    else:
+        raise Exception(
+            f"Failed to get PayPal access token: {response.status_code} - {response.text}"
+        )

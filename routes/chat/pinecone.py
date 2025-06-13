@@ -2,6 +2,7 @@ from hashlib import sha256
 import os
 import re
 import time
+from fastapi import Depends
 import openai
 import langchain
 from typing import List, Tuple, Optional
@@ -21,7 +22,7 @@ from langchain.document_loaders import WebBaseLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from models.adminModel.toolsModal import ToolsUsed
 from models.authModel.authModel import AuthUser
-from models.chatModel.chatModel import ChatBotsDocChunks, ChatBotsFaqs
+from models.chatModel.chatModel import ChatBotsDocChunks, ChatBotsDocLinks, ChatBotsFaqs
 from pathlib import Path
 from difflib import SequenceMatcher
 from sqlalchemy import func
@@ -45,7 +46,7 @@ import uuid
 import pinecone
 from rank_bm25 import BM25Okapi
 import tiktoken
-from config import SessionLocal
+from config import SessionLocal, get_db
 
 
 pc = pinecone.Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -65,7 +66,10 @@ embedding_model = OpenAIEmbeddings(
 
 
 def hybrid_retrieval(
-    query: str, bot_id: int, top_k: int = 5
+    db: Session,
+    query: str,
+    bot_id: int,
+    top_k: int = 5,
 ) -> Tuple[List[str], List[float]]:
     try:
         # Vector Search
@@ -112,6 +116,11 @@ def hybrid_retrieval(
         for match in vector_results.matches:
             if hasattr(match, "metadata") and match.metadata.get("content"):
                 metadata = match.metadata or {}
+                db_chunk = (
+                    db.query(ChatBotsDocChunks).filter_by(chunk_index=match.id).first()
+                )
+                if not db_chunk:
+                    continue
                 text_content = (
                     f"source: '{metadata.get('source', '')}', "
                     f"title: '{metadata.get('title', '')}', "
@@ -476,7 +485,11 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 continue
 
             # Check DB for existing hash
-            if db.query(ChatBotsDocChunks).filter_by(content_hash=content_hash).first():
+            if (
+                db.query(ChatBotsDocChunks)
+                .filter_by(content_hash=content_hash, bot_id=data.bot_id)
+                .first()
+            ):
                 print(f"[DEBUG] Skipping existing DB hash: {content_hash}")
                 continue
 
@@ -484,7 +497,7 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 "bot_id": str(data.bot_id),
                 "user_id": str(data.user_id),
                 "source": data.target_link or data.document_link,
-                "content": text,
+                # "content": text,
                 "chunk_index": i,
                 **doc.metadata,
             }
@@ -534,6 +547,58 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 )
 
             print("Creating DB CHUNK")
+            doc_link_id = data.id
+            print(
+                f"[DEBUG] Starting chunk save. doc_link_id initially set to: {doc_link_id}"
+            )
+
+            if data.train_from == "Full website":
+                print(
+                    "[DEBUG] Training from full website. Looking for existing child doc link..."
+                )
+
+                doc_link = (
+                    db.query(ChatBotsDocLinks)
+                    .filter(
+                        ChatBotsDocLinks.bot_id == data.bot_id,
+                        ChatBotsDocLinks.parent_link_id == data.id,
+                        ChatBotsDocLinks.target_link == metadata["source"],
+                    )
+                    .first()
+                )
+
+                if doc_link:
+                    print(f"[DEBUG] Existing doc link found: ID={doc_link.id}")
+                else:
+                    print("[DEBUG] No existing doc link found. Creating new one...")
+                    doc_link = ChatBotsDocLinks(
+                        bot_id=data.bot_id,
+                        user_id=data.user_id,
+                        parent_link_id=data.id,
+                        target_link=metadata["source"],
+                        chatbot_name=data.chatbot_name,
+                        train_from=data.train_from,
+                        document_link=data.document_link,
+                        public=data.public,
+                        status="trained",
+                        chars=len(text),
+                    )
+                    db.add(doc_link)
+                    db.flush()  # Get generated ID
+                    print(f"[DEBUG] New doc link created with ID={doc_link.id}")
+
+                doc_link_id = doc_link.id
+                print(f"[DEBUG] Final doc_link_id set to: {doc_link_id}")
+
+            # Saving chunk
+            print(
+                f"[DEBUG] Preparing to save chunk: vector_id={vector_id}, chars={len(text)}"
+            )
+            print(
+                f"[DEBUG] Chunk metadata (trimmed): {str(metadata)[:200]}..."
+            )  # Truncated print
+            print(f"[DEBUG] Chunk content hash: {content_hash}")
+
             db_chunk = ChatBotsDocChunks(
                 bot_id=data.bot_id,
                 user_id=data.user_id,
@@ -542,12 +607,16 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 metaData=str(metadata),
                 chunk_index=vector_id,
                 char_count=len(text),
-                link_id=data.id,
+                link_id=doc_link_id,
                 content_hash=content_hash,
             )
-            print("SAVING DB CHUNK")
+
+            print("[DEBUG] SAVING DB CHUNK")
             db.add(db_chunk)
             stats["chunks_processed"] += 1
+            print(
+                f"[DEBUG] Chunks processed count updated to: {stats['chunks_processed']}"
+            )
 
         except Exception as e:
             print(f"[ERROR] Error storing chunk {i}: {e}")
