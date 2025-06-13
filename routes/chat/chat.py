@@ -14,7 +14,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 import tiktoken
 from models.adminModel.toolsModal import ToolsUsed
-from models.subscriptions.token_usage import TokenUsage
+from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
 from models.subscriptions.userCredits import UserCredits
 from routes.chat.tuning import seed_instruction_prompts_template
 from routes.subscriptions.token_usage import (
@@ -544,7 +544,9 @@ async def chat_message(
         if not response_content:
             print("No response found from FAQ")
             # Hybrid retrieval
-            context_texts, scores = hybrid_retrieval(user_msg, bot_id, db=db)
+            context_texts, scores = hybrid_retrieval(
+                query=user_msg, bot_id=bot_id, db=db
+            )
 
             instruction_prompts = (
                 db.query(DBInstructionPrompt)
@@ -1463,10 +1465,31 @@ async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_d
         db.query(ChatBotsFaqs).filter(ChatBotsFaqs.bot_id == bot_id).delete(
             synchronize_session=False
         )
-        db.query(ChatBotsDocChunks).filter(ChatBotsDocChunks.bot_id == bot_id).delete(
+
+        docs_to_delete = (
+            db.query(ChatBotsDocLinks)
+            .filter(
+                ChatBotsDocLinks.bot_id == bot_id,
+            )
+            .all()
+        )
+
+        if not docs_to_delete:
+            print({"message": "No documents found to delete"})
+
+        # Get the source links for Pinecone deletion
+        doc_link_ids = [doc.id for doc in docs_to_delete]
+
+        # Delete from Pinecone first
+        delete_documents_from_pinecone(bot_id, doc_link_ids, db)
+
+        db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.bot_id == bot_id).delete(
             synchronize_session=False
         )
-        db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.bot_id == bot_id).delete(
+        db.query(TokenUsage).filter(TokenUsage.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
+        db.query(TokenUsageHistory).filter(TokenUsageHistory.bot_id == bot_id).delete(
             synchronize_session=False
         )
         db.query(DBInstructionPrompt).filter(

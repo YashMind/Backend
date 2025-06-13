@@ -74,7 +74,9 @@ def get_response_from_chatbot(data, platform, db: Session):
         if not response_content:
             print("No response found from FAQ")
             # Hybrid retrieval
-            context_texts, scores = hybrid_retrieval(user_msg, bot_id, db=db)
+            context_texts, scores = hybrid_retrieval(
+                query=user_msg, bot_id=bot_id, db=db
+            )
 
             instruction_prompts = (
                 db.query(DBInstructionPrompt)
