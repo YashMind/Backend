@@ -232,7 +232,7 @@ def generate_response(
     - If the user query is not an exact match with the available context, identify the main subject or keyword of the query (e.g., for "courses related to fitness," the main subject is "fitness"). Then, generate a list of the top 15 related terms to that keyword (e.g., health, exercise, diet, sleep, hygiene, etc.). Use this expanded list of related terms to find relevant information within the context and construct a meaningful and accurate response to the user query.
     - if user query is a collective noun (e.g., “What are the best books?”), you must provide a list of relevant items available in context, but always include a brief description or context for each item. If the query is singular (e.g., “What is the best book?”), provide a single , relevant item with a brief description. If no relevant items are found, respond with a message indicating that no relevant information was found.
     - For queries involving pricing, availability, curriculum, steps, or any data-driven topics, add these information only if an exact or closely related match is available in the context.
-    - For example, if a user asks about "vegan diet" and no direct match exists, but "vegan diet course" or "vegan nutrition" is available, use that to respond helpfully.
+    - For example, if a user asks about "vegan diet" and no direct match exists, but "vegan diet course" or "vegan nutrition" is available, use that to respond helpfully. and strictly follow the instructions provided for Data Is Missing or Unclear in point number 5.
     - If neither exact nor related content is available, clearly state that the information is not found, and offer alternative suggestions or guidance when possible.
     - Important Note: if context used always add a link to the source of the information at last of query with note "you can find more information related to this <a href="/** source here */">here</a>.
 
@@ -254,7 +254,7 @@ def generate_response(
     <p>Visit our <a href="/** use link from text_content */" title="Help Center">Help Center</a> for more support.</p>
     - Offer helpful suggestions by listing 2–3 alternative queries that the user could try, based on related topics found in context or text_content:
     <p>You might try:</p>
-    <pre>[/** suggest 2–3 related queries and pass each query here wrapped in " " */]</pre>
+    <pre>[/** suggest 2–3 related queries and pass each query here wrapped in " " */]</pre> # always make sure that the suggestions should be wrapped in array.
 
     6. NEVER fabricate or assume. Do not guess course prices, product stock, or features.
 
@@ -308,7 +308,7 @@ def generate_response(
 
     # Truncate context to fit token limit more efficiently
     encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
-    context_str = "\n".join(context)
+    context_str = "\n".join(f"{{{item}}}" for item in context)
 
     # print("Context String: ",context_str )
 
