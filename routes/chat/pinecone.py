@@ -97,7 +97,7 @@ def hybrid_retrieval(
             include_metadata=True,
         )
 
-        print("Vector results acc to query: ", vector_results)
+        # print("Vector results acc to query: ", vector_results.matches)
 
         # test_results = index.query(
         #     vector=query_vector,
@@ -112,20 +112,25 @@ def hybrid_retrieval(
         # Text Search Preparation
         all_texts = []
         valid_matches = []
-
+        # print("MATCHED VECTOR RESULTS: ", vector_results.matches)
         for match in vector_results.matches:
-            if hasattr(match, "metadata") and match.metadata.get("content"):
+            if hasattr(match, "metadata"):
                 metadata = match.metadata or {}
+
+                print("Match ID: ", match.id)
                 db_chunk = (
                     db.query(ChatBotsDocChunks).filter_by(chunk_index=match.id).first()
                 )
+
                 if not db_chunk:
+                    print("Chunk not found")
                     continue
+                print("Chunk found in DB with content: ", db_chunk.content)
                 text_content = (
                     f"source: '{metadata.get('source', '')}', "
                     f"title: '{metadata.get('title', '')}', "
                     f"description: '{metadata.get('description', '')}', "
-                    f"content: '{metadata.get('content', '')}'"
+                    f"content: '{db_chunk.content}'"
                 )
                 all_texts.append(text_content)
                 valid_matches.append(match)
@@ -185,6 +190,8 @@ def generate_response(
 ) -> Tuple[str, int]:
     # Convert context to list if it's a tuple
     context = list(context) if isinstance(context, tuple) else context
+
+    print("Context", context)
 
     if not use_openai:
         # Simple concatenation of best matches with improved formatting
@@ -503,6 +510,7 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
             }
 
             embedding = embedding_model.embed_query(text)
+            print("TEXT EMBEDDING: ", embedding)
 
             vector_id = str(uuid.uuid4())
 

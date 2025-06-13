@@ -567,7 +567,7 @@ async def chat_message(
 
             active_tool = db.query(ToolsUsed).filter_by(status=True).first()
 
-            if any(score > 0.6 for score in scores):
+            if any(score > 0.2 for score in scores):
                 print("using openai with context")
                 use_openai = True
                 generated_res = generate_response(
