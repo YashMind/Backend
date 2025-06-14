@@ -12,8 +12,10 @@ from fastapi import (
 )
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+import httpx
 import tiktoken
 from models.adminModel.toolsModal import ToolsUsed
+from models.chatModel.integrations import ZapierIntegration
 from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
 from models.subscriptions.userCredits import UserCredits
 from routes.chat.tuning import seed_instruction_prompts_template
@@ -1547,6 +1549,8 @@ async def create_chatbot_leads(
         else:
             user_id = None
 
+   
+
         new_chatbot_lead = ChatBotLeadsModel(
             user_id=user_id or None,
             bot_id=data.bot_id,
@@ -1560,7 +1564,33 @@ async def create_chatbot_leads(
         db.add(new_chatbot_lead)
         db.commit()
         db.refresh(new_chatbot_lead)
+
+        # Fetch zapier webhook details
+        zapier_webhook = (
+            db.query(ZapierIntegration)
+            .filter(ZapierIntegration.api_token == chatbot.token)
+            .first()
+        )
+
+        if zapier_webhook and zapier_webhook.subscribed:
+            webhook_data = [
+                {
+                    "name": new_chatbot_lead.name,
+                    "email": new_chatbot_lead.email,
+                    "contact": new_chatbot_lead.contact,
+                    "message": new_chatbot_lead.message,
+                    "type": new_chatbot_lead.type,
+                }
+            ]
+            try:
+                with httpx.Client(timeout=10.0) as client:
+                    response = client.post(zapier_webhook.webhook_url, json=webhook_data)
+                    print("Zapier webhook response:", response.status_code, response.text)
+            except httpx.HTTPError as e:
+                print("Error sending data to Zapier webhook:", str(e))
+
         return new_chatbot_lead
+
 
     except HTTPException as http_exc:
         raise http_exc

@@ -467,87 +467,81 @@ def update_token_usage_on_consumption(
     bot_id: int, consumed_token, consumed_token_type: str, db: Session
 ):
     try:
+        print(f"Updating token usage for bot_id: {bot_id}, token_type: {consumed_token_type}")
+        print(f"Consumed Token: {consumed_token.__dict__ if hasattr(consumed_token, '__dict__') else consumed_token}")
+
         # Retrieve the bot's token usage data from the database
         bot_token_usage = db.query(TokenUsage).filter_by(bot_id=bot_id).first()
+        if not bot_token_usage:
+            print(f"No TokenUsage found for bot_id: {bot_id}")
+            return False, "Bot token usage not found"
+        print(f"TokenUsage found: {bot_token_usage.__dict__}")
 
-        subordinate_bots = (
-            db.query(TokenUsage).filter_by(user_id=bot_token_usage.user_id).all()
-        )
+        # Retrieve subordinate bots' token usage data
+        subordinate_bots = db.query(TokenUsage).filter_by(user_id=bot_token_usage.user_id).all()
+        print(f"Found {len(subordinate_bots)} subordinate bots for user_id: {bot_token_usage.user_id}")
 
-        credit = (
-            db.query(UserCredits).filter_by(id=bot_token_usage.user_credit_id).first()
-        )
+        # Retrieve user's credit info
+        credit = db.query(UserCredits).filter_by(id=bot_token_usage.user_credit_id).first()
+        if not credit:
+            print(f"No UserCredits found for credit_id: {bot_token_usage.user_credit_id}")
+            return False, "User credit info not found"
+        print(f"UserCredits found: {credit.__dict__}")
 
         if consumed_token_type == "direct_bot":
-            # Update the bot's token usage data
+            print("Updating for direct_bot")
             bot_token_usage.user_request_token += consumed_token.request_token
             bot_token_usage.user_response_token += consumed_token.response_token
-            bot_token_usage.open_ai_request_token += (
-                consumed_token.open_ai_request_token
-            )
-            bot_token_usage.open_ai_response_token += (
-                consumed_token.open_ai_response_token
-            )
-
-        if consumed_token_type == "whatsapp_bot":
-            # Update the bot's token usage data
+        elif consumed_token_type == "whatsapp_bot":
+            print("Updating for whatsapp_bot")
             bot_token_usage.whatsapp_request_tokens += consumed_token.request_token
             bot_token_usage.whatsapp_response_tokens += consumed_token.response_token
-            bot_token_usage.open_ai_request_token += (
-                consumed_token.open_ai_request_token
-            )
-            bot_token_usage.open_ai_response_token += (
-                consumed_token.open_ai_response_token
-            )
-
-        if consumed_token_type == "slack_bot":
-            # Update the bot's token usage data
+        elif consumed_token_type == "slack_bot":
+            print("Updating for slack_bot")
             bot_token_usage.slack_request_tokens += consumed_token.request_token
             bot_token_usage.slack_response_tokens += consumed_token.response_token
-            bot_token_usage.open_ai_request_token += (
-                consumed_token.open_ai_request_token
-            )
-            bot_token_usage.open_ai_response_token += (
-                consumed_token.open_ai_response_token
-            )
-
-        if consumed_token_type == "zapier_bot":
-            # Update the bot's token usage data
+        elif consumed_token_type == "zapier_bot":
+            print("Updating for zapier_bot")
             bot_token_usage.zapier_request_tokens += consumed_token.request_token
             bot_token_usage.zapier_response_tokens += consumed_token.response_token
-            bot_token_usage.open_ai_request_token += (
-                consumed_token.open_ai_request_token
-            )
-            bot_token_usage.open_ai_response_token += (
-                consumed_token.open_ai_response_token
-            )
+        else:
+            print(f"Unknown consumed_token_type: {consumed_token_type}")
+            return False, "Invalid token type"
+
+        # Common update for all bot types
+        bot_token_usage.open_ai_request_token += consumed_token.open_ai_request_token
+        bot_token_usage.open_ai_response_token += consumed_token.open_ai_response_token
+
+        print("Updated bot_token_usage tokens")
 
         # update all subordinate bots combined token usage data
         consumption_stats = (
-            consumed_token.request_token
-            + consumed_token.response_token
-            # + consumed_token.open_ai_request_token * 0.2
-            # + consumed_token.open_ai_response_token * 0.5
+            consumed_token.request_token + consumed_token.response_token
         )
+        print(f"Consumption stats to add: {consumption_stats}")
+
         for subordinate_bot in subordinate_bots:
+            print(f"Before update - Bot ID {subordinate_bot.bot_id}: combined_token_consumption={subordinate_bot.combined_token_consumption}")
             subordinate_bot.combined_token_consumption += consumption_stats
+            print(f"After update - Bot ID {subordinate_bot.bot_id}: combined_token_consumption={subordinate_bot.combined_token_consumption}")
             db.add(subordinate_bot)
             db.flush()
 
         total_token_consumption = bot_token_usage.combined_token_consumption
-        print("total_token_consumption", total_token_consumption)
+        print(f"Total token consumption: {total_token_consumption}")
 
         db.query(AuthUser).filter(AuthUser.id == bot_token_usage.user_id).update(
             {AuthUser.tokenUsed: total_token_consumption}
         )
+        print(f"Updated AuthUser.tokenUsed for user_id={bot_token_usage.user_id}")
 
         credits_consumed = (total_token_consumption // credit.token_per_unit) + (
             1 if total_token_consumption % credit.token_per_unit > 0 else 0
         )
-        print("credits_consumed", credits_consumed)
-
         balance_credits = credit.credits_purchased - credits_consumed
-        print("balance_credits", balance_credits)
+
+        print(f"Credits consumed: {credits_consumed}")
+        print(f"Balance credits: {balance_credits}")
 
         credit.credits_consumed = credits_consumed
         credit.credit_balance = balance_credits
@@ -555,6 +549,7 @@ def update_token_usage_on_consumption(
         db.add(credit)
 
         db.commit()
+        print("Database commit successful")
         return True, "All Consumption data updated successfully"
 
     except Exception as e:

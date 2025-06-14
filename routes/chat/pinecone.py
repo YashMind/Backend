@@ -343,8 +343,8 @@ def generate_response(
 
 
     # Final check for empty context
-    if not context_str.strip():
-        return "I don't have enough information to answer that question."
+    # if not context_str.strip():
+    #     return "I don't have enough information to answer that question."
     
     # Debug print formatted prompt
     print(f"Final Prompt: {prompt}")

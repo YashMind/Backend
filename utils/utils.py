@@ -71,6 +71,7 @@ def get_response_from_chatbot(data, platform, db: Session):
 
         response_content = response_from_faqs.answer if response_from_faqs else None
 
+
         if not response_content:
             print("No response found from FAQ")
             # Hybrid retrieval
@@ -136,7 +137,8 @@ def get_response_from_chatbot(data, platform, db: Session):
                 request_tokens = generated_res[3]
                 print("ANSWER", answer, openai_request_tokens)
 
-            response_content = answer
+            response_content = answer if answer else response_content
+
 
             user_message = ChatMessage(
                 bot_id=bot_id, chat_id=chat.id, sender="user", message=user_msg
@@ -167,7 +169,7 @@ def get_response_from_chatbot(data, platform, db: Session):
                 bot_id=bot_id,
                 db=db,
             )
-            return response_content
+        return response_content
 
     except HTTPException as http_exc:
         raise http_exc

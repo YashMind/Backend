@@ -16,6 +16,7 @@ from config import get_db
 from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBots
 from models.chatModel.integrations import ZapierIntegration
+from routes.chat.pinecone import get_response_from_faqs
 from schemas.authSchema.authSchema import User
 from schemas.chatSchema.integrationsSchema import ZapierMessageRequest
 from utils.utils import get_current_user, get_response_from_chatbot
@@ -54,16 +55,20 @@ async def create_zapier_token(
         )  # 1. Create API Token for Zapier
 
 
-@router.post("/create-integration")
+@router.post("/me")
 async def create_zapier_integration(
     api_token: str = Query(...),
     db: Session = Depends(get_db),
 ):
     try:
         print("API token : ", api_token)
+
+        integration= db.query(ZapierIntegration).filter(ZapierIntegration.api_token == api_token).first()
+        
         # Verify user owns the bot
         bot = db.query(ChatBots).filter(ChatBots.token == api_token).first()
         if not bot:
+            print("Bot not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Bot not found or you don't have permission",
@@ -72,10 +77,19 @@ async def create_zapier_integration(
         user = db.query(AuthUser).filter(AuthUser.id == bot.user_id).first()
 
         if not user:
+            print("User not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found",
             )
+
+        if integration:
+            return {
+            "api_token": api_token,
+            "bot_id": bot.id,
+            "bot_name":bot.chatbot_name,
+            "created_at": integration.created_at,
+        }
 
         # Store integration details
         integration = ZapierIntegration(
@@ -92,14 +106,134 @@ async def create_zapier_integration(
         return {
             "api_token": api_token,
             "bot_id": bot.id,
+            "bot_name":bot.chatbot_name,
             "created_at": integration.created_at,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# 2. Verify API Token (for use in Zapier setup)
-@router.get("/verify")
+@router.post("/subscribe")
+async def subscribe_zapier_trigger_hook(
+    request: Request,
+    api_token: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    try:
+
+        print("API token : ", api_token)
+        if not api_token:
+            print("API token not found")
+            return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API token not found, Please connect to a account first")
+        
+        print("request: ",request)
+
+        integration= db.query(ZapierIntegration).filter(ZapierIntegration.api_token == api_token).first()
+
+        if not integration:
+            print("Connection not found")
+            return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found, Please connect to a account first")
+        
+        # Verify user owns the bot
+        bot = db.query(ChatBots).filter(ChatBots.token == api_token).first()
+        if not bot:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Bot not found or you don't have permission",
+            )
+
+        user = db.query(AuthUser).filter(AuthUser.id == bot.user_id).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        
+        integration.subscribed= True
+        request_body = await request.body()
+        integration.webhook_url= request_body.hookUrl
+
+        db.commit()
+
+        return {
+            "api_token": api_token,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/unsubscribe")
+async def subscribe_zapier_trigger_hook(
+    api_token: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    try:
+
+        print("API token : ", api_token)
+        if not api_token:
+            print("API token not found")
+            return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API token not found, Please connect to a account first")
+        
+
+        integration= db.query(ZapierIntegration).filter(ZapierIntegration.api_token == api_token).first()
+
+        if not integration:
+            print("Connection not found")
+            return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found, Please connect to a account first")
+        
+        # Verify user owns the bot
+        bot = db.query(ChatBots).filter(ChatBots.token == api_token).first()
+        if not bot:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Bot not found or you don't have permission",
+            )
+
+        user = db.query(AuthUser).filter(AuthUser.id == bot.user_id).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        
+        integration.subscribed= False
+        integration.webhook_url= None
+
+        db.commit()
+
+        return {
+            "api_token": api_token,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@router.get("/perform-list")
+async def subscribe_zapier_trigger_hook(
+    request: Request,
+    api_token: str = Query(...),
+):
+    try:
+
+        print("request", request)
+        print("API token : ", api_token)
+        if not api_token:
+            print("API token not found")
+            return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API token not found, Please connect to a account first")
+
+        return[ {
+            "name": "Yashraa",
+            "email": "admin@yashraa.ai",
+            "contact": "9855555555",
+            "message": "This is sample message for yashraa bot.",
+            "type": "Lead",
+        }]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 async def verify_zapier_token(
     api_token: str = Header(..., alias="X-API-Token"),
     db: Session = Depends(get_db),
@@ -158,3 +292,4 @@ async def handle_zapier_message(
     )
 
     return {"response": response}
+

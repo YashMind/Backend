@@ -1,5 +1,5 @@
 # models/installation.py
-from sqlalchemy import Column, String, DateTime, Integer, ForeignKey
+from sqlalchemy import Boolean, Column, String, DateTime, Integer, ForeignKey
 from config import Base
 from datetime import datetime
 
@@ -41,4 +41,6 @@ class ZapierIntegration(Base):
     bot_id = Column(Integer, ForeignKey("chat_bots.id"))
     api_token = Column(String(255), index=True)
     email = Column(String(255), nullable=True)
+    subscribed = Column(Boolean, default=False)
+    webhook_url = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
