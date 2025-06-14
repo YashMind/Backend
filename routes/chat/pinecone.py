@@ -3,6 +3,7 @@ import os
 import re
 import time
 from fastapi import Depends
+from langchain_google_genai import ChatGoogleGenerativeAI
 import openai
 import langchain
 from typing import List, Tuple, Optional
@@ -27,6 +28,7 @@ from pathlib import Path
 from difflib import SequenceMatcher
 from sqlalchemy import func
 from langchain.chat_models import ChatOpenAI
+from langchain_ollama import OllamaLLM
 from langchain.schema import HumanMessage, SystemMessage, Document
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
@@ -53,8 +55,14 @@ pc = pinecone.Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("yashraa-ai")  # Use your index name
 
 
-def get_llm(model_name, temperature=0.2):
-    return ChatOpenAI(model=model_name, temperature=temperature)
+def get_llm(tool,model_name, temperature=0.2):
+    if tool == "ChatGPT":
+        llm = ChatOpenAI(model=model_name, temperature=temperature)
+    if tool == "DeepSeek":
+        llm = OllamaLLM(model=model_name,temperature=temperature)
+    if tool == 'Gemini':
+        llm = ChatGoogleGenerativeAI(model=model_name)
+        return llm
 
 
 # # Initialize OpenAI Embeddings
