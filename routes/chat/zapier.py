@@ -151,8 +151,9 @@ async def subscribe_zapier_trigger_hook(
             )
         
         integration.subscribed= True
-        request_body = await request.body()
-        integration.webhook_url= request_body.hookUrl
+        request_body = await request.json()
+        hook_url = request_body.get("hookUrl")
+        integration.webhook_url= hook_url
 
         db.commit()
 
