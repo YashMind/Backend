@@ -31,6 +31,7 @@ def process_document_task(doc_id: int):
             doc_entry.parent_link_id = doc_entry.id
             print(f"[DEBUG] Set parent_link to self: {doc_entry.parent_link_id}")
 
+        print(f"[DEBUG] Tables in metadata: {Base.metadata.tables.keys()}")
         db.commit()
         print(f"[DEBUG] Committed training status and parent_link update")
 
@@ -45,6 +46,7 @@ def process_document_task(doc_id: int):
 
     except Exception as e:
         print(f"[ERROR] Exception during document processing: {e}")
+        db.rollback()  # ⬅️ Add this
         if doc_entry:
             doc_entry.status = "failed"
             db.commit()
