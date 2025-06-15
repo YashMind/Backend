@@ -1,7 +1,7 @@
 from celery import Celery
 from models.chatModel.chatModel import ChatBotsDocLinks
 from routes.chat.pinecone import process_and_store_docs
-from config import SessionLocal
+from config import Base, SessionLocal
 
 celery = Celery(__name__, broker="redis://localhost:6379/0")
 
