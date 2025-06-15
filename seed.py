@@ -79,10 +79,10 @@ def seed_ai_tools_used(db: Session):
         {"id": 1, "tool": "ChatGPT", "model": "gpt-3.5-turbo", "status": 0},
         {"id": 2, "tool": "ChatGPT", "model": "gpt-4", "status": 0},
         {"id": 3, "tool": "ChatGPT", "model": "gpt-4o", "status": 0},
-        {"id": 4, "tool": "Gemini", "model": "gemini-pro", "status": 0},
-        {"id": 5, "tool": "Gemini", "model": "gemini-1.5-pro", "status": 0},
+        {"id": 4, "tool": "Gemini", "model": "gemini-2.5-pro-preview-06-05", "status": 1},
+        {"id": 5, "tool": "Gemini", "model": "models/gemini-2.5-flash-preview-05-20", "status": 0},
         {"id": 6, "tool": "DeepSeek", "model": "deepseek-chat", "status": 0},
-        {"id": 7, "tool": "DeepSeek", "model": "deepseek-coder", "status": 0},
+        {"id": 7, "tool": "DeepSeek", "model": "deepseek-reasoner", "status": 0},
     ]
 
     db.query(ToolsUsed).delete()
@@ -186,7 +186,7 @@ def main():
     # seed_tools(db)
     # seed_volume_discounts(db)
     # seed_roles_and_permissions(db)
-    seed_payment_gateways(db)
+    # seed_payment_gateways(db)
     seed_ai_tools_used(db=db)
     db.commit()
     db.close()
