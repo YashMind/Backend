@@ -3,35 +3,24 @@ import os
 import re
 import time
 from fastapi import Depends
-from langchain_google_genai import ChatGoogleGenerativeAI
-import openai
-import langchain
 from typing import List, Tuple, Optional
 import numpy as np
 
 # from pinecone import Pinecone
-from langchain.document_loaders import PyPDFDirectoryLoader
+from langchain_core.language_models.llms import BaseLLM
 from langchain.document_loaders import RecursiveUrlLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import Pinecone
-from langchain.chains.question_answering import load_qa_chain
-from langchain import OpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 import regex
 from sqlalchemy.orm import Session
 from langchain.document_loaders import WebBaseLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from models.adminModel.toolsModal import ToolsUsed
-from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBotsDocChunks, ChatBotsDocLinks, ChatBotsFaqs
-from pathlib import Path
-from difflib import SequenceMatcher
 from sqlalchemy import func
 from langchain.chat_models import ChatOpenAI
-from langchain_ollama import OllamaLLM
-from langchain.schema import HumanMessage, SystemMessage, Document
+from langchain.schema import  Document
 from sqlalchemy.orm import Session
-from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from langchain.document_loaders import (
     WebBaseLoader,
@@ -43,37 +32,75 @@ from langchain.document_loaders import (
     UnstructuredPowerPointLoader,
     UnstructuredFileLoader,
 )
-import string
+
 import uuid
 import pinecone
+from pinecone import ServerlessSpec
 from rank_bm25 import BM25Okapi
 import tiktoken
 from config import SessionLocal, get_db
+from utils.DeepSeek import DeepSeekLLM
+from utils.embeddings import get_embeddings
 
 
 pc = pinecone.Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index = pc.Index("yashraa-ai")  # Use your index name
+
+index_name = "yashraa-ai"
+desired_dimension = 768
+metric = "cosine"
+spec = ServerlessSpec(cloud="aws", region="us-east-1")
+
+# Check if index exists
+existing_indexes = pc.list_indexes()
+existing_indexes = [i.get("name") for i in existing_indexes]
+print("EXISTING INEXES: ",existing_indexes)
+
+if index_name in existing_indexes:
+    description = pc.describe_index(index_name)
+    current_dimension = description.dimension
+
+    if current_dimension != desired_dimension:
+        print(f"⚠️ Index '{index_name}' has dimension {current_dimension}, expected {desired_dimension}. Deleting and recreating...")
+        pc.delete_index(index_name)
+        pc.create_index(name=index_name, dimension=desired_dimension, metric=metric,spec = spec)
+        print(f"✅ Index '{index_name}' recreated with dimension {desired_dimension}")
+    else:
+        print(f"✅ Index '{index_name}' already has correct dimension {desired_dimension}")
+else:
+    print(f"ℹ️ Index '{index_name}' does not exist. Creating it...")
+    pc.create_index(name=index_name, dimension=desired_dimension, metric=metric,spec =spec)
+    print(f"✅ Index '{index_name}' created with dimension {desired_dimension}")
+
+# Connect to the index
+index = pc.Index(index_name)
 
 
-def get_llm(tool,model_name, temperature=0.2):
+def get_llm(tool: str, model_name: str, temperature: float = 0.2) -> BaseLLM:
+    """Get the appropriate language model for each tool"""
     if tool == "ChatGPT":
-        llm = ChatOpenAI(model=model_name, temperature=temperature)
-    if tool == "DeepSeek":
-        llm = OllamaLLM(model=model_name,temperature=temperature)
-    if tool == 'Gemini':
-        llm = ChatGoogleGenerativeAI(model=model_name)
-        return llm
+        return ChatOpenAI(
+            model=model_name,
+            temperature=temperature,
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
+    elif tool == "DeepSeek":
+        return DeepSeekLLM(
+            model_name=model_name,
+            temperature=temperature
+        )
+    elif tool == 'Gemini':
+        return ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=temperature,
+        )
+    else:
+        raise ValueError(f"Unsupported tool: {tool}")
 
 
-# # Initialize OpenAI Embeddings
-embedding_model = OpenAIEmbeddings(
-    model="text-embedding-3-small",
-    dimensions=1024,
-    openai_api_key=os.getenv("OPENAI_API_KEY"),
-)
 
 
 def hybrid_retrieval(
+    tool,
     db: Session,
     query: str,
     bot_id: int,
@@ -81,6 +108,7 @@ def hybrid_retrieval(
 ) -> Tuple[List[str], List[float]]:
     try:
         # Vector Search
+        embedding_model = get_embeddings(tool=tool.tool)
         query_vector = embedding_model.embed_query(query)
 
         print(f"Query vector shape: {len(query_vector)}")
@@ -242,9 +270,9 @@ def generate_response(
     - If creativity is above 70, you may include light elaboration or explanation—but do not make assumptions or guesses.
     
     2. ALWAYS base your response on the information found in context, instruction_prompts, or text_content. 
-    - Always attempt to find content related to the user’s query, even if there is no exact match. If a partial or closely related match is found, respond with:
+    - Always attempt to find content related to the user s query, even if there is no exact match. If a partial or closely related match is found, respond with:
+    - If the user query is not an exact match with the available context, identify the main subject or keyword of the query (e.g., for "courses related to fitness," the main subject is "fitness"). Then, generate a list of the top 15 related terms that you can find in context to that keyword (e.g., health, exercise, diet, sleep, hygiene, etc.). Use this expanded list of related terms to find relevant information within the context and construct a meaningful and accurate response to the user query.
     “I found something related to your query: …” and then present the relevant content.
-    - If the user query is not an exact match with the available context, identify the main subject or keyword of the query (e.g., for "courses related to fitness," the main subject is "fitness"). Then, generate a list of the top 15 related terms to that keyword (e.g., health, exercise, diet, sleep, hygiene, etc.). Use this expanded list of related terms to find relevant information within the context and construct a meaningful and accurate response to the user query.
     - if user query is a collective noun (e.g., “What are the best books?”), you must provide a list of relevant items available in context, but always include a brief description or context for each item. If the query is singular (e.g., “What is the best book?”), provide a single , relevant item with a brief description. If no relevant items are found, respond with a message indicating that no relevant information was found.
     - For queries involving pricing, availability, curriculum, steps, or any data-driven topics, add these information only if an exact or closely related match is available in the context.
     - For example, if a user asks about "vegan diet" and no direct match exists, but "vegan diet course" or "vegan nutrition" is available, use that to respond helpfully. and strictly follow the instructions provided for Data Is Missing or Unclear in point number 5.
@@ -341,7 +369,7 @@ def generate_response(
         creativity=creativity,
         instruction_prompts=instruction_prompts,
     )
-    print("formatted prompt: ",prompt)
+    # print("formatted prompt: ",prompt)
         # tokens = encoder.encode(prompt)
         # if len(tokens) <= 5000 or not context_list:
         #     break
@@ -362,7 +390,7 @@ def generate_response(
     print("OPENAI TOKENS: ", openai_request_tokens)
 
     llm = get_llm(
-        active_tool.model if active_tool else "gpt-3.5-turbo", temperature=0.5
+        tool=active_tool.tool,model_name=active_tool.model if active_tool else "gpt-3.5-turbo", temperature=1.3
     )
 
     try:
@@ -524,7 +552,8 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 "chunk_index": i,
                 **doc.metadata,
             }
-
+            active_tool = db.query(ToolsUsed).filter_by(status=True).first()
+            embedding_model = get_embeddings(tool=active_tool.tool)
             embedding = embedding_model.embed_query(text)
             print("TEXT EMBEDDING: ", embedding)
 

@@ -541,11 +541,12 @@ async def chat_message(
 
         response_content = response_from_faqs.answer if response_from_faqs else None
 
+        active_tool = db.query(ToolsUsed).filter_by(status=True).first()
         if not response_content:
             print("No response found from FAQ")
             # Hybrid retrieval
             context_texts, scores = hybrid_retrieval(
-                query=user_msg, bot_id=bot_id, db=db
+                query=user_msg, bot_id=bot_id, db=db, tool = active_tool 
             )
 
             instruction_prompts = (
@@ -565,7 +566,6 @@ async def chat_message(
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
 
-            active_tool = db.query(ToolsUsed).filter_by(status=True).first()
 
             if any(score > 0.2 for score in scores):
                 print("using openai with context")
