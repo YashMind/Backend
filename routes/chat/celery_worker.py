@@ -1,4 +1,5 @@
 from celery import Celery
+from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBotsDocLinks
 from routes.chat.pinecone import process_and_store_docs
 from config import Base, SessionLocal
