@@ -248,7 +248,7 @@ async def handle_incoming_message(
         logger.exception("Error handling incoming message")
         return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-def verify_whatsapp_signature(request: Request) -> bool:
+async def verify_whatsapp_signature(request: Request) -> bool:
     """Verify WhatsApp webhook signature"""
     signature = request.headers.get("X-Hub-Signature-256", "")
     if not signature or not signature.startswith("sha256="):
