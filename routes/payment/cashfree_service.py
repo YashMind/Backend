@@ -112,7 +112,6 @@ async def create_payment_order(
 
         type = "topup"
         if country == "IN":
-            amount = plan.pricingInr
             currency = "INR"
 
         credit = db.query(UserCredits).filter_by(user_id=user.id).first()
