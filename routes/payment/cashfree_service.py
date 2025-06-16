@@ -86,6 +86,7 @@ async def create_payment_order(
     plan_id = None
     type = None
     country = await get_country_from_ip(ip=client_ip)
+    currency = "USD"
 
     print("Country: ", country)
     if order_data.plan_id:
@@ -99,7 +100,7 @@ async def create_payment_order(
             raise HTTPException(status_code=404, detail="Plan not found")
 
         amount = plan.pricingDollar
-        currency = "USD"
+
         if country == "IN":
             amount = plan.pricingInr
             currency = "INR"
@@ -110,6 +111,9 @@ async def create_payment_order(
         amount = order_data.credit
 
         type = "topup"
+        if country == "IN":
+            amount = plan.pricingInr
+            currency = "INR"
 
         credit = db.query(UserCredits).filter_by(user_id=user.id).first()
         if not credit:
