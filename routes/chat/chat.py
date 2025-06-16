@@ -569,7 +569,7 @@ async def chat_message(
             # Determine answer source
 
 
-            if any(score > 0.2 for score in scores):
+            if len(scores)>0:
                 print("using openai with context")
                 use_openai = True
                 generated_res = generate_response(
