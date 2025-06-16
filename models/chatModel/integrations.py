@@ -16,22 +16,20 @@ class SlackInstallation(Base):
     access_token = Column(String(255), nullable=False)
     installed_at = Column(DateTime, default=datetime.utcnow)
 
-
 class WhatsAppUser(Base):
     __tablename__ = "whatsapp_users"
 
     id = Column(Integer, primary_key=True, index=True)
-    bot_id = Column(
-        String(100), nullable=False
-    )  # Links to the specific bot configuration
-    whatsapp_number = Column(
-        String(20), nullable=False, unique=True
-    )  # User's WhatsApp number (+1234567890)
-    user_id = Column(
-        Integer, ForeignKey("users.id")
-    )  # Optional: If you have user authentication
+    bot_id = Column(String(100), nullable=False)
+    whatsapp_number = Column(String(20), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    twilio_account_sid = Column(String(50))  # Store which Twilio account this uses
+    verification_status = Column(String(20), default="pending")  # pending/verified/failed
+    last_verified_at = Column(DateTime)
+    message_count = Column(Integer, default=0)  # Track usage
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
 
 class ZapierIntegration(Base):
     __tablename__ = "zapier_integrations"
