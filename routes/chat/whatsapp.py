@@ -40,6 +40,12 @@ class MessageRequest(BaseModel):
     template_name: Optional[str] = None
     language_code: Optional[str] = "en_US"  # Default to en_US
 
+class WhatsAppUpdateRequest(BaseModel):
+    access_token: Optional[str] = None
+    phone_number_id: Optional[str] = None
+    business_account_id: Optional[str] = None
+    webhook_secret: Optional[str] = None
+    is_active: Optional[bool] = None
 
 # --- Constants ---
 WHATSAPP_API_URL = "https://graph.facebook.com/v22.0/"
@@ -136,6 +142,187 @@ async def register_whatsapp_user(
         )
 
     return {"status": "success", "message": "WhatsApp number registered"}
+
+@router.get("/{bot_id}", status_code=status.HTTP_200_OK)
+@check_product_status("chatbot")
+async def get_whatsapp_registration(
+    bot_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Get WhatsApp registration details for a specific bot
+    """
+    logger.info(f"Fetching WhatsApp registration for bot {bot_id}")
+
+    token = request.cookies.get("access_token")
+    payload = decode_access_token(token)
+    user_id = int(payload.get("user_id"))
+
+    if not user_owns_bot(user_id, bot_id, db=db):
+        logger.warning(f"User {user_id} attempted to access bot {bot_id} without ownership")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized to access this bot"
+        )
+
+    whatsapp_user = db.query(WhatsAppUser).filter_by(
+        bot_id=bot_id,
+        is_active=True
+    ).first()
+
+    if not whatsapp_user:
+        logger.info(f"No active WhatsApp registration found for bot {bot_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active WhatsApp registration found"
+        )
+
+    # Return the data without the encrypted token for security
+    return {
+        "whatsapp_number": whatsapp_user.whatsapp_number,
+        "phone_number_id": whatsapp_user.phone_number_id,
+        "business_account_id": whatsapp_user.business_account_id,
+        "is_active": whatsapp_user.is_active,
+        "opt_in_date": whatsapp_user.opt_in_date
+    }
+
+@router.put("/{bot_id}", status_code=status.HTTP_200_OK)
+@check_product_status("chatbot")
+async def update_whatsapp_registration(
+    bot_id: int,
+    request_data: WhatsAppUpdateRequest,  # You'll need to create this Pydantic model
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Update WhatsApp registration details for a specific bot
+    """
+    logger.info(f"Updating WhatsApp registration for bot {bot_id}")
+
+    token = request.cookies.get("access_token")
+    payload = decode_access_token(token)
+    user_id = int(payload.get("user_id"))
+
+    if not user_owns_bot(user_id, bot_id, db=db):
+        logger.warning(f"User {user_id} attempted to update bot {bot_id} without ownership")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized to update this bot"
+        )
+
+    whatsapp_user = db.query(WhatsAppUser).filter_by(
+        bot_id=bot_id,
+        is_active=True
+    ).first()
+
+    if not whatsapp_user:
+        logger.info(f"No active WhatsApp registration found for bot {bot_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active WhatsApp registration found"
+        )
+
+    # Verify new credentials if provided
+    if request_data.access_token or request_data.phone_number_id:
+        verify_url = f"{WHATSAPP_API_URL}{request_data.phone_number_id or whatsapp_user.phone_number_id}"
+        headers = {
+            "Authorization": f"Bearer {request_data.access_token or fernet.decrypt(whatsapp_user.access_token.encode()).decode()}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(verify_url, headers=headers)
+                response.raise_for_status()
+                account_info = response.json()
+                
+                if request_data.phone_number_id and str(account_info.get("id")) != request_data.phone_number_id:
+                    logger.error("Phone number ID mismatch with WhatsApp API response.")
+                    raise ValueError("Phone number ID mismatch")
+        except (httpx.RequestError, ValueError) as e:
+            logger.error(f"WhatsApp verification failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid WhatsApp credentials"
+            )
+
+    # Update fields
+    try:
+        if request_data.access_token:
+            whatsapp_user.access_token = fernet.encrypt(request_data.access_token.encode()).decode()
+        if request_data.phone_number_id:
+            whatsapp_user.phone_number_id = request_data.phone_number_id
+        if request_data.business_account_id:
+            whatsapp_user.business_account_id = request_data.business_account_id
+        if request_data.webhook_secret:
+            whatsapp_user.webhook_secret = request_data.webhook_secret
+        if request_data.is_active is not None:
+            whatsapp_user.is_active = request_data.is_active
+
+        db.commit()
+        logger.info(f"Successfully updated WhatsApp registration for bot {bot_id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database error while updating WhatsApp user: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update registration"
+        )
+
+    return {"status": "success", "message": "WhatsApp registration updated"}
+
+
+@router.delete("/{bot_id}", status_code=status.HTTP_200_OK)
+@check_product_status("chatbot")
+async def deactivate_whatsapp_registration(
+    bot_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Deactivate WhatsApp registration for a specific bot
+    """
+    logger.info(f"Deactivating WhatsApp registration for bot {bot_id}")
+
+    token = request.cookies.get("access_token")
+    payload = decode_access_token(token)
+    user_id = int(payload.get("user_id"))
+
+    if not user_owns_bot(user_id, bot_id, db=db):
+        logger.warning(f"User {user_id} attempted to deactivate bot {bot_id} without ownership")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized to deactivate this bot"
+        )
+
+    whatsapp_user = db.query(WhatsAppUser).filter_by(
+        bot_id=bot_id,
+        is_active=True
+    ).first()
+
+    if not whatsapp_user:
+        logger.info(f"No active WhatsApp registration found for bot {bot_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active WhatsApp registration found"
+        )
+
+    try:
+        whatsapp_user.is_active = False
+        whatsapp_user.opt_out_date = datetime.utcnow()
+        db.commit()
+        logger.info(f"Successfully deactivated WhatsApp registration for bot {bot_id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database error while deactivating WhatsApp user: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to deactivate registration"
+        )
+
+    return {"status": "success", "message": "WhatsApp registration deactivated"}
+
 
 @router.post("/send-message")
 async def send_whatsapp_message(
