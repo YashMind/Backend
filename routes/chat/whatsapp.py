@@ -1,17 +1,20 @@
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Form,Query, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime
-import requests
+import httpx  # Replaced requests with httpx for async
 import logging
 from config import Settings, get_db
+from models.authModel.authModel import AuthUser
+from models.chatModel.chatModel import ChatBots
 from models.chatModel.integrations import WhatsAppUser
-from utils.utils import get_response_from_chatbot
+from utils.utils import decode_access_token, get_response_from_chatbot
 import os
 from decorators.product_status import check_product_status
 from typing import Annotated, Optional
 from pydantic import BaseModel, Field
 import hmac
 import hashlib
+from cryptography.fernet import Fernet  # For token encryption
 
 router = APIRouter(tags=["WhatsApp Integration"])
 logger = logging.getLogger(__name__)
@@ -19,85 +22,114 @@ logger = logging.getLogger(__name__)
 # --- Models ---
 PhoneNumber = Annotated[
     str,
-    Field(pattern=r"^\d{5,15}$", examples=["1234567890"])  # Removed '+' prefix
+    Field(pattern=r"^\d{5,15}$", examples=["1234567890"])
 ]
 
 class WhatsAppRegisterRequest(BaseModel):
     bot_id: int
     whatsapp_number: PhoneNumber
-    access_token: str  # WhatsApp permanent access token
-    phone_number_id: str  # WhatsApp business phone number ID
-    business_account_id: str  # WhatsApp business account ID
+    access_token: str
+    phone_number_id: str
+    business_account_id: str
+    webhook_secret: Optional[str] = None  # Per-user webhook secret
 
 class MessageRequest(BaseModel):
-    to_number: PhoneNumber  # Recipient number (without country code prefix)
+    bot_id: int  # Added to specify which bot sends the message
+    to_number: PhoneNumber
     message: str
     template_name: Optional[str] = None
+    language_code: Optional[str] = "en_US"  # Default to en_US
+
 
 # --- Constants ---
-WHATSAPP_API_URL = "https://graph.facebook.com/v19.0/"
-WEBHOOK_VERIFY_TOKEN = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN")
+WHATSAPP_API_URL = "https://graph.facebook.com/v22.0/"
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY") 
+fernet = Fernet(ENCRYPTION_KEY)
+
+
 
 # --- API Endpoints ---
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 @check_product_status("chatbot")
 async def register_whatsapp_user(
-    request: WhatsAppRegisterRequest,
-    db: Session = Depends(get_db)
+    request: Request,
+    request_data: WhatsAppRegisterRequest,
+    db: Session = Depends(get_db),
 ):
-    # Check existing registration
+    """
+    Register a WhatsApp business account for a specific user.
+    """
+    logger.info("Received WhatsApp registration request.")
+
+    token = request.cookies.get("access_token")
+    payload = decode_access_token(token)
+    user_id = int(payload.get("user_id"))
+
+    logger.info(f"Decoded user ID from token: {user_id}")
+    logger.debug(f"Registration request data: {request_data}")
+
+    if not user_owns_bot(user_id, request_data.bot_id, db=db):
+        logger.warning(f"User {user_id} attempted to register bot {request_data.bot_id} without ownership.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized to register this bot"
+        )
+
     existing = db.query(WhatsAppUser).filter_by(
-        whatsapp_number=request.whatsapp_number
+        whatsapp_number=request_data.whatsapp_number
     ).first()
-    
+
     if existing:
+        logger.warning(f"Attempt to re-register an existing WhatsApp number: {request_data.whatsapp_number}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Number already registered"
+            detail="Number already registered with some another bot."
         )
 
-    # Verify credentials with WhatsApp
-    verify_url = f"{WHATSAPP_API_URL}{request.phone_number_id}"
+    logger.info(f"Verifying WhatsApp credentials for phone_number_id={request_data.phone_number_id}")
+    verify_url = f"{WHATSAPP_API_URL}{request_data.phone_number_id}"
     headers = {
-        "Authorization": f"Bearer {request.access_token}",
+        "Authorization": f"Bearer {request_data.access_token}",
         "Content-Type": "application/json"
     }
-    
-    try:
-        response = requests.get(verify_url, headers=headers)
-        response.raise_for_status()
-        account_info = response.json()
-        
-        # Validate phone number belongs to business account
-        if str(account_info.get("id")) != request.phone_number_id:
-            raise ValueError("Phone number ID mismatch")
-            
-        if str(account_info.get("verified_name")) != request.business_account_id:
-            raise ValueError("Business account ID mismatch")
-            
-    except (requests.RequestException, ValueError) as e:
-        logger.error(f"WhatsApp verification failed: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid WhatsApp credentials"
-        )
 
-    # Save to DB
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(verify_url, headers=headers)
+            response.raise_for_status()
+            account_info = response.json()
+            logger.debug(f"WhatsApp API response: {account_info}")
+
+            if str(account_info.get("id")) != request_data.phone_number_id:
+                logger.error("Phone number ID mismatch with WhatsApp API response.")
+                raise ValueError("Phone number ID mismatch")
+        except (httpx.RequestError, ValueError) as e:
+            logger.error(f"WhatsApp verification failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid WhatsApp credentials"
+            )
+
+    encrypted_token = fernet.encrypt(request_data.access_token.encode()).decode()
+    logger.info(f"Encrypted access token for {request_data.whatsapp_number}")
+
     try:
         new_user = WhatsAppUser(
-            bot_id=request.bot_id,
-            whatsapp_number=request.whatsapp_number,
-            access_token=request.access_token,
-            phone_number_id=request.phone_number_id,
-            business_account_id=request.business_account_id,
+            bot_id=request_data.bot_id,
+            whatsapp_number=request_data.whatsapp_number,
+            access_token=encrypted_token,
+            phone_number_id=request_data.phone_number_id,
+            business_account_id=request_data.business_account_id,
+            webhook_secret=request_data.webhook_secret or os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN"),
             is_active=True,
             opt_in_date=datetime.utcnow()
         )
         db.add(new_user)
         db.commit()
+        logger.info(f"Successfully registered WhatsApp number: {request_data.whatsapp_number}")
     except Exception as e:
         db.rollback()
-        logger.error(f"Database error: {str(e)}")
+        logger.error(f"Database error while saving WhatsApp user: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to register number"
@@ -107,155 +139,202 @@ async def register_whatsapp_user(
 
 @router.post("/send-message")
 async def send_whatsapp_message(
-    request: MessageRequest,
-    db: Session = Depends(get_db)
+    request: Request,
+    request_data: MessageRequest,
+    db: Session = Depends(get_db),
 ):
-    """Send message to WhatsApp user"""
-    # Get sender credentials (first active bot)
+    """Send message to WhatsApp user from a specific bot"""
+    token = request.cookies.get("access_token")
+    payload = decode_access_token(token)
+    user_id = int(payload.get("user_id"))
+    # Verify user owns the bot_id
+    if not user_owns_bot(user_id, request_data.bot_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized to use this bot"
+        )
+
+    # Get sender credentials
     sender = db.query(WhatsAppUser).filter_by(
+        bot_id=request_data.bot_id,
         is_active=True
     ).first()
     
     if not sender:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active WhatsApp account registered"
+            detail="No active WhatsApp account registered for this bot"
         )
 
-    # Prepare API request
+    # Decrypt access token
+    access_token = fernet.decrypt(sender.access_token.encode()).decode()
+
+    # Prepare API request_data
     url = f"{WHATSAPP_API_URL}{sender.phone_number_id}/messages"
     headers = {
-        "Authorization": f"Bearer {sender.access_token}",
         "Content-Type": "application/json"
     }
     
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
-        "to": request.to_number,
+        "to": request_data.to_number,
         "type": "text",
-        "text": {"body": request.message}
+        "text": {"body": request_data.message}
     }
 
-    # Handle templates
-    if request.template_name:
+    if request_data.template_name:
         payload = {
             "messaging_product": "whatsapp",
-            "to": request.to_number,
+            "to": request_data.to_number,
             "type": "template",
             "template": {
-                "name": request.template_name,
-                "language": {"code": "en_US"}
+                "name": request_data.template_name,
+                "language": {"code": request_data.language_code}
             }
         }
 
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        
-        # Update stats
-        sender.message_count = WhatsAppUser.message_count + 1
-        sender.last_message_at = datetime.utcnow()
-        db.commit()
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            
+            # Update stats
+            sender.message_count += 1  # Fixed increment
+            sender.last_message_at = datetime.utcnow()
+            db.commit()
 
-        return {"status": "success", "message_id": response.json().get("messages")[0]["id"]}
-    except requests.RequestException as e:
-        error_detail = response.json().get("error", {}).get("message", "Unknown error") if response else str(e)
-        logger.error(f"Message failed: {error_detail}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Message failed: {error_detail}"
-        )
+            return {"status": "success", "message_id": response.json().get("messages")[0]["id"]}
+        except httpx.RequestError as e:
+            error_detail = response.json().get("error", {}).get("message", "Unknown error") if response else str(e)
+            logger.error(f"Message failed: {error_detail}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Message failed: {error_detail}"
+            )
+
 
 @router.get("/webhook")
 async def verify_webhook(
-    request: Request,
-    hub_mode: str = Form(None),
-    hub_challenge: str = Form(None),
-    hub_verify_token: str = Form(None)
+    hub_mode: str = Query(None, alias="hub.mode"),
+    hub_challenge: str = Query(None, alias="hub.challenge"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
+    db: Session = Depends(get_db)
 ):
     """Verify webhook endpoint during setup"""
-    if hub_mode == "subscribe" and hub_verify_token == WEBHOOK_VERIFY_TOKEN:
+    print(hub_mode, hub_challenge, hub_verify_token)
+    user = db.query(WhatsAppUser).filter_by(webhook_secret=hub_verify_token).first()
+    if hub_mode == "subscribe" and user:
         return Response(content=hub_challenge, media_type="text/plain")
     return Response(status_code=status.HTTP_403_FORBIDDEN)
+
 
 @router.post("/webhook")
 async def handle_incoming_message(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """Handle incoming WhatsApp messages"""
-    # Verify signature
-    if not verify_whatsapp_signature(request):
-        return Response(status_code=status.HTTP_401_UNAUTHORIZED)
-    
+    """Handle incoming WhatsApp messages and statuses"""
+    # Get payload to extract phone_number_id for signature verification
     payload = await request.json()
     entry = payload.get("entry", [{}])[0]
     changes = entry.get("changes", [{}])[0]
     value = changes.get("value", {})
+    recipient_phone_id = value.get("metadata", {}).get("phone_number_id")
+
+
+    # print(f"phone number id: {recipient_phone_id}, entry: {entry}, changes: {changes}, value: {value}")
+
+    # Find user to get webhook secret
+    user = db.query(WhatsAppUser).filter_by(phone_number_id=recipient_phone_id).first()
+    # if not user or not await verify_whatsapp_signature(request, user.webhook_secret):
+    if not user :
+        return Response(status_code=status.HTTP_401_UNAUTHORIZED)
+
+    # Handle message or status updates
+    if "messages" in value:
+        message_data = value.get("messages", [{}])[0]
+        from_number = message_data.get("from", "")
+        message_body = message_data.get("text", {}).get("body", "")
+
+        if not from_number or not message_body:
+            return Response(status_code=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Get bot response
+            response_text = get_response_from_chatbot(
+                data={"message": message_body, "bot_id": user.bot_id, "token":f"from:{user.whatsapp_number},to:{from_number}"},
+                platform="whatsapp",
+                db=db,
+            )
+
+            # Decrypt access token
+            access_token = fernet.decrypt(user.access_token.encode()).decode()
+            # access_token = user.access_token.encode()
+
+            # Send reply
+            send_url = f"{WHATSAPP_API_URL}{user.phone_number_id}/messages"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": from_number,
+                "type": "text",
+                "text": {"body": response_text}
+            }
+            
+            async with httpx.AsyncClient() as client:
+                await client.post(send_url, json=payload, headers=headers)
+
+            # Update stats
+            user.message_count += 1  # Fixed increment
+            user.last_message_at = datetime.utcnow()
+            db.commit()
+
+            return Response(status_code=status.HTTP_200_OK)
+        except Exception as e:
+            logger.exception("Error handling incoming message")
+            return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    # Extract message details
-    message_data = value.get("messages", [{}])[0]
-    from_number = message_data.get("from", "")  # Already without prefix
-    message_body = message_data.get("text", {}).get("body", "")
-
-    if not from_number or not message_body:
-        return Response(status_code=status.HTTP_400_BAD_REQUEST)
-
-    try:
-        # Find bot associated with recipient number
-        recipient_phone_id = value.get("metadata", {}).get("phone_number_id")
-        user = db.query(WhatsAppUser).options(joinedload(WhatsAppUser.bot)).filter_by(
-            phone_number_id=recipient_phone_id,
-            is_active=True
-        ).first()
-        
-        if not user:
-            logger.info(f"Message to unregistered number: {recipient_phone_id}")
-            return Response(status_code=status.HTTP_404_NOT_FOUND)
-
-        # Get bot response
-        response_text = get_response_from_chatbot(
-            data={"message": message_body, "bot_id": user.bot_id},
-            platform="whatsapp",
-            db=db,
-        )
-
-        # Send reply
-        send_url = f"{WHATSAPP_API_URL}{user.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {user.access_token}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": from_number,
-            "type": "text",
-            "text": {"body": response_text}
-        }
-        
-        requests.post(send_url, json=payload, headers=headers)
-
-        # Update stats
-        user.message_count = WhatsAppUser.message_count + 1
-        user.last_message_at = datetime.utcnow()
-        db.commit()
-
+    elif "statuses" in value:
+        # Handle message status updates (e.g., sent, delivered, read)
+        status_data = value.get("statuses", [{}])[0]
+        message_id = status_data.get("id")
+        status_type = status_data.get("status")
+        # Update database with status (implement as needed)
+        logger.info(f"Message {message_id} status: {status_type}")
         return Response(status_code=status.HTTP_200_OK)
-    except Exception as e:
-        logger.exception("Error handling incoming message")
-        return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-async def verify_whatsapp_signature(request: Request) -> bool:
+    return Response(status_code=status.HTTP_400_BAD_REQUEST)
+
+async def verify_whatsapp_signature(request: Request, webhook_secret: str) -> bool:
     """Verify WhatsApp webhook signature"""
     signature = request.headers.get("X-Hub-Signature-256", "")
     if not signature or not signature.startswith("sha256="):
+        logger.warning(f"Invalid or missing X-Hub-Signature-256 header: {signature}")
         return False
     
     body = await request.body()
-    secret = WEBHOOK_VERIFY_TOKEN.encode()
-    expected = hmac.new(secret, body, hashlib.sha256).hexdigest()
+    secret = webhook_secret.encode()
+    expected = hmac.new(secret, body.decode(), hashlib.sha256).hexdigest()
     
-    return hmac.compare_digest(f"sha256={expected}", signature)
+    if not hmac.compare_digest(f"sha256={expected}", signature):
+        logger.warning(f"Signature verification failed for webhook. Expected: sha256={expected}, Received: {signature}")
+        return False
+
+
+
+def user_owns_bot(user_id: int, bot_id: int, db:Session) -> bool:
+    # Replace with actual logic to verify bot ownership
+    user= db.query(AuthUser).filter(AuthUser.id == user_id).first()
+    if not user:
+        return False
+    bot= db.query(ChatBots).filter(ChatBots.id==bot_id,ChatBots.user_id==user_id).first()
+    if not bot:
+        return False
+    
+    return True  # Example

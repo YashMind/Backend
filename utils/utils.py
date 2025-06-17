@@ -1,5 +1,6 @@
 from base64 import b64encode
 from types import SimpleNamespace
+from cachetools import TTLCache
 from fastapi import HTTPException, Depends, Request, status
 from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
@@ -21,6 +22,9 @@ from langchain.schema import HumanMessage, AIMessage
 from email.mime.text import MIMEText
 import smtplib
 import httpx
+import re
+from html import unescape
+from bs4 import BeautifulSoup
 
 from routes.subscriptions.token_usage import (
     update_token_usage_on_consumption,
@@ -71,12 +75,12 @@ def get_response_from_chatbot(data, platform, db: Session):
 
         response_content = response_from_faqs.answer if response_from_faqs else None
 
-
+        active_tool = db.query(ToolsUsed).filter_by(status=True).first()
         if not response_content:
             print("No response found from FAQ")
             # Hybrid retrieval
             context_texts, scores = hybrid_retrieval(
-                query=user_msg, bot_id=bot_id, db=db
+                query=user_msg, bot_id=bot_id, db=db ,tool=active_tool
             )
 
             instruction_prompts = (
@@ -96,7 +100,6 @@ def get_response_from_chatbot(data, platform, db: Session):
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
 
-            active_tool = db.query(ToolsUsed).filter_by(status=True).first()
 
             if any(score > 0.6 for score in scores):
                 print("using openai with context")
@@ -169,12 +172,67 @@ def get_response_from_chatbot(data, platform, db: Session):
                 bot_id=bot_id,
                 db=db,
             )
-        return response_content
+        return html_to_whatsapp_format(response_content)
 
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def html_to_whatsapp_format(html_text: str) -> str:
+    soup = BeautifulSoup(unescape(html_text), "html.parser")
+
+    def convert_node(node, in_list=False, list_type=None, list_index=1):
+        if node.name in ['b', 'strong']:
+            return f"*{convert_children(node)}*"
+        elif node.name in ['i', 'em']:
+            return f"_{convert_children(node)}_"
+        elif node.name in ['s', 'strike', 'del']:
+            return f"~{convert_children(node)}~"
+        elif node.name in ['code', 'pre']:
+            content = node.get_text().strip()
+            return f"```\n{content}\n```"
+        elif node.name == 'br':
+            return '\n'
+        elif node.name == 'p':
+            return f"{convert_children(node)}\n\n"
+        elif node.name == 'ul':
+            return '\n'.join(convert_node(li, in_list=True, list_type="ul") for li in node.find_all("li", recursive=False)) + "\n"
+        elif node.name == 'ol':
+            return '\n'.join(
+                convert_node(li, in_list=True, list_type="ol", list_index=i+1)
+                for i, li in enumerate(node.find_all("li", recursive=False))
+            ) + "\n"
+        elif node.name == 'li':
+            prefix = f"{list_index}. " if list_type == "ol" else "• "
+            return f"{prefix}{convert_children(node)}"
+        elif node.name == 'a':
+            href = node.get("href")
+            text = convert_children(node).strip()
+            if href:
+                return f"{text} ({href})" if text else href
+            return text
+        else:
+            return convert_children(node)
+
+    def convert_children(parent):
+        if not hasattr(parent, 'contents'):
+            return str(parent)
+        
+        result = []
+        for child in parent.contents:
+            if hasattr(child, 'name'):
+                result.append(str(convert_node(child)))
+            else:
+                result.append(str(child))  # plain text (NavigableString)
+        return ''.join(result)
+
+    # Start processing from the body
+    output = convert_children(soup)
+    # Cleanup: collapse extra newlines and spaces
+    return re.sub(r'\n{3,}', '\n\n', output).strip()
+
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):

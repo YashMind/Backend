@@ -814,7 +814,7 @@ async def get_user_chat_history(
         user_id = int(payload.get("user_id"))
         chat_bot = db.query(ChatBots).filter_by(id=bot_id, user_id=user_id).first()
         session_query = db.query(ChatSession).filter_by(
-            bot_id=bot_id, user_id=user_id, archived=False
+            bot_id=bot_id,  archived=False
         )
         if not session_query:
             raise HTTPException(status_code=404, detail="Chat not found")
@@ -842,13 +842,23 @@ async def get_user_chat_history(
             .order_by(ChatMessage.created_at.asc())
             .all()
         )
-        # Group messages by chat_id
-        grouped_messages = defaultdict(list)
+        # Build a map of session_id to session (to get platform)
+        session_map = {session.id: session for session in sessions}
+
+        # Group messages by chat_id and include platform
+        grouped_sessions = {}
         for message in messages:
-            grouped_messages[message.chat_id].append(message)
-        sorted_grouped = dict(
-            sorted(grouped_messages.items(), key=lambda x: x[0], reverse=True)
-        )
+            chat_id = message.chat_id
+            if chat_id not in grouped_sessions:
+                grouped_sessions[chat_id] = {
+                    "platform": session_map[chat_id].platform,
+                    "messages": [],
+                }
+            grouped_sessions[chat_id]["messages"].append(message)
+
+        # Optional: sort by chat_id descending
+        sorted_grouped = dict(sorted(grouped_sessions.items(), key=lambda x: x[0], reverse=True))
+
         return {
             "data": sorted_grouped,
             "totalCount": total_count,
