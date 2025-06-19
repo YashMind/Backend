@@ -140,7 +140,7 @@ async def register_whatsapp_user(
             access_token=encrypted_token,
             phone_number_id=request_data.phone_number_id,
             business_account_id=request_data.business_account_id,
-            # webhook_secret=request_data.webhook_secret
+            webhook_secret=request_data.webhook_secret,
             is_active=True,
             opt_in_date=datetime.utcnow(),
         )
