@@ -388,15 +388,15 @@ async def update_slack_installation(
     return {"status": "success"}
 
 
-@router.delete("/installation/{installation_id}")
+@router.delete("/installation/{bot_id}")
 async def delete_slack_installation(
-    installation_id: int, request: Request, db: Session = Depends(get_db)
+    bot_id: int, request: Request, db: Session = Depends(get_db)
 ):
     token = request.cookies.get("access_token")
     payload = decode_access_token(token)
     user_id = int(payload.get("user_id"))
 
-    installation = db.query(SlackInstallation).filter_by(id=installation_id).first()
+    installation = db.query(SlackInstallation).filter_by(bot_id=bot_id).first()
     if not installation:
         raise HTTPException(status_code=404, detail="Installation not found")
 

@@ -374,6 +374,55 @@ def user_owns_bot(user_id: int, bot_id: int, db: Session) -> bool:
     return True  # Example
 
 
+@router.delete("/delete/{bot_id}", status_code=status.HTTP_200_OK)
+@check_product_status("chatbot")
+async def delete_whatsapp_registration(
+    bot_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Delete WhatsApp registration for a specific bot
+    """
+    logger.info(f"Deleting WhatsApp registration for bot {bot_id}")
+
+    token = request.cookies.get("access_token")
+    payload = decode_access_token(token)
+    user_id = int(payload.get("user_id"))
+
+    if not user_owns_bot(user_id, bot_id, db=db):
+        logger.warning(
+            f"User {user_id} attempted to delete bot {bot_id} without ownership"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized to delete this bot",
+        )
+
+    whatsapp_user = db.query(WhatsAppUser).filter_by(bot_id=bot_id).first()
+
+    if not whatsapp_user:
+        logger.info(f"No active WhatsApp registration found for bot {bot_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active WhatsApp registration found",
+        )
+
+    try:
+        db.delete(whatsapp_user)
+        db.commit()
+        logger.info(f"Successfully deleted WhatsApp registration for bot {bot_id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database error while deactivating WhatsApp user: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to deactivate registration",
+        )
+
+    return {"status": "success", "message": "WhatsApp registration deactivated"}
+
+
 @router.get("/{bot_id}", status_code=status.HTTP_200_OK)
 @check_product_status("chatbot")
 async def get_whatsapp_registration(
