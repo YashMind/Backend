@@ -1,4 +1,5 @@
 import httpx
+from models.adminModel.adminModel import SubscriptionPlans
 from models.subscriptions.transactionModel import Transaction
 from fastapi import APIRouter, Request, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
@@ -11,6 +12,10 @@ import base64
 import json
 import hmac
 
+from routes.payment.trial_payment import (
+    create_trial_order,
+    has_activated_plan,
+)
 from routes.subscriptions.failed_payment import handle_failed_payment
 from routes.subscriptions.token_usage import (
     create_token_usage,
@@ -21,7 +26,8 @@ from routes.subscriptions.user_credits import (
     create_user_credit_entry,
     update_user_credit_entry_topup,
 )
-from utils.utils import get_paypal_access_token
+from schemas.authSchema.authSchema import User
+from utils.utils import decode_access_token, get_paypal_access_token
 
 router = APIRouter()
 
@@ -358,6 +364,38 @@ async def process_paypal_payload(payload: dict, db: Session):
     return JSONResponse(content={"status": "unhandled_event"}, status_code=200)
 
 
+async def process_trial_payload(payload: dict, db: Session):
+    # Extract data from trial payload
+
+    user_id = payload.get("user_id")
+    plan_id = payload.get("plan_id")  # This should be your trial plan ID
+
+    # Create a mock transaction record for the trial
+    transaction = await create_trial_order(
+        db=db,
+        trial_data={
+            "user_id": user_id,
+            "plan_id": plan_id,
+        },
+    )
+
+    # Add trial plan to user credits
+    user_credit = create_user_credit_entry(
+        trans_id=transaction.id, db=db, is_trial=True
+    )
+
+    # Create token usage entries
+    success, token_entries = create_token_usage(
+        credit_id=user_credit.id, transaction_id=transaction.id, db=db
+    )
+
+    return {
+        "success": success,
+        "token_entries": token_entries,
+        "details": "Trial plan activated successfully",
+    }
+
+
 # CashFree Webhook Handler
 @router.post("/cashfree")
 async def cashfree_webhook(request: Request, db: Session = Depends(get_db)):
@@ -435,3 +473,41 @@ async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unexpected server error: {str(e)}",
         )
+
+
+@router.get("/activate-trial")
+async def activate_trial_plan(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        token = request.cookies.get("access_token")
+        decoded_token = decode_access_token(token)
+        user_id = int(decoded_token.get("user_id"))
+
+        # Verify user doesn't already have an active trial
+        if has_activated_plan(user_id=user_id, db=db):
+            raise HTTPException(
+                status_code=400, detail="User already Consumed an active trial"
+            )
+
+        trial_plan = (
+            db.query(SubscriptionPlans)
+            .filter(
+                SubscriptionPlans.is_trial == True, SubscriptionPlans.is_active == True
+            )
+            .first()
+        )
+
+        if not trial_plan:
+            raise HTTPException(
+                status_code=400, detail="No active trial plan available"
+            )
+
+        return await process_trial_payload(
+            {"user_id": user_id, "plan_id": trial_plan.id}, db
+        )
+
+    except Exception as e:
+        print("Error processing trial activation: ", e)
+        raise HTTPException(status_code=400, detail=str(e))

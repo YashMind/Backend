@@ -344,7 +344,9 @@ async def get_all_subscription_plans_public(
     try:
         plans = (
             db.query(SubscriptionPlans)
-            .filter(SubscriptionPlans.is_active == True)
+            .filter(
+                SubscriptionPlans.is_active == True, SubscriptionPlans.is_trial == False
+            )
             .all()
         )
 

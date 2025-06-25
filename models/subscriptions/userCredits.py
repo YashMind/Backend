@@ -1,4 +1,13 @@
-from sqlalchemy import ForeignKey, Column, Integer, String, Float, DateTime, Table
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    Column,
+    Integer,
+    String,
+    Float,
+    DateTime,
+    Table,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from config import Base
@@ -21,6 +30,8 @@ class UserCredits(Base):
 
     token_per_unit = Column(Float)
     chatbots_allowed = Column(Integer)
+
+    is_trial = Column(Boolean, default=False)
 
     top_up_transactions = relationship(
         "Transaction", secondary="user_credits_topups", backref="credited_users"
@@ -52,5 +63,7 @@ class HistoryUserCredits(Base):
 
     token_per_unit = Column(Float)
     chatbots_allowed = Column(Integer)
+
+    is_trial = Column(Boolean, default=False)
 
     expiry_reason = Column(String(255))

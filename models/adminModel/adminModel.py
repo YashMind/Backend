@@ -15,6 +15,7 @@ class SubscriptionPlans(Base):
     features = Column(String(255), nullable=True)
     users_active = Column(Integer, nullable=True)
     is_active = Column(Boolean, default=True)
+    is_trial = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

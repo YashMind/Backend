@@ -8,9 +8,12 @@ from models.adminModel.adminModel import SubscriptionPlans
 from models.subscriptions.transactionModel import Transaction
 from models.subscriptions.userCredits import HistoryUserCredits, UserCredits
 from models.authModel.authModel import AuthUser as User
+from routes.payment.trial_payment import activate_plan
 
 
-def create_user_credit_entry(trans_id: int, db: Session = Depends(get_db)):
+def create_user_credit_entry(
+    trans_id: int, db: Session = Depends(get_db), is_trial=False
+):
     """Create a user credit entry."""
     # Verify user exists
     # Verify transaction exists
@@ -57,6 +60,7 @@ def create_user_credit_entry(trans_id: int, db: Session = Depends(get_db)):
                 credit_balance=current_credit.credit_balance,
                 token_per_unit=current_credit.token_per_unit,
                 chatbots_allowed=current_credit.chatbots_allowed,
+                is_trial=current_credit.is_trial,
                 expiry_reason="Replaced by new subscription",
             )
             db.add(history_entry)
@@ -67,9 +71,13 @@ def create_user_credit_entry(trans_id: int, db: Session = Depends(get_db)):
         start_date = datetime.now()
         expiry_date = start_date + timedelta(days=plan.duration_days)
 
-        purchased_credits = transaction.amount
         if transaction.currency == "USD":
-            purchased_credits = transaction.amount * Decimal(100)
+            purchased_credits = (
+                Decimal(5 * 100) if is_trial else transaction.amount * Decimal(100)
+            )
+        else:
+            purchased_credits = Decimal(500) if is_trial else transaction.amount
+
         # Create new credit entry
         new_credit = UserCredits(
             user_id=user_id,
@@ -81,11 +89,14 @@ def create_user_credit_entry(trans_id: int, db: Session = Depends(get_db)):
             credit_balance=purchased_credits,  # Starting balance equals purchased amount
             token_per_unit=plan.token_per_unit,
             chatbots_allowed=plan.chatbots_allowed,
+            is_trial=is_trial,
         )
 
         db.add(new_credit)
         db.commit()
         db.refresh(new_credit)
+
+        activate_plan(user_id=user_id, db=db)
 
         return new_credit
     except Exception as e:
