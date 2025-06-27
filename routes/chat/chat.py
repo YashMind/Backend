@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 import httpx
 import tiktoken
 from models.adminModel.toolsModal import ToolsUsed
-from models.chatModel.integrations import ZapierIntegration
+from models.chatModel.integrations import WhatsAppUser, ZapierIntegration
 from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
 from models.subscriptions.userCredits import UserCredits
 from routes.chat.tuning import seed_instruction_prompts_template
@@ -370,6 +370,7 @@ async def delete_chatbot(bot_id: int, request: Request, db: Session = Depends(ge
         db.query(DBInstructionPrompt).filter(
             DBInstructionPrompt.bot_id == bot_id
         ).delete(synchronize_session=False)
+
         db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).delete(
             synchronize_session=False
         )
@@ -388,6 +389,14 @@ async def delete_chatbot(bot_id: int, request: Request, db: Session = Depends(ge
         db.query(ChatSession).filter(ChatSession.bot_id == bot_id).delete(
             synchronize_session=False
         )
+
+        db.query(ZapierIntegration).filter(ZapierIntegration.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
+        db.query(WhatsAppUser).filter(WhatsAppUser.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
+
         db.query(ChatBots).filter(
             ChatBots.id == bot_id, ChatBots.user_id == user_id
         ).delete(synchronize_session=False)
