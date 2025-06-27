@@ -56,3 +56,8 @@ class ChatMessageTokensToday(BaseModel):
     request_tokens: int
     response_tokens: int
     users: int
+
+
+class ChatMessageTokensSummary(BaseModel):
+    today: ChatMessageTokensToday
+    monthly: ChatMessageTokensToday

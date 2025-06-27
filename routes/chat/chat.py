@@ -24,7 +24,11 @@ from routes.subscriptions.token_usage import (
     update_token_usage_on_consumption,
     verify_token_limit_available,
 )
-from schemas.chatSchema.tokensSchema import ChatMessageTokens, ChatMessageTokensToday
+from schemas.chatSchema.tokensSchema import (
+    ChatMessageTokens,
+    ChatMessageTokensSummary,
+    ChatMessageTokensToday,
+)
 from utils.utils import decode_access_token, get_current_user
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
@@ -151,6 +155,30 @@ async def send_invitation_email(
         return False
 
 
+def has_chabot_limit(user_id: str, db: Session):
+    try:
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+        if not user:
+            raise HTTPException("User not found")
+
+        user_credits = (
+            db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
+        )
+        if not user_credits:
+            raise HTTPException("User credits not found")
+
+        chatbots = db.query(ChatBots).filter(ChatBots.user_id == user_id).count()
+        print("Chatbots allowed: ", chatbots, " limit: ", user_credits.chatbots_allowed)
+        if chatbots >= user_credits.chatbots_allowed:
+            return False
+
+        return True
+
+    except Exception as e:
+        print(f"Error checking chatbot limit: {e}")
+        return False, e
+
+
 # create new chatbot
 @router.post("/create-bot", response_model=CreateBot)
 @check_product_status("chatbot")
@@ -164,6 +192,11 @@ async def create_chatbot(request: Request, db: Session = Depends(get_db)):
         generated_token = "".join(
             secrets.choice(string.ascii_lowercase + string.digits) for _ in range(25)
         )
+
+        if not has_chabot_limit(user_id=user_id, db=db):
+            raise HTTPException(
+                status_code=400, detail="User has reached chatbot limit"
+            )
 
         new_chatbot = ChatBots(
             user_id=user_id,
@@ -310,10 +343,8 @@ ALLOWED_FILE_TYPES = [
 
 
 @router.post("/upload-document")
-@check_product_status("chatbot")
-async def upload_photo(
-    file: UploadFile = File(...), current_user: dict = Depends(get_current_user)
-):
+# @check_product_status("chatbot")
+async def upload_photo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         # Validate file type
         if not os.path.exists(UPLOAD_DIRECTORY):
@@ -349,7 +380,7 @@ async def upload_photo(
 
 
 # get all chatbots
-@router.get("/get-all", response_model=List[CreateBot])
+@router.get("/get-all")
 @check_product_status("chatbot")
 async def get_my_bots(
     request: Request, db: Session = Depends(get_db), include_shared: bool = Query(True)
@@ -366,6 +397,15 @@ async def get_my_bots(
             .order_by(ChatBots.created_at.desc())
             .all()
         )
+
+        user_credits = (
+            db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
+        )
+        if user_credits is None:
+            raise HTTPException("User credits not found")
+
+        if user_credits.chatbots_allowed < len(owned_bots):
+            owned_bots = owned_bots[: user_credits.chatbots_allowed]
 
         # If include_shared is True, also get shared bots
         if include_shared:
@@ -389,6 +429,26 @@ async def get_my_bots(
                 )
                 # Combine owned and shared bots
                 return owned_bots + shared_bots
+        # Query chatbot settings for all owned bots
+        chatbot_settings = (
+            db.query(ChatSettings)
+            .filter(ChatSettings.bot_id.in_([bot.id for bot in owned_bots]))
+            .all()
+        )
+
+        # Create a dictionary for faster lookup
+        settings_dict = {setting.bot_id: setting for setting in chatbot_settings}
+
+        # Append image property to each bot
+        for bot in owned_bots:
+            if bot.id in settings_dict:
+                bot.image = settings_dict[
+                    bot.id
+                ].image  # Assuming the image is stored in the ChatSettings model
+            else:
+                bot.image = None  # Or set a default image
+
+        print(owned_bots[0].image)
 
         return owned_bots
     except HTTPException as http_exc:
@@ -548,7 +608,7 @@ async def chat_message(
             print("No response found from FAQ")
             # Hybrid retrieval
             context_texts, scores = hybrid_retrieval(
-                query=user_msg, bot_id=bot_id, db=db, tool = active_tool 
+                query=user_msg, bot_id=bot_id, db=db, tool=active_tool
             )
 
             instruction_prompts = (
@@ -568,9 +628,8 @@ async def chat_message(
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
 
-
             # if any(score > 0.0 for score in scores):
-            if len(scores)>0:
+            if len(scores) > 0:
                 print("using openai with context")
                 use_openai = True
                 generated_res = generate_response(
@@ -813,9 +872,7 @@ async def get_user_chat_history(
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         chat_bot = db.query(ChatBots).filter_by(id=bot_id, user_id=user_id).first()
-        session_query = db.query(ChatSession).filter_by(
-            bot_id=bot_id,  archived=False
-        )
+        session_query = db.query(ChatSession).filter_by(bot_id=bot_id, archived=False)
         if not session_query:
             raise HTTPException(status_code=404, detail="Chat not found")
         if search:
@@ -857,7 +914,9 @@ async def get_user_chat_history(
             grouped_sessions[chat_id]["messages"].append(message)
 
         # Optional: sort by chat_id descending
-        sorted_grouped = dict(sorted(grouped_sessions.items(), key=lambda x: x[0], reverse=True))
+        sorted_grouped = dict(
+            sorted(grouped_sessions.items(), key=lambda x: x[0], reverse=True)
+        )
 
         return {
             "data": sorted_grouped,
@@ -1096,6 +1155,32 @@ async def create_chatbot_docs(
         user_id = int(payload.get("user_id"))
         new_chatbot_doc_links = data
         new_chatbot_doc_links.user_id = user_id
+
+        exsiting = None
+        if data.target_link:
+            exsiting = (
+                db.query(ChatBotsDocLinks)
+                .filter(
+                    ChatBotsDocLinks.bot_id == int(data.bot_id),
+                    ChatBotsDocLinks.target_link == data.target_link,
+                )
+                .first()
+            )
+        if data.document_link:
+            exsiting = (
+                db.query(ChatBotsDocLinks)
+                .filter(
+                    ChatBotsDocLinks.bot_id == int(data.bot_id),
+                    ChatBotsDocLinks.document_link == data.document_link,
+                )
+                .first()
+            )
+        if exsiting and exsiting.train_from == data.train_from:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Target link already exists in {data.train_from} training.",
+            )
+
         new_doc = ChatBotsDocLinks(
             user_id=user_id,
             bot_id=int(data.bot_id),
@@ -1560,8 +1645,6 @@ async def create_chatbot_leads(
         else:
             user_id = None
 
-   
-
         new_chatbot_lead = ChatBotLeadsModel(
             user_id=user_id or None,
             bot_id=data.bot_id,
@@ -1595,13 +1678,16 @@ async def create_chatbot_leads(
             ]
             try:
                 with httpx.Client(timeout=10.0) as client:
-                    response = client.post(zapier_webhook.webhook_url, json=webhook_data)
-                    print("Zapier webhook response:", response.status_code, response.text)
+                    response = client.post(
+                        zapier_webhook.webhook_url, json=webhook_data
+                    )
+                    print(
+                        "Zapier webhook response:", response.status_code, response.text
+                    )
             except httpx.HTTPError as e:
                 print("Error sending data to Zapier webhook:", str(e))
 
         return new_chatbot_lead
-
 
     except HTTPException as http_exc:
         raise http_exc
@@ -1763,20 +1849,57 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-@router.get("/tokens/{bot_id}/today", response_model=ChatMessageTokensToday)
-async def chat_message_tokens(
+@router.get("/tokens/{bot_id}/summary", response_model=ChatMessageTokensSummary)
+async def chat_message_tokens_summary(
     request: Request, bot_id: int, db: Session = Depends(get_db)
 ):
     try:
-        # Get today's date
-        today = datetime.now().date()
+        # Get current date and time
+        now = datetime.now()
+        today = now.date()
 
-        # Calculate the start and end of today
+        # Calculate date ranges
         start_of_day = datetime.combine(today, time.min)
         end_of_day = datetime.combine(today, time.max)
 
-        # Get all messages for the bot from today
-        messages = (
+        # First day of current month
+        start_of_month = datetime(today.year, today.month, 1)
+
+        # Initialize encoder
+        encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
+
+        # Helper function to process messages and calculate tokens
+        def process_messages(messages):
+            user_messages = []
+            bot_messages = []
+            user_ids = set()
+
+            for message in messages:
+                if message.sender == "user":
+                    user_messages.append(message.message)
+                    user_ids.add(message.user_id)
+                elif message.sender == "bot":
+                    bot_messages.append(message.message)
+
+            # Calculate tokens
+            request_tokens = 0
+            if user_messages:
+                combined_user_text = " ".join(user_messages)
+                request_tokens = len(encoder.encode(combined_user_text))
+
+            response_tokens = 0
+            if bot_messages:
+                combined_bot_text = " ".join(bot_messages)
+                response_tokens = len(encoder.encode(combined_bot_text))
+
+            return {
+                "request_tokens": request_tokens,
+                "response_tokens": response_tokens,
+                "users": len(user_ids),
+            }
+
+        # Get today's messages
+        today_messages = (
             db.query(ChatMessage)
             .filter(
                 and_(
@@ -1788,41 +1911,33 @@ async def chat_message_tokens(
             .all()
         )
 
-        if not messages:
-            return ChatMessageTokensToday(request_tokens=0, response_tokens=0, users=0)
-
-        # Separate user and bot messages
-        user_messages = []
-        bot_messages = []
-        user_ids = set()
-
-        for message in messages:
-            if message.sender == "user":
-                user_messages.append(message.message)
-                user_ids.add(message.user_id)
-            elif message.sender == "bot":
-                bot_messages.append(message.message)
-
-        # Initialize encoder
-        encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
-
-        # Calculate tokens for user messages (requests)
-        request_tokens = 0
-        if user_messages:
-            combined_user_text = " ".join(user_messages)
-            request_tokens = len(encoder.encode(combined_user_text))
-
-        # Calculate tokens for bot messages (responses)
-        response_tokens = 0
-        if bot_messages:
-            combined_bot_text = " ".join(bot_messages)
-            response_tokens = len(encoder.encode(combined_bot_text))
-
-        return ChatMessageTokensToday(
-            request_tokens=request_tokens,
-            response_tokens=response_tokens,
-            users=len(user_ids),
+        # Get monthly messages
+        monthly_messages = (
+            db.query(ChatMessage)
+            .filter(
+                and_(
+                    ChatMessage.bot_id == bot_id,
+                    ChatMessage.created_at >= start_of_month,
+                    ChatMessage.created_at <= end_of_day,
+                )
+            )
+            .all()
         )
+
+        # Process both time periods
+        today_data = (
+            process_messages(today_messages)
+            if today_messages
+            else {"request_tokens": 0, "response_tokens": 0, "users": 0}
+        )
+
+        monthly_data = (
+            process_messages(monthly_messages)
+            if monthly_messages
+            else {"request_tokens": 0, "response_tokens": 0, "users": 0}
+        )
+
+        return {"today": today_data, "monthly": monthly_data}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
