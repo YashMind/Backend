@@ -459,7 +459,6 @@ async def upload_photo(file: UploadFile = File(...), db: Session = Depends(get_d
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-# get all chatbots
 @router.get("/get-all")
 @check_product_status("chatbot")
 async def get_my_bots(
@@ -482,12 +481,13 @@ async def get_my_bots(
             db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
         )
         if user_credits is None:
-            raise HTTPException("User credits not found")
+            raise HTTPException(status_code=404, detail="User credits not found")
 
         if user_credits.chatbots_allowed < len(owned_bots):
             owned_bots = owned_bots[: user_credits.chatbots_allowed]
 
-        # If include_shared is True, also get shared bots
+        # Get shared bots if include_shared is True
+        shared_bots = []
         if include_shared:
             # Get IDs of bots shared with the user
             shared_bot_ids = (
@@ -498,44 +498,43 @@ async def get_my_bots(
                 )
                 .all()
             )
-
-            # Extract IDs from result tuples
             shared_bot_ids = [bot_id for (bot_id,) in shared_bot_ids]
 
-            # Get shared bots if there are any
             if shared_bot_ids:
                 shared_bots = (
-                    db.query(ChatBots).filter(ChatBots.id.in_(shared_bot_ids)).all()
+                    db.query(ChatBots)
+                    .filter(ChatBots.id.in_(shared_bot_ids))
+                    .all()
                 )
-                # Combine owned and shared bots
-                return owned_bots + shared_bots
-        # Query chatbot settings for all owned bots
-        chatbot_settings = (
-            db.query(ChatSettings)
-            .filter(ChatSettings.bot_id.in_([bot.id for bot in owned_bots]))
-            .all()
-        )
 
-        # Create a dictionary for faster lookup
-        settings_dict = {setting.bot_id: setting for setting in chatbot_settings}
+        # Combine all bot IDs (owned + shared)
+        all_bot_ids = [bot.id for bot in owned_bots] + [bot.id for bot in shared_bots]
 
-        # Append image property to each bot
+        # Query chatbot settings for all bots at once if there are any
+        if all_bot_ids:
+            chatbot_settings = (
+                db.query(ChatSettings)
+                .filter(ChatSettings.bot_id.in_(all_bot_ids))
+                .all()
+            )
+            settings_dict = {setting.bot_id: setting for setting in chatbot_settings}
+        else:
+            settings_dict = {}
+
+        # Attach images to owned bots
         for bot in owned_bots:
-            if bot.id in settings_dict:
-                bot.image = settings_dict[
-                    bot.id
-                ].image  # Assuming the image is stored in the ChatSettings model
-            else:
-                bot.image = None  # Or set a default image
+            bot.image = settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None
 
-        print(owned_bots[0].image)
+        # Attach images to shared bots
+        for bot in shared_bots:
+            bot.image = settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None
 
-        return owned_bots
+        return owned_bots + shared_bots
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # create new chat
 @router.post("/chats-id", response_model=ChatSessionRead)
