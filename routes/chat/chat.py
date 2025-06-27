@@ -374,17 +374,20 @@ async def delete_chatbot(bot_id: int, request: Request, db: Session = Depends(ge
             synchronize_session=False
         )
 
+        # Get list of session IDs (flat list of values)
         session_ids = (
-            db.query(ChatSession.id).filter(ChatSession.bot_id == bot_id).subquery()
+            db.query(ChatSession.id).filter(ChatSession.bot_id == bot_id).all()
         )
+        session_ids = [s[0] for s in session_ids]  # unpack tuples
 
-        db.query(ChatMessage).filter(ChatMessage.chat_id.in_(session_ids)).delete(
-            synchronize_session=False
-        )
+        if session_ids:
+            db.query(ChatMessage).filter(ChatMessage.chat_id.in_(session_ids)).delete(
+                synchronize_session=False
+            )
+
         db.query(ChatSession).filter(ChatSession.bot_id == bot_id).delete(
             synchronize_session=False
         )
-
         db.query(ChatBots).filter(
             ChatBots.id == bot_id, ChatBots.user_id == user_id
         ).delete(synchronize_session=False)
