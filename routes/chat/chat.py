@@ -328,6 +328,74 @@ async def get_chatbot(botId: int, request: Request, db: Session = Depends(get_db
         raise HTTPException(status_code=500, detail=str(e), error=e)
 
 
+@router.delete("/delete-bot/{bot_id}")
+@check_product_status("chatbot")
+async def delete_chatbot(bot_id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Delete in correct order if not using ON DELETE CASCADE
+        db.query(ChatBotsFaqs).filter(ChatBotsFaqs.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
+
+        docs_to_delete = (
+            db.query(ChatBotsDocLinks)
+            .filter(
+                ChatBotsDocLinks.bot_id == bot_id,
+            )
+            .all()
+        )
+
+        if not docs_to_delete:
+            print({"message": "No documents found to delete"})
+
+        # Get the source links for Pinecone deletion
+        doc_link_ids = [doc.id for doc in docs_to_delete]
+
+        # Delete from Pinecone first
+        delete_documents_from_pinecone(bot_id, doc_link_ids, db)
+
+        db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
+        db.query(TokenUsage).filter(TokenUsage.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
+        db.query(TokenUsageHistory).filter(TokenUsageHistory.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
+        db.query(DBInstructionPrompt).filter(
+            DBInstructionPrompt.bot_id == bot_id
+        ).delete(synchronize_session=False)
+        db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
+
+        session_ids = (
+            db.query(ChatSession.id).filter(ChatSession.bot_id == bot_id).subquery()
+        )
+
+        db.query(ChatMessage).filter(ChatMessage.chat_id.in_(session_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(ChatSession).filter(ChatSession.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
+
+        db.query(ChatBots).filter(
+            ChatBots.id == bot_id, ChatBots.user_id == user_id
+        ).delete(synchronize_session=False)
+        db.commit()
+        return {"message": "Chatbot with all data deleted successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 UPLOAD_DIRECTORY = "uploads/"
 ALLOWED_FILE_TYPES = [
     "text/plain",
@@ -1545,69 +1613,6 @@ async def delete_user_chats(chat_id: int, db: Session = Depends(get_db)):
         db.query(ChatMessage).filter(ChatMessage.chat_id == chat_id).delete()
         db.commit()
         return {"message": "Chat deleted successfully"}
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/delete-bot/{bot_id}")
-@check_product_status("chatbot")
-async def delete_chat(bot_id: int, request: Request, db: Session = Depends(get_db)):
-    try:
-        token = request.cookies.get("access_token")
-        payload = decode_access_token(token)
-        user_id = int(payload.get("user_id"))
-
-        # Delete in correct order if not using ON DELETE CASCADE
-        db.query(ChatBotsFaqs).filter(ChatBotsFaqs.bot_id == bot_id).delete(
-            synchronize_session=False
-        )
-
-        docs_to_delete = (
-            db.query(ChatBotsDocLinks)
-            .filter(
-                ChatBotsDocLinks.bot_id == bot_id,
-            )
-            .all()
-        )
-
-        if not docs_to_delete:
-            print({"message": "No documents found to delete"})
-
-        # Get the source links for Pinecone deletion
-        doc_link_ids = [doc.id for doc in docs_to_delete]
-
-        # Delete from Pinecone first
-        delete_documents_from_pinecone(bot_id, doc_link_ids, db)
-
-        db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.bot_id == bot_id).delete(
-            synchronize_session=False
-        )
-        db.query(TokenUsage).filter(TokenUsage.bot_id == bot_id).delete(
-            synchronize_session=False
-        )
-        db.query(TokenUsageHistory).filter(TokenUsageHistory.bot_id == bot_id).delete(
-            synchronize_session=False
-        )
-        db.query(DBInstructionPrompt).filter(
-            DBInstructionPrompt.bot_id == bot_id
-        ).delete(synchronize_session=False)
-        db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).delete(
-            synchronize_session=False
-        )
-        db.query(ChatMessage).filter(ChatMessage.bot_id == bot_id).delete(
-            synchronize_session=False
-        )
-        db.query(ChatSession).filter(ChatSession.bot_id == bot_id).delete(
-            synchronize_session=False
-        )
-
-        db.query(ChatBots).filter(
-            ChatBots.id == bot_id, ChatBots.user_id == user_id
-        ).delete(synchronize_session=False)
-        db.commit()
-        return {"message": "Chatbot with all data deleted successfully"}
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
