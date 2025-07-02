@@ -250,6 +250,9 @@ async def create_subscription_plans(
             existing_plan.duration_days = data.duration_days
             existing_plan.features = data.features
             existing_plan.users_active = data.users_active
+            existing_plan.chars_allowed = data.chars_allowed
+            existing_plan.webpages_allowed = data.webpages_allowed
+            existing_plan.team_strength = data.team_strength
 
             db.commit()
             db.refresh(existing_plan)
@@ -264,12 +267,16 @@ async def create_subscription_plans(
                 duration_days=data.duration_days,
                 features=data.features,
                 users_active=data.users_active,
+                chars_allowed=data.chars_allowed,
+                webpages_allowed=data.webpages_allowed,
+                team_strength=data.team_strength,
             )
             db.add(new_plan)
             db.commit()
             db.refresh(new_plan)
-            return new_plan
 
+            # TODO: add activity log entry
+            return new_plan
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -313,6 +320,9 @@ async def get_all_subscription_plans_admin(
                 "pricingDollar": plan.pricingDollar,
                 "token_per_unit": plan.token_per_unit,
                 "chatbots_allowed": plan.chatbots_allowed,
+                "chars_allowed": plan.chars_allowed,
+                "webpages_allowed": plan.webpages_allowed,
+                "team_strength": plan.team_strength,
                 "duration_days": plan.duration_days,
                 "features": plan.features,
                 "users_active": plan.users_active,
@@ -370,6 +380,9 @@ async def get_all_subscription_plans_public(
                 "currency": currency,
                 "token_per_unit": plan.token_per_unit,
                 "chatbots_allowed": plan.chatbots_allowed,
+                "chars_allowed": plan.chars_allowed,
+                "webpages_allowed": plan.webpages_allowed,
+                "team_strength": plan.team_strength,
                 "duration_days": plan.duration_days,
                 "features": plan.features,
                 "users_active": plan.users_active,

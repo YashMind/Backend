@@ -17,6 +17,9 @@ class PlansSchema(BaseModel):
     pricingDollar: Optional[int] = None
     token_per_unit: Optional[int] = False
     chatbots_allowed: Optional[int] = False
+    chars_allowed: Optional[int] = False
+    webpages_allowed: Optional[int] = False
+    team_strength: Optional[int] = False
     duration_days: Optional[int] = False
     features: Optional[str] = None
     users_active: Optional[int] = None
