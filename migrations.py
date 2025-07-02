@@ -71,15 +71,17 @@ def update_user_credits(db: Session):
                 db.execute(
                     text(
                         f"""
-                    ALTER TABLE user_credits 
-                    ADD COLUMN IF NOT EXISTS {column} INTEGER NOT NULL DEFAULT 0
-                """
+                        ALTER TABLE user_credits 
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
+                    """
                     )
                 )
                 db.commit()
-            except sa_exc.ProgrammingError:
-                db.rollback()  # Column already exists
-                continue
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback()  # Column already exists, ignore
+                else:
+                    raise
 
         # 2. Update values based on plan type
         # Get all plans first (more efficient than querying for each credit)
@@ -130,15 +132,17 @@ def update_history_user_credits(db: Session):
                 db.execute(
                     text(
                         f"""
-                    ALTER TABLE history_user_credits 
-                    ADD COLUMN IF NOT EXISTS {column} INTEGER NOT NULL DEFAULT 0
-                """
+                        ALTER TABLE history_user_credits 
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
+                    """
                     )
                 )
                 db.commit()
-            except sa_exc.ProgrammingError:
-                db.rollback()  # Column already exists
-                continue
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback()  # Column already exists, ignore
+                else:
+                    raise
 
         # Commit the schema changes first
         db.commit()
@@ -182,8 +186,8 @@ def main():
     db = SessionLocal()
     try:
         upgrade_subscription_plans(db)
-        # update_user_credits(db)
-        # update_history_user_credits(db)
+        update_user_credits(db)
+        update_history_user_credits(db)
     finally:
         db.close()
 
