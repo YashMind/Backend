@@ -178,7 +178,7 @@ def update_history_user_credits(db: Session):
 def main():
     db = SessionLocal()
     try:
-        # upgrade_subscription_plans(db)
+        upgrade_subscription_plans(db)
         update_user_credits(db)
         update_history_user_credits(db)
     finally:
