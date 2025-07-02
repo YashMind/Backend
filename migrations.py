@@ -13,26 +13,29 @@ def ensure_tables_exist(db: Session):
 
 
 def upgrade_subscription_plans(db: Session):
-    # 1. First add the new columns if they don't exist
     try:
+        # Ensure base tables exist
         ensure_tables_exist(db)
-        # Method 1: Using SQLAlchemy DDL (recommended)
+
+        # Add new columns if they don't exist
         for column in ["chars_allowed", "webpages_allowed", "team_strength"]:
             try:
                 db.execute(
                     text(
                         f"""
-                    ALTER TABLE subscription_plans 
-                    ADD COLUMN IF NOT EXISTS {column} INTEGER NOT NULL DEFAULT 0
-                """
+                        ALTER TABLE subscription_plans 
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
+                    """
                     )
                 )
                 db.commit()
-            except sa_exc.ProgrammingError:
-                db.rollback()  # Column already exists
-                continue
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback()  # Column already exists, ignore
+                else:
+                    raise
 
-        # 2. Now update the values based on plan type
+        # Now ORM query is safe
         plans = db.query(SubscriptionPlans).all()
 
         for plan in plans:
@@ -179,8 +182,8 @@ def main():
     db = SessionLocal()
     try:
         upgrade_subscription_plans(db)
-        update_user_credits(db)
-        update_history_user_credits(db)
+        # update_user_credits(db)
+        # update_history_user_credits(db)
     finally:
         db.close()
 
