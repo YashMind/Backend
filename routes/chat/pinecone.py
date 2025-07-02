@@ -19,7 +19,7 @@ from models.adminModel.toolsModal import ToolsUsed
 from models.chatModel.chatModel import ChatBotsDocChunks, ChatBotsDocLinks, ChatBotsFaqs
 from sqlalchemy import func
 from langchain.chat_models import ChatOpenAI
-from langchain.schema import  Document
+from langchain.schema import Document
 from sqlalchemy.orm import Session
 from bs4 import BeautifulSoup
 from langchain.document_loaders import (
@@ -39,6 +39,7 @@ from pinecone import ServerlessSpec
 from rank_bm25 import BM25Okapi
 import tiktoken
 from config import SessionLocal, get_db
+from models.subscriptions.userCredits import UserCredits
 from utils.DeepSeek import DeepSeekLLM
 from utils.embeddings import get_embeddings
 
@@ -53,22 +54,30 @@ spec = ServerlessSpec(cloud="aws", region="us-east-1")
 # Check if index exists
 existing_indexes = pc.list_indexes()
 existing_indexes = [i.get("name") for i in existing_indexes]
-print("EXISTING INEXES: ",existing_indexes)
+print("EXISTING INEXES: ", existing_indexes)
 
 if index_name in existing_indexes:
     description = pc.describe_index(index_name)
     current_dimension = description.dimension
 
     if current_dimension != desired_dimension:
-        print(f"⚠️ Index '{index_name}' has dimension {current_dimension}, expected {desired_dimension}. Deleting and recreating...")
+        print(
+            f"⚠️ Index '{index_name}' has dimension {current_dimension}, expected {desired_dimension}. Deleting and recreating..."
+        )
         pc.delete_index(index_name)
-        pc.create_index(name=index_name, dimension=desired_dimension, metric=metric,spec = spec)
+        pc.create_index(
+            name=index_name, dimension=desired_dimension, metric=metric, spec=spec
+        )
         print(f"✅ Index '{index_name}' recreated with dimension {desired_dimension}")
     else:
-        print(f"✅ Index '{index_name}' already has correct dimension {desired_dimension}")
+        print(
+            f"✅ Index '{index_name}' already has correct dimension {desired_dimension}"
+        )
 else:
     print(f"ℹ️ Index '{index_name}' does not exist. Creating it...")
-    pc.create_index(name=index_name, dimension=desired_dimension, metric=metric,spec =spec)
+    pc.create_index(
+        name=index_name, dimension=desired_dimension, metric=metric, spec=spec
+    )
     print(f"✅ Index '{index_name}' created with dimension {desired_dimension}")
 
 # Connect to the index
@@ -81,22 +90,17 @@ def get_llm(tool: str, model_name: str, temperature: float = 0.2) -> BaseLLM:
         return ChatOpenAI(
             model=model_name,
             temperature=temperature,
-            api_key=os.getenv("OPENAI_API_KEY")
+            api_key=os.getenv("OPENAI_API_KEY"),
         )
     elif tool == "DeepSeek":
-        return DeepSeekLLM(
-            model_name=model_name,
-            temperature=temperature
-        )
-    elif tool == 'Gemini':
+        return DeepSeekLLM(model_name=model_name, temperature=temperature)
+    elif tool == "Gemini":
         return ChatGoogleGenerativeAI(
             model=model_name,
             temperature=temperature,
         )
     else:
         raise ValueError(f"Unsupported tool: {tool}")
-
-
 
 
 def hybrid_retrieval(
@@ -370,18 +374,17 @@ def generate_response(
         instruction_prompts=instruction_prompts,
     )
     # print("formatted prompt: ",prompt)
-        # tokens = encoder.encode(prompt)
-        # if len(tokens) <= 5000 or not context_list:
-        #     break
-        # # Remove the longest context item first
-        # context_list.remove(max(context_list, key=len))
-        # context_str = "\n".join(str(item) for item in context_list)
-
+    # tokens = encoder.encode(prompt)
+    # if len(tokens) <= 5000 or not context_list:
+    #     break
+    # # Remove the longest context item first
+    # context_list.remove(max(context_list, key=len))
+    # context_str = "\n".join(str(item) for item in context_list)
 
     # Final check for empty context
     # if not context_str.strip():
     #     return "I don't have enough information to answer that question."
-    
+
     # Debug print formatted prompt
     print(f"Final Prompt: {prompt}")
 
@@ -390,7 +393,9 @@ def generate_response(
     print("OPENAI TOKENS: ", openai_request_tokens)
 
     llm = get_llm(
-        tool=active_tool.tool,model_name=active_tool.model if active_tool else "gpt-3.5-turbo", temperature=1.3
+        tool=active_tool.tool,
+        model_name=active_tool.model if active_tool else "gpt-3.5-turbo",
+        temperature=1.3,
     )
 
     try:
@@ -523,11 +528,26 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
     pinecone_vectors = []
     stats = {"total_chars": 0, "chunks_processed": 0, "failed_chunks": 0}
     namespace = f"bot_{data.bot_id}"
+    if not data.user_id:
+        raise ValueError("User ID is required to store documents")
+    user_credit = (
+        db.query(UserCredits).filter(UserCredits.user_id == data.user_id).first()
+    )
+    total_docs = (
+        db.query(ChatBotsDocChunks.content)
+        .filter(ChatBotsDocChunks.user_id == data.user_id)
+        .all()
+    )
+    total_doc_chars = sum(len(row.content) for row in total_docs if row.content)
+
     print(f"[DEBUG] Namespace to use: {namespace}")
 
     for i, doc in enumerate(docs):
         try:
             text = doc.page_content
+            if len(text) + total_doc_chars > user_credit.chars_allowed:
+                print("Exceeded Total char limit")
+                raise Exception("CHAR_LIMIT_EXCEEDED: Exceeded total character limit")
             stats["total_chars"] += len(text)
             content_hash = sha256(text.encode()).hexdigest()
 
@@ -673,6 +693,8 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
 
         except Exception as e:
             print(f"[ERROR] Error storing chunk {i}: {e}")
+            if "CHAR_LIMIT_EXCEEDED" in str(e):
+                raise Exception(f"{e}")
             stats["failed_chunks"] += 1
             continue
     if pinecone_vectors:

@@ -11,6 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from config import Base
+from models.subscriptions.transactionModel import Transaction
 
 
 class UserCredits(Base):
@@ -30,11 +31,14 @@ class UserCredits(Base):
 
     token_per_unit = Column(Float)
     chatbots_allowed = Column(Integer)
+    chars_allowed = Column(Integer)
+    webpages_allowed = Column(Integer)
+    team_strength = Column(Integer)
 
     is_trial = Column(Boolean, default=False)
 
     top_up_transactions = relationship(
-        "Transaction", secondary="user_credits_topups", backref="credited_users"
+        Transaction, secondary="user_credits_topups", backref="credited_users"
     )
 
 
@@ -63,6 +67,9 @@ class HistoryUserCredits(Base):
 
     token_per_unit = Column(Float)
     chatbots_allowed = Column(Integer)
+    chars_allowed = Column(Integer)
+    webpages_allowed = Column(Integer)
+    team_strength = Column(Integer)
 
     is_trial = Column(Boolean, default=False)
 

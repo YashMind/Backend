@@ -1331,6 +1331,10 @@ async def get_bot_doc_links(
             .all()
         )
 
+        user_credit = (
+            db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
+        )
+
         # Group website links by parent_link_id
         website_groups = {}
         for link in website_links:
@@ -1523,7 +1527,11 @@ async def get_bot_doc_links(
                     "pending_count": pending_count,
                     "failed_count": failed_count,
                     "indexed_count": indexed_count,
-                    "total_chars": total_chars,
+                    "total_chars": (
+                        total_chars
+                        if total_chars <= user_credit.chars_allowed
+                        else user_credit.chars_allowed
+                    ),
                 },
                 *websites,
             ],
@@ -1532,7 +1540,16 @@ async def get_bot_doc_links(
             "user_pending_count": user_pending_count,
             "user_failed_count": user_failed_count,
             "user_indexed_count": user_indexed_count,
-            "user_total_chars": user_total_chars,
+            "user_total_chars": (
+                user_total_chars
+                if user_total_chars <= user_credit.chars_allowed
+                else user_credit.chars_allowed
+            ),
+            "allowed_total_chars": (
+                user_credit.chars_allowed
+                if user_credit and user_credit.chars_allowed
+                else 0
+            ),
         }
 
     except HTTPException as http_exc:
