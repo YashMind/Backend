@@ -288,13 +288,18 @@ async def update_chatbot(data: CreateBot, db: Session = Depends(get_db)):
 @check_product_status("chatbot")
 async def get_chatbot(botId: int, request: Request, db: Session = Depends(get_db)):
     try:
-        token = request.cookies.get("access_token")
-        payload = decode_access_token(token)
-        user_id = int(payload.get("user_id"))
 
         chatbot = db.query(ChatBots).filter(ChatBots.id == botId).first()
         if not chatbot:
             raise HTTPException(status_code=404, detail="Chatbot not found")
+
+        # If chatbot is public, allow access
+        if chatbot.public:
+            return chatbot
+
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
 
         # Check if user is the owner
         if chatbot.user_id == user_id:
@@ -312,10 +317,6 @@ async def get_chatbot(botId: int, request: Request, db: Session = Depends(get_db
         )
 
         if sharing:
-            return chatbot
-
-        # If chatbot is public, allow access
-        if chatbot.public:
             return chatbot
 
         raise HTTPException(
@@ -419,6 +420,14 @@ ALLOWED_FILE_TYPES = [
     "image/jpeg",
     "image/png",
     "image/webp",
+    # Audio formats
+    "audio/mpeg",  # .mp3
+    "audio/wav",  # .wav
+    "audio/x-wav",  # alternative .wav
+    "audio/webm",  # .webm audio
+    "audio/ogg",  # .ogg
+    "audio/mp4",  # .m4a, .mp4 audio
+    "audio/x-m4a",  # alternative .m4a
 ]
 
 
@@ -502,9 +511,7 @@ async def get_my_bots(
 
             if shared_bot_ids:
                 shared_bots = (
-                    db.query(ChatBots)
-                    .filter(ChatBots.id.in_(shared_bot_ids))
-                    .all()
+                    db.query(ChatBots).filter(ChatBots.id.in_(shared_bot_ids)).all()
                 )
 
         # Combine all bot IDs (owned + shared)
@@ -523,11 +530,15 @@ async def get_my_bots(
 
         # Attach images to owned bots
         for bot in owned_bots:
-            bot.image = settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None
+            bot.image = (
+                settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None
+            )
 
         # Attach images to shared bots
         for bot in shared_bots:
-            bot.image = settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None
+            bot.image = (
+                settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None
+            )
 
         return owned_bots + shared_bots
 
@@ -535,6 +546,7 @@ async def get_my_bots(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # create new chat
 @router.post("/chats-id", response_model=ChatSessionRead)
@@ -1394,6 +1406,7 @@ async def get_bot_doc_links(
             db.query(ChatBotsDocLinks)
             .filter(
                 ChatBotsDocLinks.user_id == user_id,
+                ChatBotsDocLinks.bot_id == bot_id,
                 and_(
                     ChatBotsDocLinks.target_link.isnot(None),
                     ChatBotsDocLinks.target_link != "",
@@ -1430,7 +1443,10 @@ async def get_bot_doc_links(
         )
         user_total_chars = (
             db.query(func.sum(ChatBotsDocLinks.chars))
-            .filter_by(user_id=user_id)
+            .filter(
+                ChatBotsDocLinks.user_id == user_id,
+                ChatBotsDocLinks.bot_id == bot_id,
+            )
             .scalar()
             or 0
         )
@@ -1452,6 +1468,7 @@ async def get_bot_doc_links(
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
                 ChatBotsDocLinks.user_id == user_id,
+                ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.status == "Pending",
             )
             .scalar()
@@ -1470,7 +1487,9 @@ async def get_bot_doc_links(
         user_failed_count = (
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
-                ChatBotsDocLinks.user_id == user_id, ChatBotsDocLinks.status == "Failed"
+                ChatBotsDocLinks.user_id == user_id,
+                ChatBotsDocLinks.bot_id == bot_id,
+                ChatBotsDocLinks.status == "Failed",
             )
             .scalar()
         )
@@ -1489,6 +1508,7 @@ async def get_bot_doc_links(
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
                 ChatBotsDocLinks.user_id == user_id,
+                ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.status == "Indexed",
             )
             .scalar()

@@ -421,6 +421,14 @@ def generate_response(
         )
         cleaned_response = re.sub(r"```", "", cleaned_response)
         cleaned_response = cleaned_response.strip()
+
+        # Remove HTML tags if the text appears to be in HTML format
+        if re.search(r"<[a-z][\s\S]*>", cleaned_response, re.IGNORECASE):
+            cleaned_response = re.sub(r"<[^>]+>", "", cleaned_response)
+            cleaned_response = cleaned_response.strip()
+
+        cleaned_response = re.sub(r"\s+", " ", cleaned_response).strip()
+
         print("Cleaned Response: ", cleaned_response)
 
         openai_response_tokens = len(encoder.encode(cleaned_response))
