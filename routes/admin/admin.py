@@ -45,7 +45,7 @@ from config import get_db, settings
 from typing import Optional, Dict, List
 from sqlalchemy import func, or_, desc, asc
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import SessionLocal
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -89,13 +89,26 @@ async def update_base_rate(
 async def get_all_users(
     request: Request,
     db: Session = Depends(get_db),
-    search: Optional[str] = Query(
-        None, description="Search by document_link or target_link"
-    ),
+    search: Optional[str] = Query(None, description="Search by name or email"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    plan: Optional[str] = Query(
+        None, description="Filter by plan: 1=Basic, 2=Pro, 3=Enterprise"
+    ),
+    status: Optional[str] = Query(
+        None, description="Filter by status: active, inactive, suspended"
+    ),
+    token_used: Optional[str] = Query(
+        None, description="Filter by token range: 0-1000, 1001-5000, 5001+"
+    ),
+    start_date: Optional[str] = Query(
+        None, description="Start date for signup date range (YYYY-MM-DD)"
+    ),
+    end_date: Optional[str] = Query(
+        None, description="End date for signup date range (YYYY-MM-DD)"
+    ),
 ):
     try:
         token = request.cookies.get("access_token")
@@ -108,7 +121,7 @@ async def get_all_users(
         total_signups = (
             db.query(AuthUser).filter(AuthUser.created_at >= start_of_month).count()
         )
-        query = db.query(AuthUser).filter()
+        query = db.query(AuthUser)
 
         # Apply search
         if search:
@@ -118,6 +131,33 @@ async def get_all_users(
                     AuthUser.email.ilike(f"%{search}%"),
                 )
             )
+
+        # Apply plan filter
+        if plan:
+            query = query.filter(AuthUser.plan == int(plan))
+
+        # Apply status filter
+        if status:
+            query = query.filter(AuthUser.status == status)
+
+        # Apply token used filter
+        if token_used:
+            if token_used == "0-1000":
+                query = query.filter(AuthUser.tokenUsed.between(0, 1000))
+            elif token_used == "1001-5000":
+                query = query.filter(AuthUser.tokenUsed.between(1001, 5000))
+            elif token_used == "5001+":
+                query = query.filter(AuthUser.tokenUsed >= 5001)
+
+        # Apply date range filter
+        if start_date:
+            start_date = datetime.strptime(start_date, "%Y-%m-%d")
+            query = query.filter(AuthUser.created_at >= start_date)
+        if end_date:
+            end_date = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(
+                days=1
+            )  # Include entire end day
+            query = query.filter(AuthUser.created_at < end_date)
 
         # Sorting
         sort_column = getattr(AuthUser, sort_by, AuthUser.created_at)
@@ -139,6 +179,8 @@ async def get_all_users(
 
     except HTTPException as http_exc:
         raise http_exc
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=f"Invalid filter value: {str(ve)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -29,7 +29,7 @@ from schemas.chatSchema.tokensSchema import (
     ChatMessageTokensSummary,
     ChatMessageTokensToday,
 )
-from utils.utils import decode_access_token, get_current_user
+from utils.utils import decode_access_token, get_current_user, get_recent_chat_history
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
@@ -666,6 +666,7 @@ async def chat_message(
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
 
+        message_history = get_recent_chat_history(chat_id=chat_id, db=db)
         (
             request_tokens,
             response_tokens,
@@ -725,11 +726,12 @@ async def chat_message(
                 use_openai = True
                 generated_res = generate_response(
                     user_msg,
-                    context_texts[:3],
-                    use_openai,
-                    dict_ins_prompt,
-                    creativity,
-                    text_content,
+                    context=context_texts[:3],
+                    use_openai=use_openai,
+                    instruction_prompts=dict_ins_prompt,
+                    creativity=creativity,
+                    text_content=text_content,
+                    message_history=message_history,
                     active_tool=active_tool,
                 )
                 answer = generated_res[0]
@@ -745,13 +747,14 @@ async def chat_message(
                 # Full OpenAI fallback
                 use_openai = True
                 generated_res = generate_response(
-                    user_msg,
-                    [],
-                    use_openai,
-                    dict_ins_prompt,
-                    creativity,
-                    text_content,
+                    query=user_msg,
+                    context=[],
+                    use_openai=use_openai,
+                    instruction_prompts=dict_ins_prompt,
+                    creativity=creativity,
+                    text_content=text_content,
                     active_tool=active_tool,
+                    message_history=message_history,
                 )
                 answer = generated_res[0]
                 openai_request_tokens = generated_res[1]

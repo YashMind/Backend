@@ -15,6 +15,7 @@ from utils.utils import (
     create_access_token,
     decode_access_token,
     create_reset_token,
+    get_timezone_from_ip,
     send_reset_email,
     decode_reset_access_token,
     get_current_user,
@@ -123,7 +124,12 @@ async def signup(user: User, db: Session = Depends(get_db)):
 
 
 @router.post("/signin")
-async def signin(user: SignInUser, response: Response, db: Session = Depends(get_db)):
+async def signin(
+    request: Request,
+    user: SignInUser,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     try:
         print(user, "===========")
         if not user.email or not user.password:
@@ -151,6 +157,9 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
             }
         )
 
+        client_ip = request.client.host
+        timezone = await get_timezone_from_ip(ip=client_ip)
+
         response.set_cookie(
             key="access_token",
             value=access_token,
@@ -162,6 +171,15 @@ async def signin(user: SignInUser, response: Response, db: Session = Depends(get
         response.set_cookie(
             key="role",
             value=db_user.role,
+            httponly=False,
+            secure=False,
+            samesite="Lax",
+            # max_age=84600,
+        )
+
+        response.set_cookie(
+            key="timezone",
+            value=timezone,
             httponly=False,
             secure=False,
             samesite="Lax",
@@ -446,6 +464,10 @@ async def google_login(
             access_token = create_access_token(
                 data={"sub": email, "user_id": str(user.id), "role": user.role}
             )
+
+            client_ip = request.client.host
+            timezone = await get_timezone_from_ip(ip=client_ip)
+
             response.set_cookie(
                 key="access_token",
                 value=access_token,
@@ -457,6 +479,14 @@ async def google_login(
             response.set_cookie(
                 key="role",
                 value=user.role,
+                httponly=False,
+                secure=False,
+                samesite="Lax",
+                # max_age=84600,
+            )
+            response.set_cookie(
+                key="timezone",
+                value=timezone,
                 httponly=False,
                 secure=False,
                 samesite="Lax",

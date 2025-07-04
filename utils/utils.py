@@ -37,7 +37,36 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 20160  # 2 weeks
 RESET_PASSWORD_TOKEN_EXPIRE_MINUTES = 15
 
 
-def get_response_from_chatbot(data, platform, db: Session):
+def get_recent_chat_history(db: Session, chat_id: str):
+    if not chat_id:
+        return []
+
+    # Get messages (both user and bot) in one query for efficiency
+    messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.chat_id == chat_id, ChatMessage.sender.in_(["user", "bot"]))
+        .order_by(ChatMessage.created_at.desc())
+        .limit(6)  # 3 user + 3 bot messages
+        .all()
+    )
+
+    # Convert to pure Python dictionaries
+    history = [
+        {
+            "sender": msg.sender,
+            "message": msg.message,
+            "time": msg.created_at.isoformat(),  # ISO 8601 format
+        }
+        for msg in messages
+    ]
+
+    # Sort by time (newest first) just in case
+    history.sort(key=lambda x: x["time"], reverse=True)
+
+    return history
+
+
+async def get_response_from_chatbot(data, platform, db: Session):
     try:
         user_msg = data.get("message")
         bot_id = data.get("bot_id")
@@ -65,6 +94,8 @@ def get_response_from_chatbot(data, platform, db: Session):
             db.add(chat)
             db.commit()
 
+        message_history = get_recent_chat_history(chat_id=chat.id, db=db)
+
         (
             request_tokens,
             response_tokens,
@@ -80,7 +111,7 @@ def get_response_from_chatbot(data, platform, db: Session):
             print("No response found from FAQ")
             # Hybrid retrieval
             context_texts, scores = hybrid_retrieval(
-                query=user_msg, bot_id=bot_id, db=db ,tool=active_tool
+                query=user_msg, bot_id=bot_id, db=db, tool=active_tool
             )
 
             instruction_prompts = (
@@ -100,7 +131,6 @@ def get_response_from_chatbot(data, platform, db: Session):
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
 
-
             if any(score > 0.6 for score in scores):
                 print("using openai with context")
                 use_openai = True
@@ -112,6 +142,7 @@ def get_response_from_chatbot(data, platform, db: Session):
                     creativity,
                     text_content,
                     active_tool=active_tool,
+                    message_history=message_history,
                 )
                 answer = generated_res[0]
                 openai_request_tokens = generated_res[1]
@@ -133,6 +164,7 @@ def get_response_from_chatbot(data, platform, db: Session):
                     creativity,
                     text_content,
                     active_tool=active_tool,
+                    message_history=message_history,
                 )
                 answer = generated_res[0]
                 openai_request_tokens = generated_res[1]
@@ -141,7 +173,6 @@ def get_response_from_chatbot(data, platform, db: Session):
                 print("ANSWER", answer, openai_request_tokens)
 
             response_content = answer if answer else response_content
-
 
             user_message = ChatMessage(
                 bot_id=bot_id, chat_id=chat.id, sender="user", message=user_msg
@@ -184,30 +215,39 @@ def html_to_whatsapp_format(html_text: str) -> str:
     soup = BeautifulSoup(unescape(html_text), "html.parser")
 
     def convert_node(node, in_list=False, list_type=None, list_index=1):
-        if node.name in ['b', 'strong']:
+        if node.name in ["b", "strong"]:
             return f"*{convert_children(node)}*"
-        elif node.name in ['i', 'em']:
+        elif node.name in ["i", "em"]:
             return f"_{convert_children(node)}_"
-        elif node.name in ['s', 'strike', 'del']:
+        elif node.name in ["s", "strike", "del"]:
             return f"~{convert_children(node)}~"
-        elif node.name in ['code', 'pre']:
+        elif node.name in ["code", "pre"]:
             content = node.get_text().strip()
             return f"```\n{content}\n```"
-        elif node.name == 'br':
-            return '\n'
-        elif node.name == 'p':
+        elif node.name == "br":
+            return "\n"
+        elif node.name == "p":
             return f"{convert_children(node)}\n\n"
-        elif node.name == 'ul':
-            return '\n'.join(convert_node(li, in_list=True, list_type="ul") for li in node.find_all("li", recursive=False)) + "\n"
-        elif node.name == 'ol':
-            return '\n'.join(
-                convert_node(li, in_list=True, list_type="ol", list_index=i+1)
-                for i, li in enumerate(node.find_all("li", recursive=False))
-            ) + "\n"
-        elif node.name == 'li':
+        elif node.name == "ul":
+            return (
+                "\n".join(
+                    convert_node(li, in_list=True, list_type="ul")
+                    for li in node.find_all("li", recursive=False)
+                )
+                + "\n"
+            )
+        elif node.name == "ol":
+            return (
+                "\n".join(
+                    convert_node(li, in_list=True, list_type="ol", list_index=i + 1)
+                    for i, li in enumerate(node.find_all("li", recursive=False))
+                )
+                + "\n"
+            )
+        elif node.name == "li":
             prefix = f"{list_index}. " if list_type == "ol" else "• "
             return f"{prefix}{convert_children(node)}"
-        elif node.name == 'a':
+        elif node.name == "a":
             href = node.get("href")
             text = convert_children(node).strip()
             if href:
@@ -217,22 +257,21 @@ def html_to_whatsapp_format(html_text: str) -> str:
             return convert_children(node)
 
     def convert_children(parent):
-        if not hasattr(parent, 'contents'):
+        if not hasattr(parent, "contents"):
             return str(parent)
-        
+
         result = []
         for child in parent.contents:
-            if hasattr(child, 'name'):
+            if hasattr(child, "name"):
                 result.append(str(convert_node(child)))
             else:
                 result.append(str(child))  # plain text (NavigableString)
-        return ''.join(result)
+        return "".join(result)
 
     # Start processing from the body
     output = convert_children(soup)
     # Cleanup: collapse extra newlines and spaces
-    return re.sub(r'\n{3,}', '\n\n', output).strip()
-
+    return re.sub(r"\n{3,}", "\n\n", output).strip()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -355,6 +394,24 @@ async def get_country_from_ip(ip: str):
     except Exception as e:
         print("IP API error", e)
         return "Unknown"
+
+
+async def get_timezone_from_ip(ip: str) -> str:
+    try:
+        if ip.startswith("127.") or ip == "localhost":  # fallback for testing
+            # ip = "8.8.8.8"  # America/Los_Angeles
+            ip = "117.197.0.0"  # Asia/Kolkata
+
+        url = f"https://ipinfo.io/{ip}/json"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("timezone", "UTC")  # Default to UTC if not found
+        return "UTC"
+    except Exception as e:
+        print("IP API error", e)
+        return "UTC"
 
 
 async def get_paypal_access_token(

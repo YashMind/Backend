@@ -16,7 +16,12 @@ from sqlalchemy.orm import Session
 from langchain.document_loaders import WebBaseLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from models.adminModel.toolsModal import ToolsUsed
-from models.chatModel.chatModel import ChatBotsDocChunks, ChatBotsDocLinks, ChatBotsFaqs
+from models.chatModel.chatModel import (
+    ChatBotsDocChunks,
+    ChatBotsDocLinks,
+    ChatBotsFaqs,
+    ChatMessage,
+)
 from sqlalchemy import func
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import Document
@@ -221,6 +226,7 @@ def hybrid_retrieval(
 
 def generate_response(
     query: str,
+    message_history,
     context: List[str],
     use_openai: bool,
     instruction_prompts,
@@ -261,6 +267,9 @@ def generate_response(
     
     • creativity — Integer (0–100) controlling response creativity. 0 = strict factual, 100 = freeform.
     creativity: {creativity}
+    
+    • message_history — This contains the last 3 system messages and last 3 user messages exchanged in the current conversation. Use this to maintain context continuity. If the current question relates to or follows up on any prior messages, incorporate that context when formulating the response. Prioritize resolving ongoing threads, maintaining consistency, and referencing earlier information where relevant.
+    • message_history: {message_history}
 
     ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
     🔒 OUTPUT RULES
@@ -273,8 +282,9 @@ def generate_response(
     - If creativity is below 30, keep the response strictly factual and concise.
     - If creativity is above 70, you may include light elaboration or explanation—but do not make assumptions or guesses.
     
-    2. ALWAYS base your response on the information found in context, instruction_prompts, or text_content. 
+    2. ALWAYS base your response on the information found in context, instruction_prompts, message_history or text_content. 
     - Always attempt to find content related to the user s query, even if there is no exact match. If a partial or closely related match is found, respond with:
+    - Reference Resolution — If the user message includes phrases like “these courses,” “price of this,” “more about this,” or any similar referential language, use message_history to identify the relevant context from previous user or bot messages. Resolve the reference accurately and respond based on that prior information.
     - If the user query is not an exact match with the available context, identify the main subject or keyword of the query (e.g., for "courses related to fitness," the main subject is "fitness"). Then, generate a list of the top 15 related terms that you can find in context to that keyword (e.g., health, exercise, diet, sleep, hygiene, etc.). Use this expanded list of related terms to find relevant information within the context and construct a meaningful and accurate response to the user query.
     “I found something related to your query: …” and then present the relevant content.
     - if user query is a collective noun (e.g., “What are the best books?”), you must provide a list of relevant items available in context, but always include a brief description or context for each item. If the query is singular (e.g., “What is the best book?”), provide a single , relevant item with a brief description. If no relevant items are found, respond with a message indicating that no relevant information was found.
@@ -369,6 +379,7 @@ def generate_response(
         text_content=text_content,
         creativity=creativity,
         instruction_prompts=instruction_prompts,
+        message_history=message_history,
     )
     # print("formatted prompt: ",prompt)
     # tokens = encoder.encode(prompt)
