@@ -1,3 +1,4 @@
+import re
 from types import SimpleNamespace
 from fastapi import (
     APIRouter,
@@ -950,7 +951,6 @@ async def get_user_chat_history(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# get user chat history
 @router.get("/chats-history/{bot_id}")
 @check_product_status("chatbot")
 async def get_user_chat_history(
@@ -966,18 +966,26 @@ async def get_user_chat_history(
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         chat_bot = db.query(ChatBots).filter_by(id=bot_id, user_id=user_id).first()
+
+        # Start with base query for sessions
         session_query = db.query(ChatSession).filter_by(bot_id=bot_id, archived=False)
+
         if not session_query:
             raise HTTPException(status_code=404, detail="Chat not found")
+
         if search:
             session_query = session_query.filter(
                 ChatMessage.message.ilike(f"%{search}%")
             )
 
+        # ORDER sessions by created_at descending to get most recent first
+        session_query = session_query.order_by(ChatSession.created_at.desc())
+
         total_count = session_query.count()
         # Apply pagination
         sessions = session_query.offset((page - 1) * limit).limit(limit).all()
         session_ids = [s.id for s in sessions]
+
         if not session_ids:
             return {
                 "data": {},
@@ -987,13 +995,15 @@ async def get_user_chat_history(
                 "chatBot": chat_bot,
             }
 
+        # Get messages for these sessions, ordered by created_at descending
         messages = (
             db.query(ChatMessage)
             .filter(ChatMessage.chat_id.in_(session_ids))
-            .order_by(ChatMessage.created_at.asc())
+            .order_by(ChatMessage.created_at.desc())
             .all()
         )
-        # Build a map of session_id to session (to get platform)
+
+        # Build a map of session_id to session (to get platform and created_at)
         session_map = {session.id: session for session in sessions}
 
         # Group messages by chat_id and include platform
@@ -1003,13 +1013,18 @@ async def get_user_chat_history(
             if chat_id not in grouped_sessions:
                 grouped_sessions[chat_id] = {
                     "platform": session_map[chat_id].platform,
+                    "created_at": session_map[chat_id].created_at,  # Add this
                     "messages": [],
                 }
             grouped_sessions[chat_id]["messages"].append(message)
 
-        # Optional: sort by chat_id descending
+        # Sort sessions by created_at descending (most recent first)
         sorted_grouped = dict(
-            sorted(grouped_sessions.items(), key=lambda x: x[0], reverse=True)
+            sorted(
+                grouped_sessions.items(),
+                key=lambda x: x[1]["created_at"],  # Sort by session's created_at
+                reverse=True,
+            )
         )
 
         return {
@@ -1019,12 +1034,12 @@ async def get_user_chat_history(
             "currentPage": page,
             "chatBot": chat_bot,
         }
-        # return sorted_grouped
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         print("e ", e)
-        raise HTTPException(status_code=500, detail=str(e))  # get user chat history
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/delete-chats/{bot_id}")
@@ -1349,6 +1364,12 @@ async def get_bot_doc_links(
             db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
         )
 
+        chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
+        if not chatbot:
+            raise HTTPException(404, detail="Chatbot not found")
+
+        bot_faqs = db.query(ChatBotsFaqs).filter(ChatBotsFaqs.bot_id == bot_id).all()
+
         # Group website links by parent_link_id
         website_groups = {}
         for link in website_links:
@@ -1453,6 +1474,25 @@ async def get_bot_doc_links(
             .scalar()
             or 0
         )
+
+        # First trim the text_content and count its characters
+        trimmed_text_content = (
+            chatbot.text_content.strip() if chatbot.text_content else ""
+        )
+        text_content_chars = len(trimmed_text_content)
+
+        # Calculate characters from FAQs
+        faqs_chars = 0
+        if bot_faqs:  # Assuming bot_faqs is a list of FAQ objects
+            for faq in bot_faqs:
+                # Trim and count characters for both question and answer
+                question = faq.question.strip() if faq.question else ""
+                answer = faq.answer.strip() if faq.answer else ""
+                faqs_chars += len(question) + len(answer)
+
+        # Total character count
+        user_total_chars += text_content_chars + faqs_chars
+
         pending_count = (
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
@@ -1946,7 +1986,19 @@ async def chat_message_tokens_summary(
             response_tokens = 0
             if bot_messages:
                 combined_bot_text = " ".join(bot_messages)
-                response_tokens = len(encoder.encode(combined_bot_text))
+                cleaned_response = re.sub(
+                    r"```(html|json)?", "", combined_bot_text, flags=re.IGNORECASE
+                )
+                cleaned_response = re.sub(r"```", "", cleaned_response)
+                cleaned_response = cleaned_response.strip()
+
+                # Remove HTML tags if the text appears to be in HTML format
+                if re.search(r"<[a-z][\s\S]*>", cleaned_response, re.IGNORECASE):
+                    cleaned_response = re.sub(r"<[^>]+>", "", cleaned_response)
+                    cleaned_response = cleaned_response.strip()
+
+                cleaned_response = re.sub(r"\s+", " ", cleaned_response).strip()
+                response_tokens = len(encoder.encode(cleaned_response))
 
             return {
                 "request_tokens": request_tokens,

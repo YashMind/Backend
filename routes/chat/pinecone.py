@@ -69,7 +69,7 @@ if index_name in existing_indexes:
         print(
             f"⚠️ Index '{index_name}' has dimension {current_dimension}, expected {desired_dimension}. Deleting and recreating..."
         )
-        pc.delete_index(index_name)
+        # pc.delete_index(index_name)
         pc.create_index(
             name=index_name, dimension=desired_dimension, metric=metric, spec=spec
         )
@@ -277,16 +277,16 @@ def generate_response(
     
     1. SPECIAL CASES:
 
-    - If the question is a greeting, respond with an appropriate greeting.
+    - If the question contains a greeting, start your response with an appropriate greeting. If query extends than greeting then after greeting in response refer to 2nd section of prompt for futher answering.
     - For small talk (e.g., "How are you?", "Have a great day!"), reply with a warm, professional response and address the query clearly—use simple <p>...</p> without any structured formatting.
     - If creativity is below 30, keep the response strictly factual and concise.
     - If creativity is above 70, you may include light elaboration or explanation—but do not make assumptions or guesses.
     
     2. ALWAYS base your response on the information found in context, instruction_prompts, message_history or text_content. 
-    - Always attempt to find content related to the user s query, even if there is no exact match. If a partial or closely related match is found, respond with:
-    - Reference Resolution — If the user message includes phrases like “these courses,” “price of this,” “more about this,” or any similar referential language, use message_history to identify the relevant context from previous user or bot messages. Resolve the reference accurately and respond based on that prior information.
+    - Always attempt to find content related to the user s query, even if there is no exact match. If a partial or closely related match is found, respond with: “I found something related to your query: …” and then present the relevant content.
+    - Reference Resolution — If the user message includes phrases like “these courses,” “price of this,” “more about this,” or any similar referential language, use message_history to identify the relevant context from users previous messages. Resolve the reference accurately and respond based on that prior information.
     - If the user query is not an exact match with the available context, identify the main subject or keyword of the query (e.g., for "courses related to fitness," the main subject is "fitness"). Then, generate a list of the top 15 related terms that you can find in context to that keyword (e.g., health, exercise, diet, sleep, hygiene, etc.). Use this expanded list of related terms to find relevant information within the context and construct a meaningful and accurate response to the user query.
-    “I found something related to your query: …” and then present the relevant content.
+    
     - if user query is a collective noun (e.g., “What are the best books?”), you must provide a list of relevant items available in context, but always include a brief description or context for each item. If the query is singular (e.g., “What is the best book?”), provide a single , relevant item with a brief description. If no relevant items are found, respond with a message indicating that no relevant information was found.
     - For queries involving pricing, availability, curriculum, steps, or any data-driven topics, add these information only if an exact or closely related match is available in the context.
     - For example, if a user asks about "vegan diet" and no direct match exists, but "vegan diet course" or "vegan nutrition" is available, use that to respond helpfully. and strictly follow the instructions provided for Data Is Missing or Unclear in point number 5.
