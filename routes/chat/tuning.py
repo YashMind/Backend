@@ -147,7 +147,7 @@ def get_authenticated_user(request: Request):
 
 
 def seed_instruction_prompts_template(
-    user_id: int, bot_id: int, db: Session = Depends(get_db)
+    user_id: int, bot_id: int, domain: str, db: Session = Depends(get_db)
 ):
     try:
         file_path = os.path.join(
@@ -157,22 +157,33 @@ def seed_instruction_prompts_template(
         with open(file_path, "r", encoding="utf-8") as f:
             prompt_data = json.load(f)
 
+        # Find the prompt that matches the given domain (label)
+        matching_prompt = None
         for item in prompt_data:
-            # Convert JSON string with \n to actual newlines
-            prompt_text = item.get("prompt", "").replace("\\n", "\n")
+            if item.get("label", "") == domain:
+                matching_prompt = item
+                break
 
-            prompt_entry = DBInstructionPrompt(
-                user_id=user_id,
-                bot_id=bot_id,
-                type=item.get("label"),
-                prompt=prompt_text,  # Use the converted text
-            )
-            db.add(prompt_entry)
+        if not matching_prompt:
+            return False, f"No prompt template found for domain: {domain}"
 
+        # Convert JSON string with \n to actual newlines
+        prompt_text = matching_prompt.get("prompt", "").replace("\\n", "\n")
+
+        prompt_entry = DBInstructionPrompt(
+            user_id=user_id,
+            bot_id=bot_id,
+            type=matching_prompt.get("label"),
+            prompt=prompt_text,
+        )
+        db.add(prompt_entry)
         db.commit()
-        return True, f"Added {len(prompt_data)} Instruction prompts."
+
+        return True, f"Added Instruction prompt for domain: {domain}"
 
     except HTTPException as e:
-        return False, f"Error seeding Instruction prompts: {str(e)}"
+        db.rollback()
+        return False, f"Error seeding Instruction prompt: {str(e)}"
     except Exception as e:
-        return False, f"Error seeding Instruction prompts: {str(e)}"
+        db.rollback()
+        return False, f"Error seeding Instruction prompt: {str(e)}"

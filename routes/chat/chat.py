@@ -220,7 +220,7 @@ async def create_chatbot(request: Request, db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail=message)
 
         instruction_prompts, message = seed_instruction_prompts_template(
-            user_id=user_id, bot_id=new_chatbot.id, db=db
+            user_id=user_id, bot_id=new_chatbot.id, domain=data.get("domain", ""), db=db
         )
 
         if not instruction_prompts:
