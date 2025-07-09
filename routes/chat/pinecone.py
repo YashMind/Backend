@@ -1,8 +1,9 @@
 from hashlib import sha256
 import os
+from pathlib import Path
 import re
+import tempfile
 import time
-from fastapi import Depends
 from typing import List, Tuple, Optional
 import numpy as np
 
@@ -11,10 +12,14 @@ from langchain_core.language_models.llms import BaseLLM
 from langchain.document_loaders import RecursiveUrlLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import ChatGoogleGenerativeAI
+import olefile
 import regex
+import requests
 from sqlalchemy.orm import Session
 from langchain.document_loaders import WebBaseLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from models.adminModel.toolsModal import ToolsUsed
 from models.chatModel.chatModel import (
     ChatBotsDocChunks,
@@ -33,11 +38,12 @@ from langchain.document_loaders import (
     Docx2txtLoader,
     TextLoader,
     CSVLoader,
+    UnstructuredWordDocumentLoader,
     UnstructuredExcelLoader,
     UnstructuredPowerPointLoader,
     UnstructuredFileLoader,
 )
-
+from docx2txt import process
 import uuid
 import pinecone
 from pinecone import ServerlessSpec
@@ -60,6 +66,9 @@ spec = ServerlessSpec(cloud="aws", region="us-east-1")
 existing_indexes = pc.list_indexes()
 existing_indexes = [i.get("name") for i in existing_indexes]
 print("EXISTING INEXES: ", existing_indexes)
+
+UPLOADS_DIR = Path("uploads")
+UPLOADS_DIR.mkdir(exist_ok=True)
 
 if index_name in existing_indexes:
     description = pc.describe_index(index_name)
@@ -589,13 +598,19 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 print(f"[DEBUG] Skipping existing DB hash: {content_hash}")
                 continue
 
+            source = data.target_link
+            if data.train_from == "Full website":
+                source = doc.metadata["source"]
+            elif data.document_link:
+                source = data.document_link
+
             metadata = {
+                **doc.metadata,
                 "bot_id": str(data.bot_id),
                 "user_id": str(data.user_id),
-                "source": data.target_link or data.document_link,
+                "source": source,
                 # "content": text,
                 "chunk_index": i,
-                **doc.metadata,
             }
             active_tool = db.query(ToolsUsed).filter_by(status=True).first()
             embedding_model = get_embeddings(tool=active_tool.tool)
@@ -696,11 +711,16 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
                 f"[DEBUG] Chunk metadata (trimmed): {str(metadata)[:200]}..."
             )  # Truncated print
             print(f"[DEBUG] Chunk content hash: {content_hash}")
+            source = data.target_link
+            if data.train_from == "Full website":
+                source = metadata["source"]
+            elif data.document_link:
+                source = data.document_link
 
             db_chunk = ChatBotsDocChunks(
                 bot_id=data.bot_id,
                 user_id=data.user_id,
-                source=metadata["source"],
+                source=source,
                 content=text,
                 metaData=str(metadata),
                 chunk_index=vector_id,
@@ -765,7 +785,86 @@ def process_and_store_docs(data, db: Session) -> dict:
         # Handle web content
         if data.target_link:
             print("Target link detected:", data.target_link)
-            if data.train_from == "Full website":
+
+            if data.target_link.lower().endswith((".pdf", ".docx", ".doc")):
+                print("Training from document URL:", data.target_link)
+                downloaded_file_path = None
+                try:
+                    # Download the file
+                    response = requests.get(data.target_link)
+                    response.raise_for_status()
+
+                    # Generate unique filename and save to uploads directory
+                    ext = os.path.splitext(data.target_link)[1].lower()
+                    filename = f"{uuid.uuid4()}{ext}"
+                    downloaded_file_path = UPLOADS_DIR / filename
+
+                    with open(downloaded_file_path, "wb") as f:
+                        f.write(response.content)
+
+                    # Use the appropriate loader
+                    if ext == ".pdf":
+                        data.train_from = "Pdf"
+                        loader = PyPDFLoader(str(downloaded_file_path))
+                        stats["source_type"] = "pdf_url"
+                        documents = loader.load()
+
+                    elif ext == ".docx":
+                        data.train_from = "Word doc"
+                        try:
+                            loader = Docx2txtLoader(str(downloaded_file_path))
+                            documents = loader.load()
+                        except Exception as e:
+                            print(
+                                f"DOCX parsing failed, trying alternative method: {e}"
+                            )
+                            doc = Document(downloaded_file_path)
+                            text = "\n".join([para.text for para in doc.paragraphs])
+                            documents = [Document(page_content=text)]
+
+                    elif ext == ".doc":
+                        data.train_from = "Word doc"
+                        try:
+                            # Try to read as OLE file (legacy DOC)
+                            if olefile.isOleFile(str(downloaded_file_path)):
+                                text = process(str(downloaded_file_path))
+                                documents = [Document(page_content=text)]
+                            else:
+                                raise ValueError("Not a valid OLE file")
+                        except Exception as e:
+                            print(f"DOC parsing failed: {e}")
+
+                            # Check if it's actually a misnamed .docx file
+                            try:
+                                print("Trying .docx fallback for .doc file...")
+                                loader = Docx2txtLoader(str(downloaded_file_path))
+                                documents = loader.load()
+                            except Exception as docx_fallback_error:
+                                print(
+                                    f".docx fallback also failed: {docx_fallback_error}"
+                                )
+                                # Final fallback to binary read
+                                with open(downloaded_file_path, "rb") as f:
+                                    text = f.read().decode("latin-1", errors="ignore")
+                                documents = [Document(page_content=text)]
+
+                    print(f"Loaded {len(documents)} documents from {data.train_from}")
+
+                except Exception as e:
+                    print(f"Error processing document URL: {str(e)}")
+                    raise
+                finally:
+                    # Clean up the downloaded file
+                    if downloaded_file_path and downloaded_file_path.exists():
+                        try:
+                            os.unlink(downloaded_file_path)
+                            print(f"Cleaned up temporary file: {downloaded_file_path}")
+                        except Exception as cleanup_error:
+                            print(
+                                f"Warning: Could not delete file {downloaded_file_path}: {cleanup_error}"
+                            )
+
+            elif data.train_from == "Full website":
                 print("Training from full website...")
                 loader = RecursiveUrlLoader(
                     url=data.target_link,
@@ -774,13 +873,18 @@ def process_and_store_docs(data, db: Session) -> dict:
                     # link_regex=r"^(?!.*\?).*$",  # exclude links with query parameters
                 )
                 stats["source_type"] = "website"
+                documents = loader.load()
+                print(f"Loaded {len(documents)} documents from web.(Full website)")
+                stats["sources"].add(data.target_link)
+
             else:
                 print("Training from single page...")
+                data.train_from = "Webpage"
                 loader = WebBaseLoader(data.target_link)
                 stats["source_type"] = "single_page"
-            documents = loader.load()
-            print(f"Loaded {len(documents)} documents from web.")
-            stats["sources"].add(data.target_link)
+                documents = loader.load()
+                print(f"Loaded {len(documents)} documents from web.(Webpage)")
+                stats["sources"].add(data.target_link)
 
         # Handle file uploads
         elif data.document_link:
