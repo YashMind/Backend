@@ -1913,13 +1913,14 @@ async def configure_email_for_chatbot_lead(
         email: Email address to receive notifications
     """
     try:
+        bot_id = config.get("bot_id")
         # Get the chatbot from database
-        chatbot = db.query(ChatBots).filter(ChatBots.id == config.get("bot_id")).first()
+        chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
 
         if not chatbot:
             raise HTTPException(
                 status_code=404,
-                detail=f"Chatbot with ID {config.get("bot_id")} not found",
+                detail=f"Chatbot with ID {bot_id} not found",
             )
 
         # Update the email configuration
