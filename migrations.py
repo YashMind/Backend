@@ -218,13 +218,49 @@ def update_chat_settings(db: Session):
         raise
 
 
+def update_chat_bots(db: Session):
+    # 1. First add the new columns if they don't exist
+    try:
+        ensure_tables_exist(db)
+        # Method 1: Using SQLAlchemy DDL (recommended)
+        for column in ["lead_email"]:
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        ALTER TABLE chat_bots 
+                        ADD COLUMN {column} VARCHAR(255)
+                    """
+                    )
+                )
+                db.commit()
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback()  # Column already exists, ignore
+                else:
+                    raise
+
+        # Commit the schema changes first
+        db.commit()
+        print("✅ Migration completed successfully")
+
+    except sa_exc.SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Database error during migration: {str(e)}")
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Unexpected error during migration: {str(e)}")
+        raise
+
+
 def main():
     db = SessionLocal()
     try:
         # upgrade_subscription_plans(db)
         # update_user_credits(db)
         # update_history_user_credits(db)
-        update_chat_settings(db)
+        update_chat_bots(db)
     finally:
         db.close()
 

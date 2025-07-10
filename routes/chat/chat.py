@@ -25,6 +25,7 @@ from routes.subscriptions.token_usage import (
     update_token_usage_on_consumption,
     verify_token_limit_available,
 )
+from routes.supportTickets.routes import send_email
 from schemas.chatSchema.tokensSchema import (
     ChatMessageTokens,
     ChatMessageTokensSummary,
@@ -1755,6 +1756,114 @@ async def create_chatbot_leads(
         db.commit()
         db.refresh(new_chatbot_lead)
 
+        # Create email content
+        email_html = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>New Lead Generated</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }}
+                .header {{
+                    background-color: #4f46e5;
+                    color: white;
+                    padding: 20px;
+                    text-align: center;
+                    border-radius: 8px 8px 0 0;
+                }}
+                .content {{
+                    padding: 20px;
+                    border: 1px solid #e5e7eb;
+                    border-top: none;
+                    border-radius: 0 0 8px 8px;
+                }}
+                .lead-details {{
+                    margin-bottom: 20px;
+                }}
+                .detail-row {{
+                    margin-bottom: 10px;
+                }}
+                .detail-label {{
+                    font-weight: bold;
+                    display: inline-block;
+                    width: 100px;
+                }}
+                .footer {{
+                    margin-top: 20px;
+                    font-size: 12px;
+                    color: #6b7280;
+                    text-align: center;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>New Lead Generated</h1>
+            </div>
+            <div class="content">
+                <p>Hello,</p>
+                <p>A new lead has been generated from your chatbot. Here are the details:</p>
+                
+                <div class="lead-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Chatbot:</span>
+                        <span>{chatbot_name}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Name:</span>
+                        <span>{lead_name}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Email:</span>
+                        <span>{lead_email}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Contact:</span>
+                        <span>{lead_contact}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Message:</span>
+                        <span>{lead_message}</span>
+                    </div>
+                </div>
+                
+                <p>Please follow up with this lead as soon as possible.</p>
+            </div>
+            <div class="footer">
+                <p>This is an automated message. Please do not reply directly to this email.</p>
+                <p>&copy; {current_year} Your Company Name. All rights reserved.</p>
+            </div>
+        </body>
+        </html>
+        """.format(
+            chatbot_name=chatbot.chatbot_name,
+            lead_name=new_chatbot_lead.name or "",
+            lead_email=new_chatbot_lead.email or "",
+            lead_contact=new_chatbot_lead.contact or "",
+            lead_message=new_chatbot_lead.message or "",
+            current_year=datetime.now().year,
+        )
+        print("EMAIL TEMPLATE GENERATED")
+        if not chatbot.lead_email:
+            print(
+                "Warning: No lead email configured for chatbot, skipping email notification"
+            )
+        else:
+            send_email(
+                subject="New Lead generated",
+                html_content=email_html,
+                recipients=[chatbot.lead_email],
+            )
+
         # Fetch zapier webhook details
         zapier_webhook = (
             db.query(ZapierIntegration)
@@ -1789,6 +1898,54 @@ async def create_chatbot_leads(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/configure-lead-mail", response_model=ChatbotLeads)
+@check_product_status("chatbot")
+async def configure_email_for_chatbot_lead(
+    request: Request, config=Body(...), db: Session = Depends(get_db)
+):
+    """
+    Configure email notifications for chatbot leads
+
+    Args:
+        bot_id: ID of the chatbot to configure
+        email: Email address to receive notifications
+    """
+    try:
+        # Get the chatbot from database
+        chatbot = db.query(ChatBots).filter(ChatBots.id == config.get("bot_id")).first()
+
+        if not chatbot:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Chatbot with ID {config.get("bot_id")} not found",
+            )
+
+        # Update the email configuration
+        chatbot.lead_email = config.get("email")
+
+        # Commit changes
+        db.add(chatbot)
+        db.commit()
+        db.refresh(chatbot)
+
+        return {
+            "success": True,
+            "message": "Email configuration updated successfully",
+            "data": {
+                "bot_id": chatbot.id,
+                "lead_email": chatbot.lead_email,
+            },
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update email configuration: {str(e)}"
+        )
 
 
 @router.get("/get-chatbot-leads/{bot_id}")
