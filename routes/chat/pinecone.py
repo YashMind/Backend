@@ -6,6 +6,7 @@ import re
 import tempfile
 import time
 from typing import List, Tuple, Optional
+from urllib.parse import urlparse
 import numpy as np
 
 # from pinecone import Pinecone
@@ -55,7 +56,7 @@ from models.subscriptions.userCredits import UserCredits
 from utils.DeepSeek import DeepSeekLLM
 from utils.convertDocToDocx import convert_doc_to_docx
 from utils.embeddings import get_embeddings
-
+import logging
 
 pc = pinecone.Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
@@ -71,6 +72,10 @@ print("EXISTING INEXES: ", existing_indexes)
 
 UPLOADS_DIR = Path("uploads")
 UPLOADS_DIR.mkdir(exist_ok=True)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 
 if index_name in existing_indexes:
     description = pc.describe_index(index_name)
@@ -288,21 +293,21 @@ def generate_response(
     
     1. SPECIAL CASES:
 
-    - If the question contains a greeting, start your response with an appropriate greeting. If query extends than greeting then after greeting in response refer to 2nd section of prompt for futher answering.
+    - If the question contains a greeting, only then start your response with an appropriate greeting. If query extends than greeting then after greeting in response refer to 2nd section of prompt for futher answering.
     - For small talk (e.g., "How are you?", "Have a great day!"), reply with a warm, professional response and address the query clearly—use simple <p>...</p> without any structured formatting.
     - If creativity is below 30, keep the response strictly factual and concise.
     - If creativity is above 70, you may include light elaboration or explanation—but do not make assumptions or guesses.
     
     2. ALWAYS base your response on the information found in context, instruction_prompts, message_history or text_content. 
-    - Always attempt to find content related to the user s query, even if there is no exact match. If a partial or closely related match is found, respond with: “I found something related to your query: …” and then present the relevant content.
+    - Always attempt to find content related to the query. If a partial or closely related match is found, then present the relevant content.
     - Reference Resolution — If the user message includes phrases like “these courses,” “price of this,” “more about this,” or any similar referential language, use message_history to identify the relevant context from users previous messages. Resolve the reference accurately and respond based on that prior information.
     - If the user query is not an exact match with the available context, identify the main subject or keyword of the query (e.g., for "courses related to fitness," the main subject is "fitness"). Then, generate a list of the top 15 related terms that you can find in context to that keyword (e.g., health, exercise, diet, sleep, hygiene, etc.). Use this expanded list of related terms to find relevant information within the context and construct a meaningful and accurate response to the user query.
     
     - if user query is a collective noun (e.g., “What are the best books?”), you must provide a list of relevant items available in context, but always include a brief description or context for each item. If the query is singular (e.g., “What is the best book?”), provide a single , relevant item with a brief description. If no relevant items are found, respond with a message indicating that no relevant information was found.
     - For queries involving pricing, availability, curriculum, steps, or any data-driven topics, add these information only if an exact or closely related match is available in the context.
     - For example, if a user asks about "vegan diet" and no direct match exists, but "vegan diet course" or "vegan nutrition" is available, use that to respond helpfully. and strictly follow the instructions provided for Data Is Missing or Unclear in point number 5.
-    - If neither exact nor related content is available, clearly state that the information is not found, and offer alternative suggestions or guidance when possible.
-    - Important Note: if context used always add a link to the source of the information at last of query with note "you can find more information related to this <a href="/** source here */">here</a>.
+    - If neither exact nor related content is available, clearly state that the information is not found.
+    - Important Note: if context used check link to the source of the information if it is a full url only then append it at last of query with note "you can find more information related to this <a href="/** source here */">here</a>.
 
     3. FORMAT all outputs in clean semantic HTML only.
     - Use <h1>, <h2>, <p>, <ul>, <li>, <a>, etc.
@@ -475,6 +480,23 @@ def generate_response(
 ############################################
 # training
 ############################################
+def extract_main_content(html):
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Remove unwanted tags
+    for tag in ["script", "style", "header", "footer", "nav", "aside"]:
+        for el in soup.find_all(tag):
+            el.decompose()
+
+    # Optionally target specific content divs like WordPress's "entry-content"
+    main = soup.find("main") or soup.find("div", class_="entry-content")
+    if main:
+        return main.get_text(separator="\n", strip=True)
+
+    # fallback to body if no main content found
+    return soup.body.get_text(separator="\n", strip=True) if soup.body else ""
+
+
 def clean_text(text: str) -> str:
     # Step 1: HTML parsing if present
     if "<html" in text.lower() or "<body" in text.lower():
@@ -776,6 +798,88 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
     return stats
 
 
+from urllib.parse import urlparse, urlunparse
+
+
+class InternalOnlyRecursiveUrlLoader(RecursiveUrlLoader):
+    def __init__(self, base_domain, *args, **kwargs):
+        self.base_domain = base_domain
+        self.seen_clean_urls = set()
+        super().__init__(*args, **kwargs)
+
+    def _get_links(self, soup, base_url):
+        all_links = super()._get_links(soup, base_url)
+        filtered_links = []
+
+        logger.warning(f"\n[DEBUG] Scanning {len(all_links)} links from {base_url}")
+
+        for link in all_links:
+            parsed = urlparse(link)
+            cleaned_link = urlunparse(parsed._replace(query="", fragment=""))
+
+            logger.warning(f"\n→ Original: {link}")
+            logger.warning(f"→ Cleaned : {cleaned_link}")
+
+            if parsed.netloc and parsed.netloc != self.base_domain:
+                logger.warning("   ⛔ Skipped: external domain")
+                continue
+
+            if parsed.query:
+                logger.warning("   ⛔ Skipped: query parameter")
+                continue
+
+            if any(
+                cleaned_link.lower().endswith(ext)
+                for ext in [
+                    ".css",
+                    ".js",
+                    ".jpg",
+                    ".jpeg",
+                    ".png",
+                    ".gif",
+                    ".svg",
+                    ".woff",
+                    ".ttf",
+                    ".eot",
+                    ".ico",
+                    ".pdf",
+                    ".zip",
+                    ".rar",
+                ]
+            ):
+                logger.warning("   ⛔ Skipped: static asset")
+                continue
+
+            if any(
+                skip in cleaned_link
+                for skip in [
+                    "wp-content",
+                    "wp-includes",
+                    "feed",
+                    "tag",
+                    "author",
+                    "cart",
+                    "checkout",
+                    "my-account",
+                ]
+            ):
+                logger.warning("   ⛔ Skipped: system path")
+                continue
+
+            if cleaned_link in self.seen_clean_urls:
+                logger.warning("   ⛔ Skipped: already seen")
+                continue
+
+            self.seen_clean_urls.add(cleaned_link)
+            filtered_links.append(cleaned_link)
+            logger.warning("   ✅ Added")
+
+        logger.warning(
+            f"\n[DEBUG] {len(filtered_links)} unique internal links will be followed next.\n"
+        )
+        return filtered_links
+
+
 # store data for pine coning
 def process_and_store_docs(data, db: Session) -> dict:
     """Process documents and return metadata including character counts"""
@@ -874,11 +978,13 @@ def process_and_store_docs(data, db: Session) -> dict:
 
             elif data.train_from == "Full website":
                 print("Training from full website...")
-                loader = RecursiveUrlLoader(
+                parsed = urlparse(data.target_link)
+                base_domain = parsed.netloc  # e.g. "yashmind.in"
+                loader = InternalOnlyRecursiveUrlLoader(
+                    base_domain=base_domain,
                     url=data.target_link,
-                    max_depth=3,
-                    extractor=lambda x: BeautifulSoup(x, "html.parser").text,
-                    # link_regex=r"^(?!.*\?).*$",  # exclude links with query parameters
+                    max_depth=2,
+                    extractor=extract_main_content,
                 )
                 stats["source_type"] = "website"
                 documents = loader.load()
