@@ -841,7 +841,7 @@ def process_and_store_docs(data, db: Session) -> dict:
                                 converted_path = convert_doc_to_docx(
                                     downloaded_file_path, "uploads/"
                                 )
-                                downloaded_file_path = converted_path
+                                downloaded_file_path = Path(converted_path)
                                 loader = Docx2txtLoader(converted_path)
                                 documents = loader.load()
                             except Exception as docx_fallback_error:
