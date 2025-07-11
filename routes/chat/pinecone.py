@@ -52,6 +52,7 @@ import tiktoken
 from config import SessionLocal, get_db
 from models.subscriptions.userCredits import UserCredits
 from utils.DeepSeek import DeepSeekLLM
+from utils.convertDocToDocx import convert_doc_to_docx
 from utils.embeddings import get_embeddings
 
 
@@ -837,7 +838,11 @@ def process_and_store_docs(data, db: Session) -> dict:
                             # Check if it's actually a misnamed .docx file
                             try:
                                 print("Trying .docx fallback for .doc file...")
-                                loader = Docx2txtLoader(str(downloaded_file_path))
+                                converted_path = convert_doc_to_docx(
+                                    downloaded_file_path, "uploads/"
+                                )
+                                downloaded_file_path = converted_path
+                                loader = Docx2txtLoader(converted_path)
                                 documents = loader.load()
                             except Exception as docx_fallback_error:
                                 print(
