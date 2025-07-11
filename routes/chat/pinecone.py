@@ -909,8 +909,12 @@ def process_and_store_docs(data, db: Session) -> dict:
 
         # Pre-process documents (clean, normalize)
         print("Preprocessing documents...")
+        total_chars = sum(len(doc.page_content) for doc in documents)
+        print(f"Document text size: {total_chars} characters")
         cleaned_docs = preprocess_documents(documents)
         print(f"Preprocessed into {len(cleaned_docs)} documents.")
+        total_chars = sum(len(doc.page_content) for doc in cleaned_docs)
+        print(f"Cleaned document text size: {total_chars} characters")
 
         # Chunking with overlap
         print("Splitting documents into chunks...")
