@@ -1,4 +1,5 @@
 from hashlib import sha256
+import html
 import os
 from pathlib import Path
 import re
@@ -475,25 +476,25 @@ def generate_response(
 # training
 ############################################
 def clean_text(text: str) -> str:
-    # Parse HTML if present
+    # Step 1: HTML parsing if present
     if "<html" in text.lower() or "<body" in text.lower():
         soup = BeautifulSoup(text, "html.parser")
-
-        # Remove unwanted sections
         for tag in ["nav", "header", "footer", "script", "style"]:
             for element in soup.find_all(tag):
                 element.decompose()
-
-        # Get cleaned text from remaining HTML
         text = soup.get_text(separator=" ", strip=True)
+        text = html.unescape(text)
 
-    # Remove HTML/XML tags (in case any remain)
-    text = re.sub(r"<[^>]+>", "", text)
-    # Remove special characters (keep letters, numbers, whitespace, hyphens)
-    text = regex.sub(r"[^a-zA-Z0-9_\s\p{Sc}\.,-]", "", text, flags=regex.UNICODE)
-    # Remove redundant whitespace
+    # Step 2: Strip any remaining HTML tags
+    text = regex.sub(r"<[^>]+>", "", text)
+
+    # Step 3: Remove non-text symbols
+    text = regex.sub(r"[^\p{L}\p{N}_\s\p{Sc}\.,:;/\-]", "", text, flags=regex.UNICODE)
+
+    # Step 4: Remove excess whitespace
     text = " ".join(text.split())
-    # Remove boilerplate phrases (case insensitive)
+
+    # Step 5: Remove boilerplate
     boilerplate = [
         "cookie policy",
         "privacy policy",
@@ -503,7 +504,8 @@ def clean_text(text: str) -> str:
         "legal notice",
     ]
     for phrase in boilerplate:
-        text = re.sub(re.escape(phrase), "", text, flags=re.IGNORECASE)
+        text = regex.sub(re.escape(phrase), "", text, flags=regex.IGNORECASE)
+
     return text.strip()
 
 
