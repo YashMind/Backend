@@ -618,7 +618,8 @@ def store_documents(docs: List[Document], data, db: Session) -> dict:
             active_tool = db.query(ToolsUsed).filter_by(status=True).first()
             embedding_model = get_embeddings(tool=active_tool.tool)
             embedding = embedding_model.embed_query(text)
-            print("TEXT EMBEDDING: ", embedding)
+            # print("TEXT EMBEDDING: ", embedding)
+            print("TEXT EMBEDDING: ", text)
 
             vector_id = str(uuid.uuid4())
 
