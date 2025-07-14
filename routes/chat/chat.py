@@ -136,7 +136,7 @@ async def send_invitation_email(
                 <p>Or copy and paste this link in your browser:</p>
                 <p>{invite_url}</p>
                 <p>This invitation link will expire in 7 days.</p>
-                <p>Thank you,<br>YashMind AI Team</p>
+                <p>Thank you,<br>Yashraa AI Team</p>
             </div>
         </body>
         </html>
