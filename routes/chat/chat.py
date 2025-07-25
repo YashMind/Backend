@@ -491,10 +491,8 @@ async def get_my_bots(
         user_credits = (
             db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
         )
-        if user_credits is None:
-            raise HTTPException(status_code=404, detail="User credits not found")
-
-        if user_credits.chatbots_allowed < len(owned_bots):
+        # Do NOT raise 404 if user_credits is None
+        if user_credits is not None and user_credits.chatbots_allowed < len(owned_bots):
             owned_bots = owned_bots[: user_credits.chatbots_allowed]
 
         # Get shared bots if include_shared is True
@@ -2056,7 +2054,7 @@ async def chat_lead_messages(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/tokens", response_model=ChatMessageTokens)
+@router.get("/tokens")
 @check_product_status("chatbot")
 async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
     try:
@@ -2077,29 +2075,45 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
 
         credits = db.query(UserCredits).filter_by(user_id=user_id).first()
         print(f"Fetched credits: {credits}")
-        if not credits:
-            print("User credits not found")
-            raise HTTPException(status_code=404, detail="No Credit History Found")
-
-        token_usages = db.query(TokenUsage).filter_by(user_id=user_id).all()
-        print(f"Fetched {len(token_usages)} token usage records")
-
-        total_token_consumption = sum(
-            usage.combined_token_consumption or 0 for usage in token_usages
-        )
-        print(f"Total token consumption: {total_token_consumption}")
-
-        return ChatMessageTokens(
-            credits=credits,
-            token_usage=token_usages,
-            total_token_consumption=total_token_consumption,
-        )
+        if credits:
+            token_usages = db.query(TokenUsage).filter_by(user_id=user_id).all()
+            print(f"Fetched {len(token_usages)} token usage records")
+            total_token_consumption = sum(
+                usage.combined_token_consumption or 0 for usage in token_usages
+            )
+            print(f"Total token consumption: {total_token_consumption}")
+            return {
+                "credits": credits,
+                "token_usage": token_usages,
+                "total_token_consumption": total_token_consumption,
+                "has_shared_bots": False
+            }
+        else:
+            # Check for shared bots
+            shared_bot_ids = db.query(ChatBotSharing.bot_id).filter(
+                ChatBotSharing.shared_user_id == user_id,
+                ChatBotSharing.status == "active"
+            ).all()
+            shared_bot_ids = [bot_id for (bot_id,) in shared_bot_ids]
+            if shared_bot_ids:
+                print("User has shared bots, returning empty credits info with has_shared_bots True")
+                return {
+                    "credits": None,
+                    "token_usage": [],
+                    "total_token_consumption": 0,
+                    "has_shared_bots": True
+                }
+            else:
+                print("No credits and no shared bots found")
+                raise HTTPException(status_code=404, detail="No Credit History Found")
 
     except HTTPException as http_exc:
         print(f"HTTPException: {http_exc.detail}")
         raise http_exc
     except Exception as e:
         print("Unhandled exception in /tokens endpoint:", str(e))
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 

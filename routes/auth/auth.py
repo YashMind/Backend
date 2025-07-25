@@ -11,6 +11,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
+from models.adminModel.adminModel import SubscriptionPlans
 from utils.utils import (
     create_access_token,
     decode_access_token,
@@ -41,7 +42,7 @@ from datetime import datetime
 import httpx
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timedelta
-
+from utils.utils import get_country_from_ip, get_user_country
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -101,6 +102,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
         existing_user = db.query(AuthUser).filter(AuthUser.email == email).first()
         if existing_user:
             raise HTTPException(status_code=400, detail="ERR_ALREADY_EXIST")
+        
 
         new_user = AuthUser(
             fullName=fullName,
@@ -122,6 +124,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# 2. UPDATED SIGNIN API with country detection:
 
 @router.post("/signin")
 async def signin(
@@ -158,7 +161,27 @@ async def signin(
         )
 
         client_ip = request.client.host
+        
+        # Get timezone and country from IP (and save country to user)
         timezone = await get_timezone_from_ip(ip=client_ip)
+        country = await get_user_country(
+            ip=client_ip, 
+        )
+   
+        # Save to user record if user_id and db provided
+        if country != "Unknown":
+            try:
+                if db_user:
+                    # Only update if country is not already set or is different
+                    if not db_user.country or db_user.country != country:
+                        db_user.country = country
+                        db.commit()
+                        print(f"✅ Updated user {db_user.id} with country {country}")
+            except Exception as db_error:
+                print(f"❌ Database save error: {db_error}")
+                db.rollback()
+        
+        print(f"User {db_user.id} signed in from {country} with timezone {timezone}")
 
         response.set_cookie(
             key="access_token",
@@ -166,7 +189,6 @@ async def signin(
             httponly=True,
             secure=False,
             samesite="Lax",
-            # max_age=84600,
         )
         response.set_cookie(
             key="role",
@@ -174,25 +196,99 @@ async def signin(
             httponly=False,
             secure=False,
             samesite="Lax",
-            # max_age=84600,
         )
-
         response.set_cookie(
             key="timezone",
             value=timezone,
             httponly=False,
             secure=False,
             samesite="Lax",
-            # max_age=84600,
+        )
+        response.set_cookie(
+            key="country",
+            value=country,
+            httponly=False,
+            secure=False,
+            samesite="Lax",
         )
 
-        return {"access_token": access_token, "token_type": "bearer"}
+        return {
+            "access_token": access_token, 
+            "token_type": "bearer",
+            "user_country": country,  
+            "timezone": timezone
+        }
 
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
+# 3. EXAMPLE: Updated subscription plans endpoint for authenticated users
+@router.get("/subscription-plans")
+async def get_subscription_plans_authenticated(
+    request: Request,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        plans = (
+            db.query(SubscriptionPlans)
+            .filter(
+                SubscriptionPlans.is_active == True, 
+                SubscriptionPlans.is_trial == False
+            )
+            .all()
+        )
+        
+        client_ip = request.client.host
+        
+        # Use cached country from user or get from IP
+        country = await get_user_country(
+            ip=client_ip, 
+            user_id=current_user.id, 
+            db=db
+        )
+        
+        print(f"Showing plans for user {current_user.id} in country {country}")
+        
+        formatted_plans = []
+        for plan in plans:
+            # Apply country-specific pricing
+            pricing = plan.pricingDollar
+            currency = "USD"
+            if country == "IN":
+                pricing = plan.pricingInr
+                currency = "INR"
+            
+            formatted_plan = {
+                "id": plan.id,
+                "name": plan.name,
+                "pricing": pricing,
+                "currency": currency,
+                "token_per_unit": plan.token_per_unit,
+                "chatbots_allowed": plan.chatbots_allowed,
+                "chars_allowed": plan.chars_allowed,
+                "webpages_allowed": plan.webpages_allowed,
+                "team_strength": plan.team_strength,
+                "duration_days": plan.duration_days,
+                "features": plan.features,
+                "users_active": plan.users_active,
+                "is_active": plan.is_active,
+                "created_at": plan.created_at,
+                "updated_at": plan.updated_at,
+            }
+            formatted_plans.append(formatted_plan)
+        
+        return {
+            "success": True,
+            "message": "Subscription plans fetched successfully.",
+            "data": formatted_plans,
+            "user_country": country,
+            "currency": currency
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Something went wrong: {str(e)}")
 
 @router.get("/me")
 async def getme(request: Request, response: Response, db: Session = Depends(get_db)):

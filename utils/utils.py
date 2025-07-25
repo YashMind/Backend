@@ -25,11 +25,11 @@ import httpx
 import re
 from html import unescape
 from bs4 import BeautifulSoup
-
 from routes.subscriptions.token_usage import (
     update_token_usage_on_consumption,
     verify_token_limit_available,
 )
+
 
 SECRET_KEY = "ADMIN@1234QWER"
 ALGORITHM = "HS256"
@@ -394,6 +394,26 @@ async def get_country_from_ip(ip: str):
     except Exception as e:
         print("IP API error", e)
         return "Unknown"
+
+
+async def get_user_country(ip: str, user_id: int = None, db: Session = None):
+    """
+    Get user's country with priority:
+    1. User's saved country preference
+    2. IP-based country lookup (and save it)
+    """
+    # First check if user has country saved
+    if db and user_id:
+        try:
+            user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+            if user and user.country:
+                print(f"Using saved country {user.country} for user {user_id}")
+                return user.country
+        except Exception as e:
+            print(f"Error checking user country: {e}")
+    
+    # Fallback to IP lookup and save
+    return await get_country_from_ip(ip)
 
 
 async def get_timezone_from_ip(ip: str) -> str:

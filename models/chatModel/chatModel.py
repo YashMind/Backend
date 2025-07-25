@@ -58,6 +58,26 @@ class ChatBots(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, onupdate=func.now())
 
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "chatbot_name": self.chatbot_name,
+            "train_from": self.train_from,
+            "target_link": self.target_link,
+            "document_link": self.document_link,
+            "public": self.public,
+            "text_content": self.text_content,
+            "creativity": self.creativity,
+            "token": self.token,
+            "domains": self.domains,
+            "lead_email": self.lead_email,
+            "limit_to": self.limit_to,
+            "every_minutes": self.every_minutes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
 
 class ChatTotalToken(Base):
     __tablename__ = "chat_total_tokens"

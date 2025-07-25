@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request,Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
+from sqlalchemy import func, distinct
 
 from decorators.rbac_admin import check_permissions
 from models.adminModel.adminModel import SubscriptionPlans
@@ -16,6 +17,11 @@ from schemas.chatSchema.tokenAndCreditSchema import (
 from config import get_db
 from decorators.product_status import check_product_status
 from utils.utils import decode_access_token
+from fastapi import HTTPException, Depends
+from datetime import datetime
+
+
+from routes.auth.auth import get_current_user
 
 router = APIRouter()
 
@@ -194,7 +200,6 @@ async def get_admin_token_credit_report(
             detail="An error occurred while fetching credit information",
         )
 
-
 @router.get("/transactions")
 @check_permissions(["billing-settings"])
 def get_transactions(
@@ -204,7 +209,7 @@ def get_transactions(
         # Get pagination parameters
         page = max(1, int(request.query_params.get("page", page)))
         per_page = min(100, max(1, int(request.query_params.get("per_page", per_page))))
-
+        
         # Get transactions with pagination
         transactions_query = db.query(Transaction)
         total_transactions = transactions_query.count()
@@ -214,31 +219,38 @@ def get_transactions(
             .limit(per_page)
             .all()
         )
-
+        
+        # Calculate total revenue from successful transactions
+        # Assuming successful transactions have status like 'completed', 'success', 'paid'
+        # Adjust the status values based on your database schema
+        successful_statuses = ['completed', 'success', 'paid', 'confirmed']  # Add your success statuses here
+        total_revenue = db.query(func.sum(Transaction.amount)).filter(
+            Transaction.status.in_(successful_statuses)
+        ).scalar() or 0
+        
         # Get related user and plan data
         user_ids = {t.user_id for t in transactions if t.user_id}
         plan_ids = {t.plan_id for t in transactions if t.plan_id}
-
+        
         users = (
             db.query(AuthUser).filter(AuthUser.id.in_(user_ids)).all()
             if user_ids
             else []
         )
         user_map = {user.id: user for user in users}
-
+        
         plans = (
             db.query(SubscriptionPlans).filter(SubscriptionPlans.id.in_(plan_ids)).all()
             if plan_ids
             else []
         )
         plan_map = {plan.id: plan for plan in plans}
-
+        
         # Format response
         transaction_data = []
         for transaction in transactions:
             user = user_map.get(transaction.user_id)
             plan = plan_map.get(transaction.plan_id)
-
             transaction_data.append(
                 {
                     "id": transaction.id,
@@ -250,7 +262,6 @@ def get_transactions(
                     "payment_method": transaction.payment_method,
                     "created_at": transaction.created_at,
                     "updated_at": transaction.updated_at,
-                    "payment_method": transaction.payment_method,
                     "transaction_data": transaction.provider_data,
                     "user": (
                         {
@@ -265,16 +276,16 @@ def get_transactions(
                         {
                             "id": plan.id if plan else None,
                             "name": plan.name if plan else None,
-                            # "description": plan.description if plan else None,
                         }
                         if plan
                         else None
                     ),
                 }
             )
-
+        
         return {
             "transactions": transaction_data,
+            "total_revenue": float(total_revenue),        
             "pagination": {
                 "page": page,
                 "per_page": per_page,
@@ -282,7 +293,6 @@ def get_transactions(
                 "total_pages": (total_transactions + per_page - 1) // per_page,
             },
         }
-
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=f"Invalid parameter: {str(ve)}")
     except Exception as e:
@@ -290,3 +300,19 @@ def get_transactions(
         raise HTTPException(
             status_code=500, detail="An error occurred while fetching transactions"
         )
+
+
+
+@router.get("/countries")
+def get_country_list(request: Request, db: Session = Depends(get_db)):
+    try:
+        countries = (
+            db.query(AuthUser.country)
+            .filter(AuthUser.country.isnot(None))
+            .all()
+        )
+        country_list = [c[0] for c in countries]
+
+        return {"countries": country_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

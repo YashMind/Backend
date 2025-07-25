@@ -83,7 +83,6 @@ async def update_base_rate(
         },
     }
 
-
 @router.get("/get-all-users")
 @public_route()
 async def get_all_users(
@@ -118,9 +117,22 @@ async def get_all_users(
         now = datetime.utcnow()
         start_of_month = datetime(now.year, now.month, 1)
 
+        # Calculate total signups this month
         total_signups = (
             db.query(AuthUser).filter(AuthUser.created_at >= start_of_month).count()
         )
+        
+        # Calculate total tokens consumed (all time)
+        total_tokens_consumed = db.query(func.sum(AuthUser.tokenUsed)).scalar() or 0
+        
+        
+        # Calculate total subscriptions (users with plan > 1 or active subscriptions)
+        total_subscriptions = (
+            db.query(AuthUser)
+            .filter(AuthUser.plan > 1)  # Assuming plan 1 is free, 2+ are paid
+            .count()
+        )
+
         query = db.query(AuthUser)
 
         # Apply search
@@ -175,6 +187,8 @@ async def get_all_users(
             "total_count": total_count,
             "data": results,
             "total_signups": total_signups,
+            "total_tokens_consumed": total_tokens_consumed,  # NEW: Total tokens consumed (all time)
+            "total_subscriptions": total_subscriptions,  # NEW: Total subscriptions 
         }
 
     except HTTPException as http_exc:
@@ -183,8 +197,6 @@ async def get_all_users(
         raise HTTPException(status_code=400, detail=f"Invalid filter value: {str(ve)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
 # update user
 @router.put("/update-user-admin", response_model=User)
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
@@ -368,7 +380,7 @@ async def get_all_subscription_plans_admin(
                 "duration_days": plan.duration_days,
                 "features": plan.features,
                 "users_active": plan.users_active,
-                "is_active": plan.is_active,  # ✅ Include activation status
+                "is_active": plan.is_active,  # Include activation status
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at,
             }

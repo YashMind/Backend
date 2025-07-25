@@ -44,7 +44,7 @@ def upgrade_subscription_plans(db: Session):
                 plan.webpages_allowed = 2000
                 plan.team_strength = 5
             elif plan.name == "Pro":
-                plan.chars_allowed = 20000000
+                plan.chars_allowed = 20000000   
                 plan.webpages_allowed = 10000
                 plan.team_strength = 10
             elif plan.name == "Enterprise":
@@ -240,7 +240,40 @@ def update_chat_bots(db: Session):
                 else:
                     raise
 
-        # Commit the schema changes first
+        db.commit()
+        print("✅ Migration completed successfully")
+
+    except sa_exc.SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Database error during migration: {str(e)}")
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Unexpected error during migration: {str(e)}")
+        raise
+
+
+
+def user_country_tracking(db: Session):
+    try:
+        ensure_tables_exist(db)
+        for column in ["country"]:
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        ALTER TABLE users
+                        ADD COLUMN {column} VARCHAR(255)
+                    """
+                    )
+                )
+                db.commit()
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback() 
+                else:
+                    raise
+
         db.commit()
         print("✅ Migration completed successfully")
 
@@ -257,10 +290,21 @@ def update_chat_bots(db: Session):
 def main():
     db = SessionLocal()
     try:
+        print("🚀 Starting migrations...")
+        
+        # Run all migrations
+        user_country_tracking(db)
         # upgrade_subscription_plans(db)
         # update_user_credits(db)
         # update_history_user_credits(db)
-        update_chat_bots(db)
+        # update_chat_settings(db)
+        # update_chat_bots(db)
+        
+        print("🎉 All migrations completed successfully!")
+        
+    except Exception as e:
+        print(f"❌ Migration failed: {str(e)}")
+        raise
     finally:
         db.close()
 
