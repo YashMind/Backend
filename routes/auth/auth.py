@@ -562,8 +562,24 @@ async def google_login(
             )
 
             client_ip = request.client.host
+            
             timezone = await get_timezone_from_ip(ip=client_ip)
-
+            country = await get_user_country(
+            ip=client_ip, 
+        )
+            if country != "Unknown":
+                try:
+                    if user:
+                        # Only update if country is not already set or is different
+                        if not user.country or user.country != country:
+                            user.country = country
+                            db.commit()
+                            print(f"✅ Updated user {user.id} with country {country}")
+                except Exception as db_error:
+                    print(f"❌ Database save error: {db_error}")
+                    db.rollback()
+        
+            print(f"User {user.id} signed in from {country} with timezone {timezone}")
             response.set_cookie(
                 key="access_token",
                 value=access_token,
