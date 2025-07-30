@@ -36,4 +36,5 @@ class AuthUser(Base):
     base_rate_per_token = Column(Float, nullable=True, default=0.0)
     activate_plan = Column(Boolean, nullable=True, default=False)
     country=Column(String(255),nullable=True)
+    messageUsed = Column(Integer, nullable=True)
 

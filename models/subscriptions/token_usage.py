@@ -34,6 +34,24 @@ class TokenUsage(Base):
     zapier_request_tokens = Column(Integer, default=0)
     zapier_response_tokens = Column(Integer, default=0)
 
+    message_limit = Column(Integer)
+    combined_message_consumption = Column(Integer)
+    
+    user_request_message = Column(Integer, default=0)
+    user_response_message = Column(Integer, default=0)
+
+    whatsapp_request_messages = Column(Integer, default=0)
+    whatsapp_response_messages = Column(Integer, default=0)
+
+    slack_request_messages = Column(Integer, default=0)
+    slack_response_messages = Column(Integer, default=0)
+
+    wordpress_request_messages = Column(Integer, default=0)
+    wordpress_response_messages = Column(Integer, default=0)
+
+    zapier_request_messages = Column(Integer, default=0)
+    zapier_response_messages = Column(Integer, default=0)
+
 
 class TokenUsageHistory(Base):
     __tablename__ = "history_token_usage"
@@ -63,3 +81,21 @@ class TokenUsageHistory(Base):
 
     zapier_request_tokens = Column(Integer, default=0)
     zapier_response_tokens = Column(Integer, default=0)
+
+    message_limit = Column(Integer)
+    combined_message_consumption = Column(Integer)
+
+    user_request_message = Column(Integer, default=0)
+    user_response_message = Column(Integer, default=0)
+
+    whatsapp_request_messages = Column(Integer, default=0)
+    whatsapp_response_messages = Column(Integer, default=0)
+
+    slack_request_messages = Column(Integer, default=0)
+    slack_response_messages = Column(Integer, default=0)
+
+    wordpress_request_messages = Column(Integer, default=0)
+    wordpress_response_messages = Column(Integer, default=0)
+
+    zapier_request_messages = Column(Integer, default=0)
+    zapier_response_messages = Column(Integer, default=0)

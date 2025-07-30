@@ -22,6 +22,8 @@ class TokenUsageSchema(BaseModel):
     wordpress_response_tokens: int
     zapier_request_tokens: int
     zapier_response_tokens: int
+    message_limit: int
+    combined_message_consumption: int
 
     class Config:
         from_attributes = True
@@ -40,6 +42,9 @@ class UserCreditsSchema(BaseModel):
     credit_balance: int
     token_per_unit: float
     chatbots_allowed: int
+    message_per_unit: int
+    credits_consumed_messages: int
+    credit_balance_messages: int
 
     class Config:
         from_attributes = True
@@ -50,12 +55,15 @@ class ChatMessageTokens(BaseModel):
     credits: UserCreditsSchema
     token_usage: List[TokenUsageSchema]
     total_token_consumption: int
+    total_message_consumption: int
 
 
 class ChatMessageTokensToday(BaseModel):
     request_tokens: int
     response_tokens: int
     users: int
+    request_messages: int
+    response_messages: int
 
 
 class ChatMessageTokensSummary(BaseModel):

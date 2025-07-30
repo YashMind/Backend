@@ -41,6 +41,9 @@ class UserCredits(Base):
         Transaction, secondary="user_credits_topups", backref="credited_users"
     )
 
+    message_per_unit = Column(Integer)
+    credits_consumed_messages = Column(Integer, default=0)
+    credit_balance_messages = Column(Integer)
 
 user_credits_topups = Table(
     "user_credits_topups",
@@ -74,3 +77,6 @@ class HistoryUserCredits(Base):
     is_trial = Column(Boolean, default=False)
 
     expiry_reason = Column(String(255))
+    message_per_unit = Column(Integer)
+    credits_consumed_messages = Column(Integer)
+    credit_balance_messages = Column(Integer)

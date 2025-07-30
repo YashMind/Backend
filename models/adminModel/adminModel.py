@@ -21,6 +21,7 @@ class SubscriptionPlans(Base):
     is_trial = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    message_per_unit = Column(Integer, nullable=False)
 
 
 class TokenBots(Base):
@@ -30,6 +31,7 @@ class TokenBots(Base):
     name = Column(String(100), nullable=True)
     pricing = Column(Integer, nullable=True)
     token_limits = Column(Integer, nullable=False)
+    message_limits = Column(Integer, nullable=False)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

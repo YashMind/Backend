@@ -23,6 +23,7 @@ class PlansSchema(BaseModel):
     duration_days: Optional[int] = False
     features: Optional[str] = None
     users_active: Optional[int] = None
+    message_per_unit: Optional[int] = False
 
 
 class TokenBotsSchema(BaseModel):
@@ -33,6 +34,7 @@ class TokenBotsSchema(BaseModel):
     chatbots_allowed: Optional[int] = False
     duration_days: Optional[int] = False
     active: Optional[bool] = None
+    message_per_unit: Optional[int] = False
 
 
 class BotProductSchema(BaseModel):

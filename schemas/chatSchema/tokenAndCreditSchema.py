@@ -20,6 +20,8 @@ class TokenUsageOut(BaseModel):
     wordpress_response_tokens: int
     zapier_request_tokens: int
     zapier_response_tokens: int
+    message_limit: Optional[int]
+    combined_message_consumption: Optional[int]
 
     class Config:
         orm_mode = True
@@ -37,6 +39,9 @@ class UserCreditsOut(BaseModel):
     credit_balance: int
     token_per_unit: float
     chatbots_allowed: int
+    message_per_unit: int
+    credits_consumed_messages: int
+    credit_balance_messages: int
 
     class Config:
         orm_mode = True
@@ -64,7 +69,9 @@ class UserCreditBase(BaseModel):
     credit_balance: int
     token_per_unit: float
     chatbots_allowed: int
-
+    message_per_unit: int
+    credits_consumed_messages: int = 0
+    credit_balance_messages: int
 
 class UserCreditCreate(UserCreditBase):
     pass
@@ -105,6 +112,8 @@ class TokenUsageBase(BaseModel):
     wordpress_response_tokens: int = 0
     zapier_request_tokens: int = 0
     zapier_response_tokens: int = 0
+    message_limit: int
+    combined_message_consumption: int
 
 
 class TokenUsageCreate(TokenUsageBase):

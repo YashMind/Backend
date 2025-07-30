@@ -110,6 +110,8 @@ def create_token_usage(
                                 user_credit_id=existing_usage.user_credit_id,
                                 token_limit=existing_usage.token_limit,
                                 combined_token_consumption=existing_usage.combined_token_consumption,
+                                message_limit=existing_usage.message_limit,
+                                combined_message_consumption=existing_usage.combined_message_consumption,
                                 **{
                                     field: getattr(existing_usage, field)
                                     for field in [
@@ -125,6 +127,16 @@ def create_token_usage(
                                         "wordpress_response_tokens",
                                         "zapier_request_tokens",
                                         "zapier_response_tokens",
+                                        "user_request_message",
+                                        "user_response_message",
+                                        "whatsapp_request_messages",
+                                        "whatsapp_response_messages",
+                                        "slack_request_messages",
+                                        "slack_response_messages",
+                                        "wordpress_request_messages",
+                                        "wordpress_response_messages",
+                                        "zapier_request_messages",
+                                        "zapier_response_messages",
                                     ]
                                 },
                             )
@@ -144,6 +156,10 @@ def create_token_usage(
                                 credit.credits_purchased * credit.token_per_unit
                             )
                             existing_usage.combined_token_consumption = 0
+                            existing_usage.message_limit = (
+                                credit.credits_purchased * credit.message_per_unit
+                            )
+                            existing_usage.combined_message_consumption = 0
                             for field in [
                                 "open_ai_request_token",
                                 "open_ai_response_token",
@@ -157,6 +173,16 @@ def create_token_usage(
                                 "wordpress_response_tokens",
                                 "zapier_request_tokens",
                                 "zapier_response_tokens",
+                                "user_request_message",
+                                "user_response_message",
+                                "whatsapp_request_messages",
+                                "whatsapp_response_messages",
+                                "slack_request_messages",
+                                "slack_response_messages",
+                                "wordpress_request_messages",
+                                "wordpress_response_messages",
+                                "zapier_request_messages",
+                                "zapier_response_messages",
                             ]:
                                 setattr(existing_usage, field, 0)
                             db.flush()  # Test update before proceeding
@@ -177,6 +203,9 @@ def create_token_usage(
                                 token_limit=credit.credits_purchased
                                 * credit.token_per_unit,
                                 combined_token_consumption=0,
+                                message_limit=credit.credits_purchased
+                                * credit.message_per_unit,
+                                combined_message_consumption=0,
                                 **{
                                     field: 0
                                     for field in [
@@ -192,6 +221,16 @@ def create_token_usage(
                                         "wordpress_response_tokens",
                                         "zapier_request_tokens",
                                         "zapier_response_tokens",
+                                        "user_request_message",
+                                        "user_response_message",
+                                        "whatsapp_request_messages",
+                                        "whatsapp_response_messages",
+                                        "slack_request_messages",
+                                        "slack_response_messages",
+                                        "wordpress_request_messages",
+                                        "wordpress_response_messages",
+                                        "zapier_request_messages",
+                                        "zapier_response_messages",
                                     ]
                                 },
                             )
@@ -351,6 +390,9 @@ def update_token_usage_topup(
                             existing_usage.token_limit = (
                                 credit.credits_purchased * credit.token_per_unit
                             )
+                            existing_usage.message_limit = (
+                                credit.credits_purchased * credit.message_per_unit
+                            )
                             db.flush()  # Test update before proceeding
                         except SQLAlchemyError as e:
                             db.rollback()
@@ -369,6 +411,9 @@ def update_token_usage_topup(
                                 token_limit=credit.credits_purchased
                                 * credit.token_per_unit,
                                 combined_token_consumption=0,
+                                message_limit=credit.credits_purchased
+                                * credit.message_per_unit,
+                                combined_message_consumption=0,
                                 **{
                                     field: 0
                                     for field in [
@@ -384,6 +429,16 @@ def update_token_usage_topup(
                                         "wordpress_response_tokens",
                                         "zapier_request_tokens",
                                         "zapier_response_tokens",
+                                        "user_request_message",
+                                        "user_response_message",
+                                        "whatsapp_request_messages",
+                                        "whatsapp_response_messages",
+                                        "slack_request_messages",
+                                        "slack_response_messages",
+                                        "wordpress_request_messages",
+                                        "wordpress_response_messages",
+                                        "zapier_request_messages",
+                                        "zapier_response_messages",
                                     ]
                                 },
                             )
@@ -451,8 +506,13 @@ def verify_token_limit_available(bot_id: int, db: Session):
         if not bot_token_usage:
             return False, "Token usage plan is not available for this bot"
 
-        if bot_token_usage.token_limit > bot_token_usage.combined_token_consumption:
-            return True, "Token limit available for this bot"
+        # if bot_token_usage.token_limit > bot_token_usage.combined_token_consumption:
+        #     return True, "Token limit available for this bot"
+
+        if bot_token_usage.message_limit > bot_token_usage.combined_message_consumption:
+            return True, "Message limit available for this bot"
+        else:
+            return False, "No Message Limit available for this bot"
 
     except Exception as e:
         error_msg = f"Unexpected error in verify_token_limit_available: {str(e)}"
@@ -492,18 +552,26 @@ def update_token_usage_on_consumption(
             print("Updating for direct_bot")
             bot_token_usage.user_request_token += consumed_token.request_token
             bot_token_usage.user_response_token += consumed_token.response_token
+            bot_token_usage.user_request_message += consumed_token.request_message
+            bot_token_usage.user_response_message += consumed_token.response_message
         elif consumed_token_type == "whatsapp_bot":
             print("Updating for whatsapp_bot")
             bot_token_usage.whatsapp_request_tokens += consumed_token.request_token
             bot_token_usage.whatsapp_response_tokens += consumed_token.response_token
+            bot_token_usage.whatsapp_request_messages += consumed_token.request_message
+            bot_token_usage.whatsapp_response_messages += consumed_token.response_message
         elif consumed_token_type == "slack_bot":
             print("Updating for slack_bot")
             bot_token_usage.slack_request_tokens += consumed_token.request_token
             bot_token_usage.slack_response_tokens += consumed_token.response_token
+            bot_token_usage.slack_request_messages += consumed_token.request_token
+            bot_token_usage.slack_response_messages += consumed_token.response_token
         elif consumed_token_type == "zapier_bot":
             print("Updating for zapier_bot")
             bot_token_usage.zapier_request_tokens += consumed_token.request_token
             bot_token_usage.zapier_response_tokens += consumed_token.response_token
+            bot_token_usage.zapier_request_messages += consumed_token.request_token
+            bot_token_usage.zapier_response_messages += consumed_token.response_token
         else:
             print(f"Unknown consumed_token_type: {consumed_token_type}")
             return False, "Invalid token type"
@@ -518,33 +586,50 @@ def update_token_usage_on_consumption(
         consumption_stats = (
             consumed_token.request_token + consumed_token.response_token
         )
+        consumption_stats_message = (
+            consumed_token.request_message + consumed_token.response_message
+        )
         print(f"Consumption stats to add: {consumption_stats}")
+        print(f"Consumption stats to add: {consumption_stats_message}")
 
         for subordinate_bot in subordinate_bots:
             print(f"Before update - Bot ID {subordinate_bot.bot_id}: combined_token_consumption={subordinate_bot.combined_token_consumption}")
             subordinate_bot.combined_token_consumption += consumption_stats
             print(f"After update - Bot ID {subordinate_bot.bot_id}: combined_token_consumption={subordinate_bot.combined_token_consumption}")
+            subordinate_bot.combined_message_consumption += consumption_stats_message
+            print(f"After update - Bot ID {subordinate_bot.bot_id}: combined_message_consumption={subordinate_bot.combined_message_consumption}")
             db.add(subordinate_bot)
             db.flush()
 
         total_token_consumption = bot_token_usage.combined_token_consumption
+        total_message_consumption = bot_token_usage.combined_message_consumption
         print(f"Total token consumption: {total_token_consumption}")
 
         db.query(AuthUser).filter(AuthUser.id == bot_token_usage.user_id).update(
-            {AuthUser.tokenUsed: total_token_consumption}
+            {AuthUser.tokenUsed: total_token_consumption, AuthUser.messageUsed: total_message_consumption}
         )
-        print(f"Updated AuthUser.tokenUsed for user_id={bot_token_usage.user_id}")
+        print(f"Updated AuthUser.tokenUsed and AuthUsed.messageUsed for user_id={bot_token_usage.user_id}")
 
         credits_consumed = (total_token_consumption // credit.token_per_unit) + (
             1 if total_token_consumption % credit.token_per_unit > 0 else 0
         )
-        balance_credits = credit.credits_purchased - credits_consumed
 
-        print(f"Credits consumed: {credits_consumed}")
+        print(f"Total token consumption: {total_message_consumption}")
+
+        credits_consumed_messages = (total_message_consumption // credit.message_per_unit) + (
+            1 if total_message_consumption % credit.message_per_unit > 0 else 0
+        )
+        balance_credits = credit.credits_purchased - credits_consumed
+        balance_credits_messages = credit.credits_purchased - credits_consumed_messages
+
+        print(f"Credits consumed Token: {credits_consumed}")
+        print(f"Credits consumed Message: {credits_consumed_messages}")
         print(f"Balance credits: {balance_credits}")
 
         credit.credits_consumed = credits_consumed
+        credit.credits_consumed_messages = credits_consumed_messages
         credit.credit_balance = balance_credits
+        credit.credit_balance_messages = balance_credits_messages
 
         db.add(credit)
 
@@ -575,11 +660,17 @@ def generate_token_usage(bot_id, user_id, db: Session):
     user_credits = db.query(UserCredits).filter_by(user_id=user_id).first()
     if user_credits:
         combined_token_consumption = 0
+        combined_message_consumption = 0
         token_limit = user_credits.credits_purchased * user_credits.token_per_unit
+        message_limit = user_credits.credits_purchased * user_credits.message_per_unit
         subordinate_bots = db.query(TokenUsage).filter_by(user_id=user_id).all()
         if subordinate_bots:
             combined_token_consumption = subordinate_bots[0].combined_token_consumption
             token_limit = subordinate_bots[0].token_limit
+
+        if subordinate_bots:
+            combined_message_consumption = subordinate_bots[0].combined_message_consumption
+            message_limit = subordinate_bots[0].message_limit
 
         token_usage = TokenUsage(
             bot_id=bot_id,
@@ -587,6 +678,8 @@ def generate_token_usage(bot_id, user_id, db: Session):
             user_credit_id=user_credits.id,
             token_limit=token_limit,
             combined_token_consumption=combined_token_consumption,
+            message_limit=message_limit,
+            combined_message_consumption=combined_message_consumption,
         )
         db.add(token_usage)
         db.commit()
