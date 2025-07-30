@@ -156,6 +156,22 @@ async def get_admin_token_credit_report(
                         ),
                         0,
                     ),
+                    "total_message_consumption": next(
+                        (
+                            usage.combined_message_consumption
+                            for usage in token_usage
+                            if usage.user_credit_id == credit.id
+                        ),
+                        0,
+                    ),
+                    "total_message_consumption_revenue": sum(
+                        (
+                            usage.combined_message_consumption / credit.message_per_unit
+                            for usage in token_usage
+                            if usage.user_credit_id == credit.id
+                        ),
+                        0,
+                    ),
                     "token_usage": [
                         usage.__dict__
                         for usage in token_usage
@@ -177,8 +193,18 @@ async def get_admin_token_credit_report(
                 ),
                 0,
             ),
+            "chatbot_messages_revenue": sum(
+                (
+                    credit.get("total_message_consumption_revenue")
+                    for credit in credit_data
+                ),
+                0,
+            ),
             "chatbot_tokens": sum(
                 (credit.get("total_token_consumption") for credit in credit_data), 0
+            ),
+            "chatbot_messages": sum(
+                (credit.get("total_message_consumption") for credit in credit_data), 0
             ),
             "pagination": {
                 "page": page,

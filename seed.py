@@ -13,8 +13,10 @@ def seed_subscription_plans(db: Session):
             "name": "Basic",
             "pricing": 500,
             "token_limits": 1000,
+            "message_limits": 10,
             "features": (
-                "2 Chatbots, Rs. 1 per 1000 tokens, "
+                # "2 Chatbots, Rs. 1 per 1000 tokens, "
+                "2 Chatbots, Rs. 1 per 10 messages, "
                 "10 Million Characters, Crawl 2000 Website Pages, "
                 "5 Team Members"
             ),
@@ -24,8 +26,10 @@ def seed_subscription_plans(db: Session):
             "name": "Pro",
             "pricing": 3000,
             "token_limits": 1500,
+            "message_limits": 15,
             "features": (
-                "10 Chatbots, Rs. 1 per 1500 tokens, "
+                # "10 Chatbots, Rs. 1 per 1500 tokens, "
+                "10 Chatbots, Rs. 1 per 15 messages, "
                 "20 Million Characters, Crawl 10,000 Website Pages, "
                 "10 Team Members"
             ),
@@ -35,8 +39,10 @@ def seed_subscription_plans(db: Session):
             "name": "Enterprise",
             "pricing": 10000,
             "token_limits": 2000,
+            "message_limits": 20,
             "features": (
-                "30 Chatbots, Rs. 1 per 2000 tokens, "
+                # "30 Chatbots, Rs. 1 per 2000 tokens, "
+                "30 Chatbots, Rs. 1 per 20 messages, "
                 "50 Million Characters, Crawl 30,000 Website Pages, "
                 "30 Team Members"
             ),
@@ -51,6 +57,7 @@ def seed_subscription_plans(db: Session):
             existing.token_limits = plan["token_limits"]
             existing.features = plan["features"]
             existing.users_active = plan["users_active"]
+            existing.message_limits = plan["message_limits"]
         else:
             db.add(SubscriptionPlans(**plan))
 

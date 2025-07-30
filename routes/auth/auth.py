@@ -129,6 +129,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
             status=status,
             role_permissions=role_permissions,
             base_rate_per_token=base_rate_per_token,
+            messageUsed = 0
         )
         db.add(new_user)
         db.commit()
@@ -294,6 +295,7 @@ async def get_subscription_plans_authenticated(
                 "is_active": plan.is_active,
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at,
+                "message_per_unit": plan.message_per_unit,
             }
             formatted_plans.append(formatted_plan)
         
@@ -452,6 +454,7 @@ async def update_profile(
             "fullName": {"type": str, "max_length": 100},
             "isMFA": {"type": bool},
             "tokenUsed": {"type": int},
+            "messageUsed": {"type": int},
             "picture": {"type": str},  # Assuming this is a URL after upload
         }
 

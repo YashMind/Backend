@@ -253,7 +253,6 @@ def update_chat_bots(db: Session):
         raise
 
 
-
 def user_country_tracking(db: Session):
     try:
         ensure_tables_exist(db)
@@ -264,6 +263,230 @@ def user_country_tracking(db: Session):
                         f"""
                         ALTER TABLE users
                         ADD COLUMN {column} VARCHAR(255)
+                    """
+                    )
+                )
+                db.commit()
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback() 
+                else:
+                    raise
+
+        db.commit()
+        print("✅ Migration completed successfully")
+
+    except sa_exc.SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Database error during migration: {str(e)}")
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Unexpected error during migration: {str(e)}")
+        raise
+
+def add_message_per_unit_subscription(db: Session):
+    try:
+        ensure_tables_exist(db)
+        for column in ["message_per_unit"]:
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        ALTER TABLE subscription_plans
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
+                    """
+                    )
+                )
+                db.commit()
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback() 
+                else:
+                    raise
+
+        db.commit()
+        print("✅ Migration completed successfully")
+
+    except sa_exc.SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Database error during migration: {str(e)}")
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Unexpected error during migration: {str(e)}")
+        raise
+
+def users_messageUsed_tracking(db: Session):
+    try:
+        ensure_tables_exist(db)
+        for column in ["messageUsed"]:
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        ALTER TABLE users
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
+                    """
+                    )
+                )
+                db.commit()
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback() 
+                else:
+                    raise
+
+        db.commit()
+        print("✅ Migration completed successfully")
+
+    except sa_exc.SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Database error during migration: {str(e)}")
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Unexpected error during migration: {str(e)}")
+        raise
+
+def add_column_message_limit_combined_message_consumption_token_usage(db: Session):
+    try:
+        ensure_tables_exist(db)
+        for column in ["message_limit", "combined_message_consumption"]:
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        ALTER TABLE token_usage
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
+                    """
+                    )
+                )
+                db.commit()
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback() 
+                else:
+                    raise
+
+        db.commit()
+        print("✅ Migration completed successfully")
+
+    except sa_exc.SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Database error during migration: {str(e)}")
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Unexpected error during migration: {str(e)}")
+        raise
+
+def add_column_message_limit_combined_message_consumption_history_token_usage(db: Session):
+    try:
+        ensure_tables_exist(db)
+        for column in ["message_limit", "combined_message_consumption", "user_request_message","user_response_message", "whatsapp_request_messages", "whatsapp_response_messages", "slack_request_messages", "slack_response_messages", "wordpress_request_messages", "wordpress_response_messages", "zapier_request_messages", "zapier_response_messages"]:
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        ALTER TABLE history_token_usage
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
+                    """
+                    )
+                )
+                db.commit()
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback() 
+                else:
+                    raise
+
+        db.commit()
+        print("✅ Migration completed successfully")
+
+    except sa_exc.SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Database error during migration: {str(e)}")
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Unexpected error during migration: {str(e)}")
+        raise
+
+def add_column_message_per_unit_user_credits(db: Session):
+    try:
+        ensure_tables_exist(db)
+        for column in ["message_per_unit", "credit_balance_messages", "credits_consumed_messages"]:
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        ALTER TABLE user_credits
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
+                    """
+                    )
+                )
+                db.commit()
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback() 
+                else:
+                    raise
+
+        db.commit()
+        print("✅ Migration completed successfully")
+
+    except sa_exc.SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Database error during migration: {str(e)}")
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Unexpected error during migration: {str(e)}")
+        raise
+
+def add_column_message_per_unit_history_user_credits(db: Session):
+    try:
+        ensure_tables_exist(db)
+        for column in ["message_per_unit", "credit_balance_messages", "credits_consumed_messages"]:
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        ALTER TABLE history_user_credits
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
+                    """
+                    )
+                )
+                db.commit()
+            except sa_exc.OperationalError as e:
+                if "Duplicate column name" in str(e):
+                    db.rollback() 
+                else:
+                    raise
+
+        db.commit()
+        print("✅ Migration completed successfully")
+
+    except sa_exc.SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Database error during migration: {str(e)}")
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Unexpected error during migration: {str(e)}")
+        raise
+
+def add_columns_for_messages_tracking_token_usage(db: Session):
+    try:
+        ensure_tables_exist(db)
+        for column in ["user_request_message","user_response_message", "whatsapp_request_messages", "whatsapp_response_messages", "slack_request_messages", "slack_response_messages", "wordpress_request_messages", "wordpress_response_messages", "zapier_request_messages", "zapier_response_messages"]:
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        ALTER TABLE token_usage
+                        ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0
                     """
                     )
                 )
@@ -299,6 +522,13 @@ def main():
         # update_history_user_credits(db)
         # update_chat_settings(db)
         # update_chat_bots(db)
+        add_message_per_unit_subscription(db)
+        users_messageUsed_tracking(db)
+        add_column_message_limit_combined_message_consumption_token_usage(db)
+        add_column_message_limit_combined_message_consumption_history_token_usage(db)
+        add_column_message_per_unit_user_credits(db)
+        add_column_message_per_unit_history_user_credits(db)
+        add_columns_for_messages_tracking_token_usage(db)
         
         print("🎉 All migrations completed successfully!")
         

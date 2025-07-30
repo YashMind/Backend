@@ -62,6 +62,12 @@ def create_user_credit_entry(
                 chatbots_allowed=current_credit.chatbots_allowed,
                 is_trial=current_credit.is_trial,
                 expiry_reason="Replaced by new subscription",
+                message_per_unit=current_credit.message_per_unit,
+                credits_consumed_messages=current_credit.credits_consumed_messages,
+                credit_balance_messages=current_credit.credit_balance_messages,
+                chars_allowed = current_credit.chars_allowed,
+                webpages_allowed = current_credit.webpages_allowed,
+                team_strength = current_credit.team_strength
             )
             db.add(history_entry)
             db.delete(current_credit)
@@ -90,6 +96,11 @@ def create_user_credit_entry(
             token_per_unit=plan.token_per_unit,
             chatbots_allowed=plan.chatbots_allowed,
             is_trial=is_trial,
+            message_per_unit=plan.message_per_unit,
+            chars_allowed = plan.chars_allowed,
+            webpages_allowed = plan.webpages_allowed,
+            team_strength = plan.team_strength,
+            credit_balance_messages=purchased_credits
         )
 
         db.add(new_credit)

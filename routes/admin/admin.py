@@ -102,6 +102,9 @@ async def get_all_users(
     token_used: Optional[str] = Query(
         None, description="Filter by token range: 0-1000, 1001-5000, 5001+"
     ),
+    message_used: Optional[str] = Query(
+        None, description="Filter by token range: 0-100, 101-500, 501+"
+    ),
     start_date: Optional[str] = Query(
         None, description="Start date for signup date range (YYYY-MM-DD)"
     ),
@@ -124,6 +127,7 @@ async def get_all_users(
         
         # Calculate total tokens consumed (all time)
         total_tokens_consumed = db.query(func.sum(AuthUser.tokenUsed)).scalar() or 0
+        total_messages_consumed = db.query(func.sum(AuthUser.messageUsed)).scalar() or 0
         
         
         # Calculate total subscriptions (users with plan > 1 or active subscriptions)
@@ -161,6 +165,14 @@ async def get_all_users(
             elif token_used == "5001+":
                 query = query.filter(AuthUser.tokenUsed >= 5001)
 
+        if message_used:
+            if token_used == "0-100":
+                query = query.filter(AuthUser.messageUsed.between(0, 100))
+            elif token_used == "101-500":
+                query = query.filter(AuthUser.messageUsed.between(101, 500))
+            elif token_used == "501+":
+                query = query.filter(AuthUser.messageUsed >= 501)
+
         # Apply date range filter
         if start_date:
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
@@ -189,6 +201,7 @@ async def get_all_users(
             "total_signups": total_signups,
             "total_tokens_consumed": total_tokens_consumed,  # NEW: Total tokens consumed (all time)
             "total_subscriptions": total_subscriptions,  # NEW: Total subscriptions 
+            "total_messages_consumed": total_messages_consumed
         }
 
     except HTTPException as http_exc:
@@ -307,6 +320,7 @@ async def create_subscription_plans(
             existing_plan.chars_allowed = data.chars_allowed
             existing_plan.webpages_allowed = data.webpages_allowed
             existing_plan.team_strength = data.team_strength
+            existing_plan.message_per_unit = data.message_per_unit
 
             db.commit()
             db.refresh(existing_plan)
@@ -324,6 +338,7 @@ async def create_subscription_plans(
                 chars_allowed=data.chars_allowed,
                 webpages_allowed=data.webpages_allowed,
                 team_strength=data.team_strength,
+                message_per_unit=data.message_per_unit,
             )
             db.add(new_plan)
             db.commit()
@@ -383,6 +398,7 @@ async def get_all_subscription_plans_admin(
                 "is_active": plan.is_active,  # Include activation status
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at,
+                "message_per_unit": plan.message_per_unit,
             }
             for plan in plans
         ]
@@ -443,6 +459,7 @@ async def get_all_subscription_plans_public(
                 "is_active": plan.is_active,  # ✅ Include activation status
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at,
+                "message_per_unit": plan.message_per_unit,
             }
             formatted_plans.append(formatted_plan)
 
@@ -500,6 +517,7 @@ async def create_subscription_plans(
             existing_plan.name = data.name
             existing_plan.pricing = data.pricing
             existing_plan.token_limits = data.token_limits
+            existing_plan.message_limits = data.message_limits
 
             db.commit()
             db.refresh(existing_plan)
@@ -509,6 +527,7 @@ async def create_subscription_plans(
                 name=data.name,
                 pricing=data.pricing,
                 token_limits=data.token_limits,
+                message_limits=data.message_limits,
             )
             db.add(new_botToken)
             db.commit()

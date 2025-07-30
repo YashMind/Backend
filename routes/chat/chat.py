@@ -658,7 +658,8 @@ async def chat_message(
         )
         if not token_limit_availabe:
             raise HTTPException(
-                status_code=400, detail=f"Token limit exceeded: {message}"
+                # status_code=400, detail=f"Token limit exceeded: {message}"
+                status_code=400, detail=f"Message limit exceeded: {message}"
             )
 
         # Verify chat belongs to user
@@ -806,12 +807,16 @@ async def chat_message(
         bot_message.output_tokens = openai_response_tokens
         bot_message.open_ai_request_tokens = openai_request_tokens
         bot_message.open_ai_response_tokens = openai_response_tokens
+        bot_message.input_message = 1
+        bot_message.output_message = 1
 
         consumed_token = SimpleNamespace(
             request_token=request_tokens,
             response_token=openai_response_tokens,
             open_ai_request_token=openai_request_tokens,
             open_ai_response_token=openai_response_tokens,
+            request_message = 1,
+            response_message = 1
         )
         update_token_usage_on_consumption(
             consumed_token=consumed_token,
@@ -2097,25 +2102,36 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
                 usage.combined_token_consumption or 0 for usage in token_usages
             )
             print(f"Total token consumption: {total_token_consumption}")
+
+            total_message_consumption = sum(
+                usage.combined_message_consumption or 0 for usage in token_usages
+            )
+            print(f"Total token consumption: {total_message_consumption}")
             return {
                 "credits": credits,
                 "token_usage": token_usages,
                 "total_token_consumption": total_token_consumption,
+                "total_message_consumption": total_message_consumption,
                 "has_shared_bots": False
             }
         else:
             # Check for shared bots
-            shared_bot_ids = db.query(ChatBotSharing.bot_id).filter(
+            shared_records = db.query(ChatBotSharing.bot_id, ChatBotSharing.owner_id).filter(
                 ChatBotSharing.shared_user_id == user_id,
                 ChatBotSharing.status == "active"
             ).all()
-            shared_bot_ids = [bot_id for (bot_id,) in shared_bot_ids]
+            shared_bot_ids = [record.bot_id for record in shared_records]
+            shared_owner_ids = [record.owner_id for record in shared_records]
+            print(json.dumps(shared_owner_ids))
+            if shared_owner_ids:
+                token_usages = db.query(TokenUsage).filter(TokenUsage.user_id.in_(shared_owner_ids)).all()
             if shared_bot_ids:
                 print("User has shared bots, returning empty credits info with has_shared_bots True")
                 return {
                     "credits": None,
-                    "token_usage": [],
+                    "token_usage": token_usages or [],
                     "total_token_consumption": 0,
+                    "total_message_consumption": 0,
                     "has_shared_bots": True
                 }
             else:
@@ -2164,13 +2180,16 @@ async def chat_message_tokens_summary(
                 elif message.sender == "bot":
                     bot_messages.append(message.message)
 
-            # Calculate tokens
+            # Calculate tokens and messages
             request_tokens = 0
+            request_messages = 0
             if user_messages:
                 combined_user_text = " ".join(user_messages)
                 request_tokens = len(encoder.encode(combined_user_text))
+                request_messages = len(user_messages)
 
             response_tokens = 0
+            response_messages = 0
             if bot_messages:
                 combined_bot_text = " ".join(bot_messages)
                 cleaned_response = re.sub(
@@ -2186,11 +2205,14 @@ async def chat_message_tokens_summary(
 
                 cleaned_response = re.sub(r"\s+", " ", cleaned_response).strip()
                 response_tokens = len(encoder.encode(cleaned_response))
+                response_messages = len(bot_messages)
 
             return {
                 "request_tokens": request_tokens,
                 "response_tokens": response_tokens,
                 "users": len(user_ids),
+                "request_messages": request_messages,
+                "response_messages": response_messages
             }
 
         # Get today's messages
@@ -2223,15 +2245,15 @@ async def chat_message_tokens_summary(
         today_data = (
             process_messages(today_messages)
             if today_messages
-            else {"request_tokens": 0, "response_tokens": 0, "users": 0}
+            else {"request_tokens": 0, "response_tokens": 0, "users": 0, "request_messages": 0, "response_messages": 0}
         )
 
         monthly_data = (
             process_messages(monthly_messages)
             if monthly_messages
-            else {"request_tokens": 0, "response_tokens": 0, "users": 0}
+            else {"request_tokens": 0, "response_tokens": 0, "users": 0, "request_messages": 0, "response_messages": 0}
         )
-
+        print(json.dumps(today_data))
         return {"today": today_data, "monthly": monthly_data}
 
     except Exception as e:
