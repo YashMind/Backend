@@ -31,7 +31,7 @@ from schemas.chatSchema.tokensSchema import (
     ChatMessageTokensSummary,
     ChatMessageTokensToday,
 )
-from utils.utils import decode_access_token, get_current_user, get_recent_chat_history
+from utils.utils import decode_access_token, get_current_user, get_recent_chat_history,validate_response, handle_invalid_response
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
@@ -719,6 +719,8 @@ async def chat_message(
             answer = None
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
+           
+
 
             # if any(score > 0.0 for score in scores):
             if len(scores) > 0:
@@ -784,6 +786,20 @@ async def chat_message(
         db.commit()
         db.refresh(bot_message)
         print("BOT MESSAGE SAVED")
+        print("hhhhhhhhhhhhhhhhhhhhhhhhhhh")
+        is_valid, reason = validate_response(answer)
+        if not is_valid:
+            print(f"Invalid response detected: {reason}")
+            answer = handle_invalid_response(
+                question=user_msg,
+                response=answer,
+                reason=reason,
+                user_id=user_id,
+                bot_id=bot_id,
+                db=db,
+                  
+            )
+            response_content = answer
 
         # Update Token consumption
         bot_message.input_tokens = request_tokens
@@ -843,7 +859,6 @@ async def get_chat_history(
         chat = db.query(ChatSession).filter_by(id=chat_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
-
         messages = (
             db.query(ChatMessage)
             .filter_by(chat_id=chat_id)

@@ -17,7 +17,7 @@ from routes.chat.pinecone import (
 )
 from models.authModel.authModel import AuthUser
 from langchain.chat_models import ChatOpenAI
-from models.chatModel.chatModel import ChatBots, ChatSession, ChatMessage
+from models.chatModel.chatModel import ChatBots, ChatBotsFaqs, ChatSession, ChatMessage
 from langchain.schema import HumanMessage, AIMessage
 from email.mime.text import MIMEText
 import smtplib
@@ -461,3 +461,110 @@ async def get_paypal_access_token(
         raise Exception(
             f"Failed to get PayPal access token: {response.status_code} - {response.text}"
         )
+        
+        
+def validate_response(response, min_length=10, max_incomplete_penalty=3):
+    """
+    Validates an AI-generated response with minimal token usage.
+    
+    Args:
+        response (str): The AI-generated response to validate
+        min_length (int): Minimum acceptable response length in words
+        max_incomplete_penalty (int): Max allowed incomplete sentences
+        
+    Returns:
+        tuple: (is_valid: bool, reason: str or None)
+               If invalid, returns False with reason
+               If valid, returns True with None
+    """
+    # First clean the response by removing HTML tags
+    if response:
+        clean_response = re.sub(r'<[^>]+>', '', response).strip()
+    else:
+        clean_response = ""
+
+    # Quick empty check
+    if not clean_response:
+        return (False, "Empty response")
+    
+    # Split into words and sentences efficiently
+    words = clean_response.split()
+    sentences = clean_response.split('. ')
+    
+    # Check minimum length
+    if len(words) < min_length:
+        return (False, f"Response too short (min {min_length} words required)")
+    
+    # Check for incomplete sentences (but not the last one which may genuinely be cut off)
+    incomplete_count = 0
+    for sentence in sentences[:-1]:  # Skip last sentence
+        if not sentence.strip() or not sentence[-1].isalnum():
+            incomplete_count += 1
+            if incomplete_count >= max_incomplete_penalty:
+                return (False, "Too many incomplete sentences")
+    
+    # Check for common error patterns
+    error_phrases = [
+        "i don't know",
+        "i cannot answer",
+        "i'm not sure",
+        "i don't have information",
+        "i don't understand",
+        "i'm unable to",
+        "i don't have enough context",
+        "i don't have access to",
+        "i'm not programmed to",
+        "i don't have the capability",
+        "apologies"
+    ]
+    
+    lower_response = clean_response.lower()
+    if any(phrase in lower_response for phrase in error_phrases):
+        return (False, "AI indicated inability to answer")
+    
+    # If all checks passed
+    return (True, None)
+
+
+def handle_invalid_response(question, user_id, bot_id, db, response=None, reason=None):
+    """
+    Handles invalid responses by adding to FAQ storage.
+    
+    Args:
+        question (str): The original question
+        user_id: User ID
+        bot_id: Bot ID
+        db: Database session
+        response (str, optional): The invalid response
+        reason (str, optional): Why the response was invalid
+    """
+    try:
+        
+        # First check if this question already exists in FAQs
+        existing_faq = db.query(ChatBotsFaqs).filter(
+            ChatBotsFaqs.bot_id == bot_id,
+            ChatBotsFaqs.question.ilike(f"%{question}%")
+        ).first()
+        
+        if existing_faq:
+            return existing_faq
+
+        new_faq = ChatBotsFaqs(
+            question=question,
+            answer=None,
+            user_id=user_id,
+            bot_id=bot_id,
+        )
+
+        db.add(new_faq)
+        db.commit()
+        db.refresh(new_faq)
+        
+        print(f"Saved invalid response to FAQs - Question: {question[:50]}...")
+        return new_faq
+        
+    except Exception as e:
+        db.rollback()
+        print(f"Error saving to FAQ database: {e}")
+        return None
+

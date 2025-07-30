@@ -425,8 +425,8 @@ def generate_response(
     except Exception as e:
         print(f"Error generating response: {e}")
         return (
-            "I encountered an error while processing your request.",
-            openai_request_tokens,
+            "I encountered an error while processing your request.",              
+                    openai_request_tokens,
             0,
         )
 

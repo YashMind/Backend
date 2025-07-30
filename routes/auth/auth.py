@@ -11,7 +11,24 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
+from models.chatModel.tuning import DBInstructionPrompt
+from routes.chat.pinecone import delete_documents_from_pinecone
 from models.adminModel.adminModel import SubscriptionPlans
+from models.authModel.authModel import AuthUser
+from models.chatModel.sharing import ChatBotSharing
+from models.chatModel.chatModel import ChatBots, ChatSession
+from models.chatModel.chatModel import ChatMessage
+from models.chatModel.chatModel import ChatBotsFaqs
+from models.subscriptions.transactionModel import Transaction
+from models.subscriptions.userCredits import UserCredits
+from models.chatModel.integrations import ZapierIntegration
+from models.chatModel.integrations import WhatsAppUser
+from models.chatModel.chatModel import ChatBotsDocLinks
+from models.chatModel.chatModel import ChatTotalToken
+from models.subscriptions.token_usage import TokenUsageHistory
+from models.subscriptions.userCredits import HistoryUserCredits
+from models.subscriptions.token_usage import TokenUsage
+
 from utils.utils import (
     create_access_token,
     decode_access_token,
@@ -679,3 +696,68 @@ async def facebook_login(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# delete user from user management
+# FastAPI + SQLAlchemy example
+
+  # Your existing User model
+
+# router = APIRouter(prefix="/api/users", tags=["Users"])
+
+@router.delete("/{user_id}")
+def delete_user(
+    user_id: int,  # or use email if your identifier is different
+    db: Session = Depends(get_db),
+):
+
+
+    db.query(ChatMessage).filter(ChatMessage.chat_id.in_(
+    db.query(ChatSession.id).filter(ChatSession.user_id == user_id)
+    )).delete()
+    db.query(ChatSession).filter(ChatSession.user_id == user_id).delete()
+    db.query(ChatBotSharing).filter(ChatBotSharing.shared_user_id == user_id).delete()
+    db.query(ChatBotSharing).filter(ChatBotSharing.owner_id == user_id).delete() 
+    db.query(ChatBotsFaqs).filter(ChatBotsFaqs.user_id==user_id).delete()
+    db.query(ZapierIntegration).filter(ZapierIntegration.user_id==user_id).delete()
+    db.query(WhatsAppUser).filter(WhatsAppUser.user_id==user_id).delete()
+    chatbots_query =db.query(ChatBots).filter(ChatBots.user_id==user_id)
+    bot_ids = [bot.id for bot in chatbots_query.all()]
+    for bot_id in bot_ids:
+        docs_to_delete = (
+            db.query(ChatBotsDocLinks)
+            .filter(
+                ChatBotsDocLinks.bot_id == bot_id,
+            )
+            .all()
+        )
+
+        if not docs_to_delete:
+            print({"message": "No documents found to delete"})
+
+        # Get the source links for Pinecone deletion
+        doc_link_ids = [doc.id for doc in docs_to_delete]
+
+        # Delete from Pinecone first
+        delete_documents_from_pinecone(bot_id, doc_link_ids, db)
+    db.query( ChatBotsDocLinks).filter( ChatBotsDocLinks.user_id==user_id).delete()
+    db.query( ChatTotalToken).filter( ChatTotalToken.user_id==user_id).delete()
+    db.query(TokenUsageHistory).filter(TokenUsageHistory.user_id==user_id).delete()
+    db.query( TokenUsage).filter( TokenUsage.user_id==user_id).delete()
+    db.query( HistoryUserCredits).filter(HistoryUserCredits.user_id==user_id).delete()
+    db.query(UserCredits).filter(UserCredits.trans_id.in_(
+    db.query(Transaction.id).filter(Transaction.user_id == user_id)
+    )).delete()
+    db.query( Transaction).filter( Transaction. user_id==user_id).delete()
+    db.query( DBInstructionPrompt).filter( DBInstructionPrompt.user_id==user_id).delete()
+    
+    chatbots_query.delete()
+    
+    user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db.delete(user)  # Hard delete
+    db.commit()
+    return {"message": "User deleted successfully"}
