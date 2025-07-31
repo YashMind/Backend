@@ -2217,10 +2217,6 @@ async def chat_message_tokens_summary(
                 "response_messages": response_messages
             }
         
-        print(start_of_day)
-        print(end_of_day)
-        print(bot_id)
-        
         # Get today's messages
         today_messages = (
             db.query(ChatMessage)
