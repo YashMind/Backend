@@ -2095,6 +2095,8 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
 
         credits = db.query(UserCredits).filter_by(user_id=user_id).first()
         print(f"Fetched credits: {credits}")
+        
+
         if credits:
             token_usages = db.query(TokenUsage).filter_by(user_id=user_id).all()
             print(f"Fetched {len(token_usages)} token usage records")
@@ -2136,7 +2138,7 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
                 }
             else:
                 print("No credits and no shared bots found")
-                raise HTTPException(status_code=404, detail="No Credit History Found")
+                raise HTTPException(status_code=204, detail="No Credit History Found")
 
     except HTTPException as http_exc:
         print(f"HTTPException: {http_exc.detail}")
@@ -2214,7 +2216,11 @@ async def chat_message_tokens_summary(
                 "request_messages": request_messages,
                 "response_messages": response_messages
             }
-
+        
+        print(start_of_day)
+        print(end_of_day)
+        print(bot_id)
+        
         # Get today's messages
         today_messages = (
             db.query(ChatMessage)

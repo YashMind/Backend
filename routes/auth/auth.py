@@ -572,6 +572,7 @@ async def google_login(
                     provider="google",
                     googleId=googleId,
                     picture=picture,
+                    messageUsed=0
                 )
                 db.add(user)
                 db.commit()

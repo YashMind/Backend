@@ -492,8 +492,8 @@ def validate_response(response, min_length=10, max_incomplete_penalty=3):
     sentences = clean_response.split('. ')
     
     # Check minimum length
-    if len(words) < min_length:
-        return (False, f"Response too short (min {min_length} words required)")
+    # if len(words) < min_length:
+    #     return (False, f"Response too short (min {min_length} words required)")
     
     # Check for incomplete sentences (but not the last one which may genuinely be cut off)
     incomplete_count = 0

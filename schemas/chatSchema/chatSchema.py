@@ -109,7 +109,7 @@ class FaqResponse(BaseModel):
     user_id: int
     bot_id: int
     question: str
-    answer: str
+    answer: Optional[str]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
