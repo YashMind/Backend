@@ -29,7 +29,8 @@ from routes.subscriptions.token_usage import (
     update_token_usage_on_consumption,
     verify_token_limit_available,
 )
-
+import re
+from rapidfuzz import fuzz
 
 SECRET_KEY = "ADMIN@1234QWER"
 ALGORITHM = "HS256"
@@ -462,48 +463,44 @@ async def get_paypal_access_token(
             f"Failed to get PayPal access token: {response.status_code} - {response.text}"
         )
         
-        
-def validate_response(response, min_length=10, max_incomplete_penalty=3):
+
+
+def validate_response(response, min_length=10, max_incomplete_penalty=3, fuzzy_threshold=85):
     """
-    Validates an AI-generated response with minimal token usage.
+    Validates an AI-generated response with minimal token usage and fuzzy detection for inability phrases.
     
     Args:
         response (str): The AI-generated response to validate
         min_length (int): Minimum acceptable response length in words
         max_incomplete_penalty (int): Max allowed incomplete sentences
+        fuzzy_threshold (int): Minimum fuzzy match score to consider an error phrase matched
         
     Returns:
         tuple: (is_valid: bool, reason: str or None)
-               If invalid, returns False with reason
-               If valid, returns True with None
     """
-    # First clean the response by removing HTML tags
-    if response:
-        clean_response = re.sub(r'<[^>]+>', '', response).strip()
-    else:
-        clean_response = ""
+    # Remove HTML
+    clean_response = re.sub(r'<[^>]+>', '', response or "").strip()
 
-    # Quick empty check
     if not clean_response:
         return (False, "Empty response")
-    
-    # Split into words and sentences efficiently
+
+    # Word and sentence split
     words = clean_response.split()
-    sentences = clean_response.split('. ')
-    
-    # Check minimum length
+    sentences = re.split(r'[.!?]\s+', clean_response)
+
+    # (Optional) check min word length
     # if len(words) < min_length:
     #     return (False, f"Response too short (min {min_length} words required)")
-    
-    # Check for incomplete sentences (but not the last one which may genuinely be cut off)
+
+    # Incomplete sentence penalty check
     incomplete_count = 0
-    for sentence in sentences[:-1]:  # Skip last sentence
+    for sentence in sentences[:-1]:  # Last sentence may be legitimately cut off
         if not sentence.strip() or not sentence[-1].isalnum():
             incomplete_count += 1
             if incomplete_count >= max_incomplete_penalty:
                 return (False, "Too many incomplete sentences")
-    
-    # Check for common error patterns
+
+    # Fuzzy error phrase detection
     error_phrases = [
         "i don't know",
         "i cannot answer",
@@ -515,14 +512,23 @@ def validate_response(response, min_length=10, max_incomplete_penalty=3):
         "i don't have access to",
         "i'm not programmed to",
         "i don't have the capability",
-        "apologies"
+        "apologies",
+        "i was trained on data up to",
+        "my knowledge is limited",
+        "i cannot provide that information",
+        "i’m not able to help with that",
+        "that’s outside my scope",
+        "sorry, i can’t provide that"
     ]
-    
-    lower_response = clean_response.lower()
-    if any(phrase in lower_response for phrase in error_phrases):
-        return (False, "AI indicated inability to answer")
-    
-    # If all checks passed
+
+    # Lowercased for matching
+    sentences_lower = [s.lower() for s in sentences]
+
+    for sent in sentences_lower:
+        for phrase in error_phrases:
+            if fuzz.partial_ratio(phrase, sent) >= fuzzy_threshold:
+                return (False, "AI indicated inability to answer")
+
     return (True, None)
 
 
