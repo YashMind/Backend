@@ -94,7 +94,7 @@ async def get_all_users(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
     plan: Optional[str] = Query(
-        None, description="Filter by plan: 1=Basic, 2=Pro, 3=Enterprise"
+        None, description="Filter by plan: 1=Basic, 2=Pro, 3=Enterprise 4=Free 5=Team"
     ),
     status: Optional[str] = Query(
         None, description="Filter by status: active, inactive, suspended"
@@ -149,8 +149,21 @@ async def get_all_users(
             )
 
         # Apply plan filter
+        
         if plan:
+            if plan =="4":
+                query= query.filter(AuthUser.plan.is_(None))
+                
+            elif plan=="5":
+                query = query.join(
+                ChatBotSharing,
+                ChatBotSharing.shared_user_id == AuthUser.id
+                ).filter(
+                ChatBotSharing.status == "active"
+                )    
+        else:
             query = query.filter(AuthUser.plan == int(plan))
+            
 
         # Apply status filter
         if status:

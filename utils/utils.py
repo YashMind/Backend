@@ -31,6 +31,8 @@ from routes.subscriptions.token_usage import (
 )
 import re
 from rapidfuzz import fuzz
+from config import get_db, settings
+
 
 SECRET_KEY = "ADMIN@1234QWER"
 ALGORITHM = "HS256"
@@ -351,22 +353,23 @@ def decode_reset_access_token(token: str):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("sub")
     except Exception as e:
+        print(str(e))
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 def send_reset_email(email: str, token: str):
     try:
-        reset_link = f"http://localhost:3000/reset-password?token={token}"
+        reset_link = f"http://localhost:3000/auth/reset-password?token={token}"
         message = MIMEText(f"Click the link to reset your password: {reset_link}")
         message["Subject"] = "Password Reset"
-        message["From"] = "no-reply@yourdomain.com"
+        message["From"] = settings.EMAIL_ADDRESS
         message["To"] = email
 
         # Send email (ensure you configure your SMTP server details)
-        with smtplib.SMTP("smtp.yourdomain.com", 587) as server:
+        with smtplib.SMTP(settings.SMTP_HOST, 587) as server:
             server.starttls()
-            server.login("your-email@yourdomain.com", "your-email-password")
-            server.sendmail("no-reply@yourdomain.com", email, message.as_string())
+            server.login(settings.EMAIL_ADDRESS, settings.EMAIL_PASSWORD)
+            server.sendmail(settings.EMAIL_ADDRESS, email, message.as_string())
 
     except smtplib.SMTPException as smtp_exc:
         raise HTTPException(

@@ -9,7 +9,7 @@ class SubscriptionPlans(Base):
     name = Column(String(100), nullable=True)
     pricingInr = Column(Integer, nullable=True)
     pricingDollar = Column(Integer, nullable=True)
-    token_per_unit = Column(Integer, nullable=False)
+    token_per_unit = Column(Integer, nullable=True)
     chatbots_allowed = Column(Integer, nullable=False)
     chars_allowed = Column(Integer, nullable=False)
     webpages_allowed = Column(Integer, nullable=False)

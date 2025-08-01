@@ -1,6 +1,6 @@
 
 from typing import List
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import Request,APIRouter, BackgroundTasks, HTTPException
 from decorators.rbac_admin import check_permissions
 from schemas.adminSchema.adminSchema import PostEmail
 from send_email import send_email
@@ -13,10 +13,11 @@ def send_emails_in_batches(subject: str, content: str, recipients: List[str]):
         batch = recipients[i:i + batch_size]
         send_email(subject=subject, html_content=content, recipients=batch)
 
-@router.post("/send-emails")
+@router.post("/send-email")
 @check_permissions(['support-communication'])
-def send_post_to_users(payload: PostEmail, background_tasks: BackgroundTasks):
+def send_post_to_users(request:Request,payload: PostEmail, background_tasks: BackgroundTasks):
     try:
+        print("-------------------------------------")
         if not payload.recipients or len(payload.recipients) == 0:
             raise HTTPException(status_code=400, detail="At least one recipient is required.")
         

@@ -353,12 +353,21 @@ async def forget_password(
 ):
     try:
         user = db.query(AuthUser).filter(AuthUser.email == request.email).first()
+        print("user email id")
+        print(user)
         if not user:
             raise HTTPException(
                 status_code=404, detail="User with this email does not exist"
             )
+        userProvider=db.query(AuthUser).filter(AuthUser.provider==request.email).first()    
+        if userProvider:
+            raise HTTPException(
+                status_code= 400 , detail=" user logged in with {userProvider.provider} provider"
+            )
+        print("user exist")    
 
         reset_token = create_reset_token({"sub": str(user.id)})
+        print(reset_token)
         background_tasks.add_task(send_reset_email, request.email, reset_token)
 
         return {"message": "Password reset email sent"}
@@ -372,10 +381,14 @@ async def forget_password(
 @router.post("/reset-password")
 async def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
     try:
+        print("user id ---------------------")
         user_id = decode_reset_access_token(data.token)
+        print("user id ---------------------", user_id)
         if user_id is None:
             raise HTTPException(status_code=400, detail="Invalid token")
         user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+        print("user---------------------", user)
+
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         hashed_password = pwd_context.hash(data.new_password)
@@ -388,6 +401,7 @@ async def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        print("------------------------------------------------",e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
