@@ -32,7 +32,7 @@ class Transaction(Base):
 
     # Provider info
     provider = Column(
-        Enum("cashfree", "paypal", "stripe", "trial", name="payment_providers"),
+        Enum("cashfree", "paypal", "stripe", "trial","razorpay" name="payment_providers"),
         nullable=False,
     )
     provider_transaction_id = Column(String(255))  # Gateway's transaction ID
