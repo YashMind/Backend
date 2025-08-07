@@ -1377,7 +1377,7 @@ async def get_bot_doc_links(
         website_links = (
             db.query(ChatBotsDocLinks)
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.train_from == "full website",
             )
