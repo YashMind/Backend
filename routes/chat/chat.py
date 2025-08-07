@@ -1208,7 +1208,6 @@ async def get_chatbot_faqs(
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        print("uuuuuuuuuuuuuuuuuuuuuuuu",user_id)
         print(token)
         
         chatbot_faqs = (

@@ -548,7 +548,7 @@ async def verify_razorpay_payment(
             )
 
         # Fetch payment details from Razorpay
-        payment_url = f"{"https://api.razorpay.com/v1/orders"}/payments/{verification_data.payment_id}"
+        payment_url = f"https://api.razorpay.com/v1/orders/payments/{verification_data.payment_id}"
         headers = generate_razorpay_headers()
         
         response = requests.get(payment_url, headers=headers)
