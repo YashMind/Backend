@@ -311,8 +311,10 @@ async def get_subscription_plans_authenticated(
 
 @router.get("/me")
 async def getme(request: Request, response: Response, db: Session = Depends(get_db)):
+    print("1111111111111111111111111")
     try:
         token = request.cookies.get("access_token")
+        print("1222222222222222222222222",token)
         if not token:
             response.delete_cookie("access_token")
             response.delete_cookie("role")

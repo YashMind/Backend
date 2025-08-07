@@ -1,9 +1,12 @@
 
 from typing import List
-from fastapi import Request,APIRouter, BackgroundTasks, HTTPException
+from fastapi import Request,APIRouter, BackgroundTasks, HTTPException,Depends
 from decorators.rbac_admin import check_permissions
 from schemas.adminSchema.adminSchema import PostEmail
 from send_email import send_email
+from sqlalchemy.orm import Session
+from config import get_db, settings
+
 
 router = APIRouter()
 
@@ -15,7 +18,7 @@ def send_emails_in_batches(subject: str, content: str, recipients: List[str]):
 
 @router.post("/send-email")
 @check_permissions(['support-communication'])
-def send_post_to_users(request:Request,payload: PostEmail, background_tasks: BackgroundTasks):
+def send_post_to_users(request:Request,payload: PostEmail, background_tasks: BackgroundTasks,db: Session = Depends(get_db)):
     try:
         print("-------------------------------------")
         if not payload.recipients or len(payload.recipients) == 0:

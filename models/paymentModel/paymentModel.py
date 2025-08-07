@@ -19,3 +19,4 @@ class PaymentOrderRequest(BaseModel):
 class PaymentVerificationRequest(BaseModel):
     order_id: str
     payment_id: Optional[str] = None
+    signature: Optional[str] = None

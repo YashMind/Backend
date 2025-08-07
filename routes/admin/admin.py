@@ -40,6 +40,9 @@ from schemas.adminSchema.adminSchema import (
     RolePermissionInput,
     RolePermissionResponse,
 )
+from sqlalchemy import func, or_, and_
+from sqlalchemy.sql import exists
+
 from sqlalchemy.orm import Session
 from config import get_db, settings
 from typing import Optional, Dict, List
@@ -94,7 +97,7 @@ async def get_all_users(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
     plan: Optional[str] = Query(
-        None, description="Filter by plan: 1=Basic, 2=Pro, 3=Enterprise 4=Free 5=Team"
+        None, description="Filter by plan: 1=Basic, 2=Pro, 3=Enterprise 4=Free 5=Team 6=cilent"
     ),
     status: Optional[str] = Query(
         None, description="Filter by status: active, inactive, suspended"
@@ -151,6 +154,8 @@ async def get_all_users(
         # Apply plan filter
         
         if plan:
+                
+           
             if plan =="4":
                 query= query.filter(AuthUser.plan.is_(None))
                 
@@ -160,9 +165,18 @@ async def get_all_users(
                 ChatBotSharing.shared_user_id == AuthUser.id
                 ).filter(
                 ChatBotSharing.status == "active"
-                )    
-        else:
-            query = query.filter(AuthUser.plan == int(plan))
+                )
+            elif plan == "6":
+                query = query.filter(
+                ~exists().where(
+                and_(
+                ChatBotSharing.shared_user_id == AuthUser.id,
+                ChatBotSharing.status == "active"
+            )
+            )
+            )    
+            else:
+                query = query.filter(AuthUser.plan == int(plan))
             
 
         # Apply status filter
@@ -233,7 +247,7 @@ async def update_chatbot(
 ):
     try:
         user = db.query(AuthUser).filter(AuthUser.id == int(data.id)).first()
-        if not user:
+        if not user: 
             raise HTTPException(status_code=404, detail="Chatbot not found")
 
         if data.status:

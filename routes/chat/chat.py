@@ -984,7 +984,7 @@ async def get_user_chat_history(
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-        chat_bot = db.query(ChatBots).filter_by(id=bot_id, user_id=user_id).first()
+        chat_bot = db.query(ChatBots).filter_by(id=bot_id).first()
 
         # Start with base query for sessions
         session_query = db.query(ChatSession).filter_by(bot_id=bot_id, archived=False)
@@ -1208,13 +1208,19 @@ async def get_chatbot_faqs(
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-
+        print("uuuuuuuuuuuuuuuuuuuuuuuu",user_id)
+        print(token)
+        
         chatbot_faqs = (
             db.query(ChatBotsFaqs)
-            .filter_by(bot_id=bot_id, user_id=user_id)
+            .filter_by(bot_id=bot_id)
             .order_by(ChatBotsFaqs.created_at.desc())
             .all()
         )
+        
+        if not chatbot_faqs:
+            print(f"No FAQs found for user_id {user_id} and bot_id {bot_id}")
+            return []
         return chatbot_faqs
 
     except HTTPException as http_exc:
@@ -2136,6 +2142,7 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
                     "total_message_consumption": 0,
                     "has_shared_bots": True
                 }
+                
             else:
                 print("No credits and no shared bots found")
                 raise HTTPException(status_code=204, detail="No Credit History Found")

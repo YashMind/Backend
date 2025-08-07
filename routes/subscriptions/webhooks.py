@@ -11,7 +11,16 @@ import hashlib
 import base64
 import json
 import hmac
+from models.paymentModel.paymentModel import (
+    PaymentVerificationRequest,
+    PaymentOrderRequest,
+)
+from routes.payment.razor_payment import verify_razorpay_signature ,generate_razorpay_headers,verify_webhook_signature
+from typing import Optional, Dict, Any
+import requests
+from dotenv import load_dotenv
 
+from routes.payment.razor_payment import handle_payment_success,handle_payment_failure,handle_failed_payment,handle_payment_authorized
 from routes.payment.trial_payment import (
     create_trial_order,
     has_activated_plan,
@@ -511,3 +520,164 @@ async def activate_trial_plan(
     except Exception as e:
         print("Error processing trial activation: ", e)
         raise HTTPException(status_code=400, detail=str(e))
+
+
+
+# razor pay 
+@router.post("/verify-payment")
+async def verify_razorpay_payment(
+    request: Request,  # Add request parameter
+    verification_data: PaymentVerificationRequest,
+    db: Session = Depends(get_db)
+      
+
+):
+    """Verify Razorpay payment"""
+    try:
+        # Verify signature
+        is_valid = verify_razorpay_signature(
+            verification_data.order_id,
+            verification_data.payment_id,
+            verification_data.signature
+        )
+
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid payment signature"
+            )
+
+        # Fetch payment details from Razorpay
+        payment_url = f"{"https://api.razorpay.com/v1/orders"}/payments/{verification_data.payment_id}"
+        headers = generate_razorpay_headers()
+        
+        response = requests.get(payment_url, headers=headers)
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to fetch payment details from Razorpay"
+            )
+
+        payment_data = response.json()
+        
+        # Map Razorpay status to our status
+        status_map = {
+            "captured": "success",
+            "authorized": "pending",
+            "failed": "failed",
+            "refunded": "refunded",
+        }
+        
+        payment_status = status_map.get(payment_data.get("status"), "unknown")
+
+        # Update transaction in database
+        transaction = await update_transaction(
+            db=db,
+            provider_payment_id=verification_data.order_id,
+            status=payment_status,
+            provider_transaction_id=verification_data.payment_id,
+            payment_method=payment_data.get("method"),
+            raw_data=payment_data,
+        )
+
+        # Process successful payment
+        if payment_status == "success":
+            transaction_type = payment_data.get("notes", {}).get("transaction_type")
+            
+            if transaction_type == "plan":
+                user_credit = create_user_credit_entry(trans_id=transaction.id, db=db)
+                success, token_entries = create_token_usage(
+                    credit_id=user_credit.id, 
+                    transaction_id=transaction.id, 
+                    db=db
+                )
+            elif transaction_type == "topup":
+                user_credit = update_user_credit_entry_topup(trans_id=transaction.id, db=db)
+                success, token_entries = update_token_usage_topup(
+                    credit_id=user_credit.id, 
+                    transaction_id=transaction.id, 
+                    db=db
+                )
+
+            return {
+                "success": True,
+                "status": "payment_verified",
+                "payment_data": payment_data,
+                "token_entries": token_entries if 'token_entries' in locals() else None,
+            }
+        else:
+            return {
+                "success": False,
+                "status": payment_status,
+                "payment_data": payment_data,
+            }
+
+    except Exception as e:
+        print(f"Payment verification error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Payment verification failed: {str(e)}"
+        )
+
+@router.post("/razorpay")
+async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
+    """Handle Razorpay webhooks"""
+    print("web book ***********************************************************************************************")
+    try:
+        # Get raw body and signature
+        headers = dict(request.headers)
+        print("HEADERS:", json.dumps(headers, indent=2))
+        raw_body = await request.body()
+        print("RAW BODY:", raw_body.decode())
+        signature = request.headers.get("x-razorpay-signature")
+        print("raw_body",raw_body);
+        print("signature",signature);
+        if not signature:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing webhook signature"
+            )
+
+        # Verify webhook signature
+        if not verify_webhook_signature(raw_body, signature):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid webhook signature"
+            )
+
+        # Parse payload
+        payload = json.loads(raw_body.decode("utf-8"))
+        
+        return await process_razorpay_webhook_payload(payload, db)
+
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload"
+        )
+    except Exception as e:
+        print(f"Webhook processing error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Webhook processing failed: {str(e)}"
+        )
+
+async def process_razorpay_webhook_payload(payload: Dict[str, Any], db: Session):
+    """Process Razorpay webhook payload"""
+    event_type = payload.get("event")
+    entity = payload.get("payload", {}).get("payment", {}).get("entity", {})
+    
+    print(f"Processing Razorpay webhook event: {event_type}")
+    print(f"Entity data: {entity}")
+
+    # Map event types to actions
+    if event_type == "payment.captured":
+        return await handle_payment_success(entity, db)
+    elif event_type == "payment.failed":
+        return await handle_payment_failure(entity, db)
+    elif event_type == "payment.authorized":
+        return await handle_payment_authorized(entity, db)
+    else:
+        print(f"Unhandled webhook event: {event_type}")
+        return {"status": "unhandled_event", "event": event_type}
