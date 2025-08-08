@@ -2411,7 +2411,7 @@ async def accept_invite(token: str, request: Request, db: Session = Depends(get_
             if invitation.shared_user_id == user_id:
                 return {"message": "Invitation already accepted", "sharing": invitation}
             else:
-                raise HTTPException(status_code=403, detail="Invitation claimed by another user")
+                raise HTTPException(status_code=403, detail="Invitation claimed by another user")   
 
         # Check if the invitation matches the current user's email
         user = db.query(AuthUser).filter(AuthUser.id == user_id).first()

@@ -359,7 +359,7 @@ def decode_reset_access_token(token: str):
 
 def send_reset_email(email: str, token: str):
     try:
-        reset_link = f"https://yashra.ai/auth/reset-password?token={token}"
+        reset_link = f"https://yashraa.ai/auth/reset-password?token={token}"
         message = MIMEText(f"Click the link to reset your password: {reset_link}")
         message["Subject"] = "Password Reset"
         message["From"] = settings.EMAIL_ADDRESS

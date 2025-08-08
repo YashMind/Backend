@@ -653,12 +653,12 @@ async def google_login(
 async def facebook_login(
     request: Request, response: Response, db: Session = Depends(get_db)
 ):
-    print("@@@@@@@@@@@@@@@@@@@@@@@@@@")
+  
     try:
        
         data = await request.json()
         token = data.get("token")
-        print("------------------")
+        
         if not token:
             raise HTTPException(status_code=400, detail="Token missing")
 
