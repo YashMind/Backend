@@ -89,6 +89,7 @@ async def update_base_rate(
 @router.get("/get-all-users")
 @public_route()
 async def get_all_users(
+    
     request: Request,
     db: Session = Depends(get_db),
     search: Optional[str] = Query(None, description="Search by name or email"),
@@ -154,8 +155,8 @@ async def get_all_users(
         # Apply plan filter
         
         if plan:
-                
-           
+            if plan.lower() == "all":  
+                pass
             if plan =="4":
                 query= query.filter(AuthUser.plan.is_(None))
                 
@@ -234,6 +235,7 @@ async def get_all_users(
     except HTTPException as http_exc:
         raise http_exc
     except ValueError as ve:
+        print(ve)
         raise HTTPException(status_code=400, detail=f"Invalid filter value: {str(ve)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

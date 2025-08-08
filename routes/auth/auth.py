@@ -653,19 +653,22 @@ async def google_login(
 async def facebook_login(
     request: Request, response: Response, db: Session = Depends(get_db)
 ):
+    print("@@@@@@@@@@@@@@@@@@@@@@@@@@")
     try:
+       
         data = await request.json()
         token = data.get("token")
+        print("------------------")
         if not token:
             raise HTTPException(status_code=400, detail="Token missing")
 
         # Facebook Graph API endpoint to get user info
         facebook_url = "https://graph.facebook.com/me"
         params = {"fields": "id,name,email,picture", "access_token": token}
-
+        print(params)
         async with httpx.AsyncClient() as client:
             res = await client.get(facebook_url, params=params)
-
+            print(res)   
         if res.status_code != 200:
             print("Facebook error response:", res.text)
             raise HTTPException(
@@ -676,14 +679,20 @@ async def facebook_login(
         email = user_data.get("email")
         name = user_data.get("name")
         facebookId = user_data.get("id")
-        picture = user_data.get("picture")
-
+        picture = user_data.get("picture", {}).get("data", {}).get("url", "") 
+        print("user_data",user_data)
+        print("email",email)
+        print("facebookid",facebookId)
+        print("picture",picture)
+        print("name",name)
+        print("-----------------")
         if not email:
             raise HTTPException(
                 status_code=400, detail="Email not found in Facebook response"
             )
 
         user = db.query(AuthUser).filter(AuthUser.email == email).first()
+        print(user)
         if not user:
             dummy_password = pwd_context.hash("FACEBOOK_AUTH_NO_PASSWORD")
             user = AuthUser(
@@ -697,7 +706,7 @@ async def facebook_login(
             db.add(user)
             db.commit()
             db.refresh(user)
-
+        print("+++++++++++++++++++++++++")
         access_token = create_access_token(
             data={"sub": email, "user_id": str(user.id), "role": user.role}
         )
@@ -710,12 +719,14 @@ async def facebook_login(
             # max_age=3600,
         )
 
+        print("----------------------------")
         return {"access_token": access_token, "token_type": "bearer"}
-
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+    
+
 
 
 # delete user from user management

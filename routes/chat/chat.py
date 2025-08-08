@@ -1368,7 +1368,7 @@ async def get_bot_doc_links(
         user_id = int(payload.get("user_id"))
 
         query = db.query(ChatBotsDocLinks).filter(
-            ChatBotsDocLinks.user_id == user_id,
+            # ChatBotsDocLinks.user_id == user_id,
             ChatBotsDocLinks.bot_id == bot_id,
             ChatBotsDocLinks.train_from != "full website",
         )
@@ -1467,7 +1467,7 @@ async def get_bot_doc_links(
         total_document_links = (
             db.query(ChatBotsDocLinks)
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.train_from != "full website",
                 and_(
@@ -1481,7 +1481,7 @@ async def get_bot_doc_links(
         total_chars = (
             db.query(func.sum(ChatBotsDocLinks.chars))
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.train_from
                 != "full website",  # Exclude full website documents
@@ -1492,7 +1492,7 @@ async def get_bot_doc_links(
         user_total_chars = (
             db.query(func.sum(ChatBotsDocLinks.chars))
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
             )
             .scalar()
@@ -1520,7 +1520,7 @@ async def get_bot_doc_links(
         pending_count = (
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 or_(
                     ChatBotsDocLinks.status == "Pending",
@@ -1534,7 +1534,7 @@ async def get_bot_doc_links(
         user_pending_count = (
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.status == "Pending",
             )
@@ -1544,7 +1544,7 @@ async def get_bot_doc_links(
         failed_count = (
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.status == "Failed",
                 ChatBotsDocLinks.train_from != "full website",
@@ -1554,7 +1554,7 @@ async def get_bot_doc_links(
         user_failed_count = (
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.status == "Failed",
             )
@@ -1564,7 +1564,7 @@ async def get_bot_doc_links(
         indexed_count = (
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.status == "Indexed",
                 ChatBotsDocLinks.train_from != "full website",
@@ -1574,7 +1574,7 @@ async def get_bot_doc_links(
         user_indexed_count = (
             db.query(func.count(ChatBotsDocLinks.id))
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.status == "Indexed",
             )
@@ -2400,13 +2400,18 @@ async def accept_invite(token: str, request: Request, db: Session = Depends(get_
         invitation = (
             db.query(ChatBotSharing)
             .filter(
-                ChatBotSharing.invite_token == token, ChatBotSharing.status == "pending"
+                ChatBotSharing.invite_token == token
             )
             .first()
         )
 
         if not invitation:
-            raise HTTPException(status_code=404, detail="Invalid or expired invitation")
+            raise HTTPException(status_code=400, detail="Invalid or expired invitation")
+        if invitation.status == "active":
+            if invitation.shared_user_id == user_id:
+                return {"message": "Invitation already accepted", "sharing": invitation}
+            else:
+                raise HTTPException(status_code=403, detail="Invitation claimed by another user")
 
         # Check if the invitation matches the current user's email
         user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
