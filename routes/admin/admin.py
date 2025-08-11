@@ -243,6 +243,7 @@ async def get_all_users(
 @router.put("/update-user-admin", response_model=User)
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def update_chatbot(
+    request:Request,
     data: User,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -282,6 +283,7 @@ async def update_chatbot(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -38,7 +38,7 @@ def allow_roles(allowed_roles: list[str]):
 
             if not request:
                 print("Request parameter missing")
-                return JSONResponse(status_code=500, content={"detail": "Request parameter missing"})
+                return JSONResponse(status_code=422, content={"detail": "Request parameter missing"})
             if not db:
                 print("Database session parameter missing")
                 return JSONResponse(status_code=500, content={"detail": "Database session parameter missing"})

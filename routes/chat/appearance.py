@@ -20,8 +20,9 @@ class CRUDChatSettings:
 
     def update(self, db: get_db, bot_id: int, obj_in: ChatSettingsUpdate) -> ChatSettings:
         db_obj = db.query(ChatSettings).filter(ChatSettings.bot_id == bot_id).first()
+        print("########",db_obj)
         if not db_obj:
-            raise HTTPException(status_code=404, detail="Settings not found")
+            raise HTTPException(status_code=404, detail="Settings not founD")
         
         update_data = obj_in.dict(exclude_unset=True)
         for key, value in update_data.items():
@@ -34,7 +35,7 @@ class CRUDChatSettings:
     def delete(self, db: get_db, id: int) -> ChatSettings:
         db_obj = db.query(ChatSettings).filter(ChatSettings.id == id).first()
         if not db_obj:
-            raise HTTPException(status_code=404, detail="Settings not found")
+            raise HTTPException(status_code=404, detail="Settings not found DDDD")
         
         db.delete(db_obj)
         db.commit()
@@ -47,12 +48,18 @@ crud = CRUDChatSettings()
 def create_settings(settings: ChatSettingsCreate, db: get_db = Depends(get_db)):
     return crud.create(db, settings)
 
+
+
+
 @router.get("/settings/{bot_id}", response_model=ChatSettingsRead)
 @check_product_status("chatbot")
 def read_settings(bot_id: int, db: get_db = Depends(get_db)):
+    print(bot_id)
+    print(db)
     settings = crud.get(db, bot_id)
+    print(settings)
     if not settings:
-        raise HTTPException(status_code=404, detail="Settings not found")
+        raise HTTPException(status_code=404, detail="Settings not found  HH")
     return settings
 
 @router.put("/settings/{id}", response_model=ChatSettingsRead)
