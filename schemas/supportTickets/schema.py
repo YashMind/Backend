@@ -21,7 +21,7 @@ class TicketResponse(BaseModel):
     subject: str
     message: str
     status: Status
-    user: User
+    user: User  | None
     handled_by: Optional[str]
     created_at: datetime
     reverted_at: Optional[datetime]

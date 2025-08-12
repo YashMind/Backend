@@ -552,11 +552,12 @@ async def update_profile(
 # google login
 @router.post("/google-login")
 async def google_login(
-    request: Request, response: Response, db: Session = Depends(get_db)
+ user: User,   request: Request, response: Response, db: Session = Depends(get_db)
 ):
     try:
         data = await request.json()
         token = data.get("token")
+        role = user.role if user.role else "user"
         if not token:
             raise HTTPException(status_code=400, detail="Token missing")
 
@@ -588,6 +589,7 @@ async def google_login(
                     provider="google",
                     googleId=googleId,
                     picture=picture,
+                    role=role,
                     messageUsed=0
                 )
                 db.add(user)
@@ -651,14 +653,14 @@ async def google_login(
 
 @router.post("/facebook-login")
 async def facebook_login(
-    request: Request, response: Response, db: Session = Depends(get_db)
+  user: User,  request: Request, response: Response, db: Session = Depends(get_db)
 ):
   
     try:
        
         data = await request.json()
         token = data.get("token")
-        
+        role = user.role if user.role else "user"
         if not token:
             raise HTTPException(status_code=400, detail="Token missing")
 
@@ -702,6 +704,7 @@ async def facebook_login(
                 provider="facebook",
                 facebookId=facebookId,
                 picture=picture,
+                role=role
             )
             db.add(user)
             db.commit()

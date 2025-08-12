@@ -79,13 +79,20 @@ def send_email(
 def create_ticket(
     request: Request, ticket: TicketCreate, db: Session = Depends(get_db)
 ):
+    print("-----------------------------")
     token = request.cookies.get("access_token")
+    print(f"Token: {token}") 
     payload = decode_access_token(token)
     user_id = int(payload.get("user_id"))
+    print(f"Extracted user_id: {user_id}") 
+    print("_____________________________",user_id)
     db_ticket = SupportTicket(**ticket.dict(), user_id=user_id)
     db.add(db_ticket)
     db.commit()
     db.refresh(db_ticket)
+    print(f"Created ticket ID: {db_ticket.id}")
+    print(f"Ticket user_id in DB: {db_ticket.user_id}")
+    
     return db_ticket
 
 
@@ -94,6 +101,7 @@ def create_ticket(
 def get_all_tickets(
     request: Request, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 ):
+    print("!!!!!!!!!!!!!!!!!!")
     return (
         db.query(SupportTicket)
         .order_by(SupportTicket.created_at.desc())

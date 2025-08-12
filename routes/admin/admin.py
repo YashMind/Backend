@@ -264,8 +264,8 @@ async def update_chatbot(
         if data.role:
             user.role = data.role
 
-        if data.plan:
-            user.plan = data.plan
+        # if data.plan:
+        #     user.plan = data.plan
 
         db.commit()
         db.refresh(user)
