@@ -108,7 +108,9 @@ def check_permissions(required_permissions: list[str], allow_anonymous=False):
                 # Decode token and get user
                 payload = decode_access_token(token)
                 user_id = payload.get("user_id")
+                print(user_id)
                 user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+                print(user)
                 if not user:
                     raise HTTPException(status_code=400, detail="User not found")
 
