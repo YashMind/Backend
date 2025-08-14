@@ -17,8 +17,8 @@ def send_emails_in_batches(subject: str, content: str, recipients: List[str]):
         send_email(subject=subject, html_content=content, recipients=batch)
 
 @router.post("/send-email")
-@check_permissions(['support-communication'])
-def send_post_to_users(request:Request,payload: PostEmail, background_tasks: BackgroundTasks,db: Session = Depends(get_db)):
+@check_permissions(['support-communication'], allow_anonymous=True)
+def send_post_to_users(request: Request, payload: PostEmail, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     try:
         print("-------------------------------------")
         if not payload.recipients or len(payload.recipients) == 0:

@@ -5,6 +5,7 @@ from enum import Enum
 
 from schemas.authSchema.authSchema import User
 
+
 class Status(str, Enum):
     pending = "pending"
     invalid = "Invalid"
@@ -12,16 +13,18 @@ class Status(str, Enum):
     in_process = "in process"
     issue_bug = "issue/bug"
 
+
 class TicketCreate(BaseModel):
     subject: str
     message: str
+
 
 class TicketResponse(BaseModel):
     id: int
     subject: str
     message: str
     status: Status
-    user: User  | None
+    user: Optional[User]
     handled_by: Optional[str]
     created_at: datetime
     reverted_at: Optional[datetime]
@@ -30,13 +33,15 @@ class TicketResponse(BaseModel):
     class Config:
         orm_mode = True
 
+
 class TicketStatusUpdate(BaseModel):
     status: Status
 
+
 class TicketAssign(BaseModel):
     handled_by: str
-    
-    
+
+
 class EmailRequest(BaseModel):
     subject: str
     message: str
