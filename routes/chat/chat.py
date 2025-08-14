@@ -429,7 +429,8 @@ ALLOWED_FILE_TYPES = [
     "audio/webm",  # .webm audio
     "audio/ogg",  # .ogg
     "audio/mp4",  # .m4a, .mp4 audio
-    "audio/x-m4a",  # alternative .m4a
+    "audio/x-m4a",
+    "application/vnd.ms-excel"# alternative .m4a
 ]
 
 
