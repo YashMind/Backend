@@ -311,10 +311,8 @@ async def get_subscription_plans_authenticated(
 
 @router.get("/me")
 async def getme(request: Request, response: Response, db: Session = Depends(get_db)):
-    print("1111111111111111111111111")
     try:
         token = request.cookies.get("access_token")
-        print("1222222222222222222222222",token)
         if not token:
             response.delete_cookie("access_token")
             response.delete_cookie("role")
@@ -328,10 +326,28 @@ async def getme(request: Request, response: Response, db: Session = Depends(get_
             response.delete_cookie("role")
             raise HTTPException(status_code=400, detail="User not found")
 
-        user.last_active = datetime.utcnow()
+        # Refresh cookie expiry to keep user logged in
+        response.set_cookie(
+            key="access_token",
+            value=token,
+            httponly=True,
+            secure=False,
+            samesite="Lax",
+            max_age=60 * 60 * 24 * 30,  # 30 days
+        )
+        response.set_cookie(
+            key="role",
+            value=user.role,
+            httponly=False,
+            secure=False,
+            samesite="Lax",
+            max_age=60 * 60 * 24 * 30,
+        )
 
+        user.last_active = datetime.utcnow()
         db.commit()
         db.refresh(user)
+
         del user.facebookId
         del user.googleId
         del user.password
@@ -345,6 +361,7 @@ async def getme(request: Request, response: Response, db: Session = Depends(get_
         error_response.delete_cookie("access_token")
         error_response.delete_cookie("role")
         return error_response
+
 
 
 @router.post("/forget-password")
@@ -619,13 +636,14 @@ async def google_login(
                     db.rollback()
         
             print(f"User {user.id} signed in from {country} with timezone {timezone}")
+            # In google_login()
             response.set_cookie(
                 key="access_token",
                 value=access_token,
                 httponly=True,
-                secure=False,
+                secure=False,  # Change to True if using HTTPS in production
                 samesite="Lax",
-                # max_age=84600,
+                max_age=60 * 60 * 24 * 30,  # 30 days
             )
             response.set_cookie(
                 key="role",
@@ -633,16 +651,17 @@ async def google_login(
                 httponly=False,
                 secure=False,
                 samesite="Lax",
-                # max_age=84600,
+                max_age=60 * 60 * 24 * 30,
             )
             response.set_cookie(
-                key="timezone",
-                value=timezone,
-                httponly=False,
-                secure=False,
-                samesite="Lax",
-                # max_age=84600,
-            )
+            key="timezone",
+            value=timezone,
+            httponly=False,
+            secure=False,
+            samesite="Lax",
+            max_age=60 * 60 * 24 * 30,
+        )
+
             return {"access_token": access_token, "token_type": "bearer"}
     except HTTPException as http_exc:
         raise http_exc

@@ -91,7 +91,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import smtplib
 from models.authModel.authModel import AuthUser
-
+from email.utils import formataddr
 
 router = APIRouter()
 
@@ -103,6 +103,61 @@ def generate_invite_token():
     )
 
 
+# async def send_invitation_email(
+#     recipient_email: str, invite_token: str, chatbot_name: str, owner_name: str
+# ):
+#     """Send invitation email to the recipient"""
+#     try:
+#         # Create message
+#         message = MIMEMultipart()
+#         message["From"] = settings.EMAIL_ADDRESS
+#         message["To"] = recipient_email
+#         message["Subject"] = (
+#             f"You've been invited to collaborate on a chatbot: {chatbot_name}"
+#         )
+
+#         # Create the invite URL
+#         invite_url = f"{settings.FRONTEND_URL}/accept-invite/{invite_token}"
+
+#         # HTML content
+#         html = f"""
+#         <html>
+#         <body>
+#             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+#                 <h2>Chatbot Invitation</h2>
+#                 <p>Hello,</p>
+#                 <p>{owner_name} has invited you to collaborate on the chatbot: <strong>{chatbot_name}</strong>.</p>
+#                 <p>Click the button below to accept this invitation:</p>
+#                 <div style="text-align: center; margin: 30px 0;">
+#                     <a href="{invite_url}" style="background-color: #4CAF50; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">
+#                         Accept Invitation
+#                     </a>
+#                 </div>
+#                 <p>Or copy and paste this link in your browser:</p>
+#                 <p>{invite_url}</p>
+#                 <p>This invitation link will expire in 7 days.</p>
+#                 <p>Thank you,<br>Yashraa AI Team</p>
+#             </div>
+#         </body>
+#         </html>
+#         """
+
+#         # Attach HTML content
+#         message.attach(MIMEText(html, "html"))
+
+#         # Connect to SMTP server and send email
+#         with smtplib.SMTP("smtp.gmail.com", 587) as server:
+#             server.starttls()
+#             server.login(settings.EMAIL_ADDRESS, settings.EMAIL_PASSWORD)
+#             server.send_message(message)
+
+#         return True
+#     except Exception as e:
+#         print(f"Error sending email: {e}")
+#         return False
+
+from email.utils import formataddr
+
 async def send_invitation_email(
     recipient_email: str, invite_token: str, chatbot_name: str, owner_name: str
 ):
@@ -110,7 +165,8 @@ async def send_invitation_email(
     try:
         # Create message
         message = MIMEMultipart()
-        message["From"] = settings.EMAIL_ADDRESS
+        # Add display name here so recipient sees "Yashraa AI Team"
+        message["From"] = formataddr(("Yashraa AI Team", settings.EMAIL_ADDRESS))
         message["To"] = recipient_email
         message["Subject"] = (
             f"You've been invited to collaborate on a chatbot: {chatbot_name}"
