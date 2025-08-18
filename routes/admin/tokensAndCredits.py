@@ -19,7 +19,9 @@ from decorators.product_status import check_product_status
 from utils.utils import decode_access_token
 from fastapi import HTTPException, Depends
 from datetime import datetime
-
+from models.chatModel.chatModel import (
+    ChatMessage
+)
 
 from routes.auth.auth import get_current_user
 
@@ -342,3 +344,19 @@ def get_country_list(request: Request, db: Session = Depends(get_db)):
         return {"countries": country_list}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+@router.get("/total-messages")
+async def get_total_messages(db: Session = Depends(get_db)):
+    """
+    Returns the total number of messages in the chat_messages table.
+    """
+    try:
+        # Count all records in ChatMessage table
+        total = db.query(func.count(ChatMessage.id)).scalar()
+        return {"status": "success", "total_messages": total}
+    except Exception as e:
+        # Return HTTP 500 on any unexpected error
+        raise HTTPException(status_code=500, detail=f"Error fetching total messages: {str(e)}")
