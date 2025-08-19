@@ -29,7 +29,7 @@ class TicketResponse(BaseModel):
     created_at: datetime
     reverted_at: Optional[datetime]
     thread_link: Optional[str]
-
+   
     class Config:
         orm_mode = True
 

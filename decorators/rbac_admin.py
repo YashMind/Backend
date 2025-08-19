@@ -5,6 +5,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from utils.utils import decode_access_token
 from models.authModel.authModel import AuthUser
+from collections import defaultdict
+from sqlalchemy.orm import Session
+from models.subscriptions.transactionModel import Transaction   # Make sure this is your correct import path
 from models.adminModel.roles_and_permission import RolePermission
 import inspect
 
@@ -168,3 +171,62 @@ def check_permissions(required_permissions: list[str], allow_anonymous=False):
 
         return wrapper
     return decorator
+
+
+
+def get_grouped_transaction_stats(db: Session, group_by: str = "monthly"):
+    format_map = {
+        "daily": "%Y-%m-%d",
+        "monthly": "%Y-%m",
+        "yearly": "%Y",
+    }
+
+    if group_by not in format_map:
+        raise ValueError("Invalid group_by value. Must be one of: daily, monthly, yearly")
+
+    time_format = format_map[group_by]
+
+    # Success Transactions
+    success_statuses = ['success', 'completed', 'paid', 'confirmed']
+    success_query = (
+        db.query(
+            func.date_format(Transaction.created_at, time_format).label("period"),
+            Transaction.currency,
+            func.count().label("count"),
+            func.sum(Transaction.amount).label("total_amount")
+        )
+        .filter(Transaction.status.in_(success_statuses))
+        .group_by("period", Transaction.currency)
+        .order_by("period")
+        .all()
+    )
+
+    # Pending Transactions
+    pending_query = (
+        db.query(
+            func.date_format(Transaction.created_at, time_format).label("period"),
+            Transaction.currency,
+            func.count().label("count"),
+            func.sum(Transaction.amount).label("total_amount")
+        )
+        .filter(Transaction.status == 'pending')  # Adjust if you have other pending statuses
+        .group_by("period", Transaction.currency)
+        .order_by("period")
+        .all()
+    )
+
+    def format_result(result):
+        stats = defaultdict(list)
+        for period, currency, count, total_amount in result:
+            stats[currency.upper()].append({
+                "period": period,
+                "count": count,
+                "total_amount": float(total_amount)
+            })
+        return stats
+
+    return {
+        "success": format_result(success_query),
+        "pending": format_result(pending_query),
+    }        
+        

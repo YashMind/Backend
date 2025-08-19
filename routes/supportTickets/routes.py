@@ -101,7 +101,7 @@ def create_ticket(
 def get_all_tickets(
     request: Request, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 ):
-    print("!!!!!!!!!!!!!!!!!!")
+    # print(" api hit")
     return (
         db.query(SupportTicket)
         .order_by(SupportTicket.created_at.desc())
@@ -338,7 +338,7 @@ def send_email_api(email_request: EmailSendRequest, db: Session = Depends(get_db
             in_reply_to=email_request.in_reply_to,
             references=email_request.references,
         )
-
+        print("+==")
         return {"message": "Email sent successfully", "message_id": message_id}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to send email: {str(e)}")

@@ -8,6 +8,7 @@ class PostEmail(BaseModel):
     title: str
     description: str
     recipients: List[EmailStr]
+    html_content: Optional[str] = None
 
 
 class PlansSchema(BaseModel):

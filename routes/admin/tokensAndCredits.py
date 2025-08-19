@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from sqlalchemy import func, distinct
 
-from decorators.rbac_admin import check_permissions
+from decorators.rbac_admin import check_permissions,get_grouped_transaction_stats
 from models.adminModel.adminModel import SubscriptionPlans
 from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBots
@@ -19,7 +19,10 @@ from decorators.product_status import check_product_status
 from utils.utils import decode_access_token
 from fastapi import HTTPException, Depends
 from datetime import datetime
-
+from collections import defaultdict
+from fastapi import APIRouter, Request, Depends, Query
+from sqlalchemy import text
+from typing import Optional
 
 from routes.auth.auth import get_current_user
 
@@ -229,9 +232,12 @@ async def get_admin_token_credit_report(
 @router.get("/transactions")
 @check_permissions(["billing-settings"])
 def get_transactions(
-    request: Request, page: int = 1, per_page: int = 100, db: Session = Depends(get_db)
+    request: Request, page: int = 1,   group_by: str = "monthly", per_page: int = 100, db: Session = Depends(get_db)
 ):
     try:
+        group_by = request.query_params.get("group_by", group_by)
+        if group_by not in ["daily", "monthly", "yearly"]:
+            raise HTTPException(status_code=400, detail="Invalid group_by value. Must be daily, monthly, or yearly")
         # Get pagination parameters
         page = max(1, int(request.query_params.get("page", page)))
         per_page = min(100, max(1, int(request.query_params.get("per_page", per_page))))
@@ -250,9 +256,21 @@ def get_transactions(
         # Assuming successful transactions have status like 'completed', 'success', 'paid'
         # Adjust the status values based on your database schema
         successful_statuses = ['completed', 'success', 'paid', 'confirmed']  # Add your success statuses here
-        total_revenue = db.query(func.sum(Transaction.amount)).filter(
-            Transaction.status.in_(successful_statuses)
-        ).scalar() or 0
+        # total_revenue = db.query(func.sum(Transaction.amount)).filter(
+        #     Transaction.status.in_(successful_statuses)
+        # ).scalar() or 0
+        revenue_by_currency = (
+            db.query(
+                Transaction.currency,
+                func.sum(Transaction.amount).label('total_amount')
+            )
+            .filter(Transaction.status == 'success')
+            .group_by(Transaction.currency)
+            .all()
+        )
+        revenue_map = {currency.upper(): float(total_amount) for currency, total_amount in revenue_by_currency}
+        print("-----------------",revenue_by_currency)
+        
         
         # Get related user and plan data
         user_ids = {t.user_id for t in transactions if t.user_id}
@@ -308,16 +326,44 @@ def get_transactions(
                     ),
                 }
             )
-        
+            # monthly_stats = (
+            #     db.query(
+            #         func.date_format(Transaction.created_at, '%Y-%m').label("month"),
+            #         Transaction.currency,
+            #         func.count().label("count"),
+            #         func.sum(Transaction.amount).label("total_amount")
+            #     )
+            #     .filter(Transaction.status.in_(['success', 'completed', 'paid', 'confirmed']))  # Adjust for your logic
+            #     .group_by("month", Transaction.currency)
+            #     .order_by("month")
+            #     .all()
+            # )
+
+            # # Organize data by currency for frontend use
+            # monthly_data = defaultdict(list)
+            # for month, currency, count, total_amount in monthly_stats:
+            #     monthly_data[currency.upper()].append({
+            #         "month": month,
+            #         "count": count,
+            #         "total_amount": float(total_amount)
+            #     })
+            # try:
+            #     grouped_stats = get_grouped_transaction_stats(db, group_by)
+            # except ValueError as ve:
+            #     raise HTTPException(status_code=400, detail=str(ve))
+        grouped_stats = get_grouped_transaction_stats(db, group_by)
+
+        print("grouped ", grouped_stats)
         return {
             "transactions": transaction_data,
-            "total_revenue": float(total_revenue),        
+            "revenue_by_currency": revenue_map,      
             "pagination": {
                 "page": page,
                 "per_page": per_page,
                 "total_transactions": total_transactions,
                 "total_pages": (total_transactions + per_page - 1) // per_page,
             },
+               f"{group_by}_data": grouped_stats
         }
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=f"Invalid parameter: {str(ve)}")
@@ -342,3 +388,54 @@ def get_country_list(request: Request, db: Session = Depends(get_db)):
         return {"countries": country_list}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+ # assumes you have a SQLAlchemy session helper
+
+@router.get("/usersPlans")
+def get_users_count(
+    request: Request,
+    filter: Optional[str] = Query(None, description="Filter by 'daily', 'monthly', 'quarterly', 'bi-annual', 'yearly', '15days' or leave empty for all time"),
+    db=Depends(get_db)
+):
+    # Build dynamic WHERE clause
+    where_clause = ""
+    if filter == "daily":
+        where_clause = "WHERE DATE(u.created_at) = CURDATE()"
+    elif filter == "monthly":
+        where_clause = "WHERE MONTH(u.created_at) = MONTH(CURDATE()) AND YEAR(u.created_at) = YEAR(CURDATE())"
+    elif filter == "quarterly":
+        # Current quarter: 1-3, 4-6, 7-9, 10-12
+        current_quarter = (datetime.now().month - 1) // 3 + 1
+        where_clause = f"WHERE QUARTER(u.created_at) = {current_quarter} AND YEAR(u.created_at) = YEAR(CURDATE())"
+    elif filter == "bi-annual":
+        # First half (1-6) or second half (7-12)
+        current_month = datetime.now().month
+        half_year = 1 if current_month <= 6 else 2
+        where_clause = f"WHERE (MONTH(u.created_at) <= 6 AND {half_year} = 1) OR (MONTH(u.created_at) >= 7 AND {half_year} = 2) AND YEAR(u.created_at) = YEAR(CURDATE())"
+    elif filter == "yearly":
+        where_clause = "WHERE YEAR(u.created_at) = YEAR(CURDATE())"
+    elif filter == "15days":
+        where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 15 DAY)"
+
+    # Final query - ensure your subscription_plans table has these plan types
+    query = text(f"""
+        SELECT 
+            sp.name AS plan_name,
+            COUNT(u.id) AS user_count
+        FROM users u
+        JOIN subscription_plans sp ON u.plan = sp.id
+        {where_clause}
+        GROUP BY sp.name
+        ORDER BY sp.name
+    """)
+
+    result = db.execute(query).fetchall()
+
+    # Return clean result
+    return {
+        "data": [
+            {"plan": row.plan_name, "user_count": row.user_count}
+            for row in result
+        ]
+    }

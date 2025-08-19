@@ -23,5 +23,4 @@ class SupportTicket(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     reverted_at = Column(DateTime, nullable=True)
     thread_link = Column(String(512), nullable=True)
-    
     user = relationship("AuthUser", backref="support_tickets")
