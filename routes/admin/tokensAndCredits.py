@@ -408,12 +408,94 @@ def get_country_list(request: Request, db: Session = Depends(get_db)):
 
 
 
+# @router.get("/total-messages")
+# async def get_total_messages(db: Session = Depends(get_db)):
+#     """
+#     Returns message counts grouped by:
+#     - Month
+#     - Week
+#     - Last 10 days (daily)
+#     """
+#     try:
+#         # 1. Monthly Data
+#         monthly_results = (
+#             db.query(
+#                 extract('month', ChatMessage.created_at).label('month'),
+#                 func.count(ChatMessage.id).label('total_messages')
+#             )
+#             .group_by('month')
+#             .order_by('month')
+#             .all()
+#         )
+
+#         month_names = [
+#             "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+#             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+#         ]
+
+#         monthly_data = [
+#             {"month": month_names[int(month) - 1], "totalMessages": total}
+#             for month, total in monthly_results
+#         ]
+
+#         # 2. Weekly Data (Grouped by week number)
+#         weekly_results = (
+#             db.query(
+#                 extract('week', ChatMessage.created_at).label('week'),
+#                 func.count(ChatMessage.id).label('total_messages')
+#             )
+#             .group_by('week')
+#             .order_by('week')
+#             .all()
+#         )
+
+#         weekly_data = [
+#             {"week": f"Week {int(week)}", "totalMessages": total}
+#             for week, total in weekly_results
+#         ]
+
+#         # 3. Last 10 days (daily)
+#         today = datetime.utcnow()
+#         ten_days_ago = today - timedelta(days=10)
+
+#         last_10_days_results = (
+#             db.query(
+#                 func.date(ChatMessage.created_at).label('date'),
+#                 func.count(ChatMessage.id).label('total_messages')
+#             )
+#             .filter(ChatMessage.created_at >= ten_days_ago)
+#             .group_by(func.date(ChatMessage.created_at))
+#             .order_by(func.date(ChatMessage.created_at))
+#             .all()
+#         )
+
+#         last_10_days_data = [
+#             {"date": str(date), "totalMessages": total}
+#             for date, total in last_10_days_results
+#         ]
+
+#         # Combine all in response
+#         return {
+#             "status": "success",
+#             "data": {
+#                 "monthly": monthly_data,
+#                 "weekly": weekly_data,
+#                 "last_10_days": last_10_days_data
+#             }
+#         }
+
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Error fetching total messages: {str(e)}")
+
+
+
+
 @router.get("/total-messages")
 async def get_total_messages(db: Session = Depends(get_db)):
     """
     Returns message counts grouped by:
     - Month
-    - Week
+    - Week (showing start date of each week)
     - Last 10 days (daily)
     """
     try:
@@ -438,20 +520,25 @@ async def get_total_messages(db: Session = Depends(get_db)):
             for month, total in monthly_results
         ]
 
-        # 2. Weekly Data (Grouped by week number)
+        # 2. Weekly Data - MySQL compatible version
         weekly_results = (
             db.query(
-                extract('week', ChatMessage.created_at).label('week'),
+                func.DATE(
+                    func.SUBDATE(
+                        ChatMessage.created_at,
+                        func.DAYOFWEEK(ChatMessage.created_at) - 2
+                    )
+                ).label('week_start'),
                 func.count(ChatMessage.id).label('total_messages')
             )
-            .group_by('week')
-            .order_by('week')
+            .group_by('week_start')
+            .order_by('week_start')
             .all()
         )
 
         weekly_data = [
-            {"week": f"Week {int(week)}", "totalMessages": total}
-            for week, total in weekly_results
+            {"week": week_start.strftime('%d-%m-%Y'), "totalMessages": total}
+            for week_start, total in weekly_results
         ]
 
         # 3. Last 10 days (daily)
@@ -470,11 +557,10 @@ async def get_total_messages(db: Session = Depends(get_db)):
         )
 
         last_10_days_data = [
-            {"date": str(date), "totalMessages": total}
+            {"date": date.strftime('%d-%m-%Y'), "totalMessages": total}
             for date, total in last_10_days_results
         ]
 
-        # Combine all in response
         return {
             "status": "success",
             "data": {
