@@ -18,7 +18,7 @@ from config import get_db
 from decorators.product_status import check_product_status
 from utils.utils import decode_access_token
 from fastapi import HTTPException, Depends
-from datetime import datetime
+from datetime import datetime ,timedelta
 from models.chatModel.chatModel import (
     ChatMessage
 )
@@ -351,14 +351,74 @@ def get_country_list(request: Request, db: Session = Depends(get_db)):
 
 
 
+# @router.get("/total-messages")
+# async def get_total_messages(db: Session = Depends(get_db)):
+#     """
+#     Returns the total number of messages grouped by month.
+#     """
+#     try:
+#         # Query to get message count grouped by month
+#         results = (
+#             db.query(
+#                 extract('month', ChatMessage.created_at).label('month'),
+#                 func.count(ChatMessage.id).label('total_messages')
+#             )
+#             .group_by('month')
+#             .order_by('month')
+#             .all()
+#         )
+
+#         # Convert month numbers to names
+#         month_names = [
+#             "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+#             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+#         ]
+
+#         response = [
+#             {"month": month_names[int(month) - 1], "totalMessages": total}
+#             for month, total in results
+#         ]
+
+#         return {"status": "success", "data": response}
+#         print("----------",response)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Error fetching total messages: {str(e)}")
+
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @router.get("/total-messages")
 async def get_total_messages(db: Session = Depends(get_db)):
     """
-    Returns the total number of messages grouped by month.
+    Returns message counts grouped by:
+    - Month
+    - Week
+    - Last 10 days (daily)
     """
     try:
-        # Query to get message count grouped by month
-        results = (
+        # 1. Monthly Data
+        monthly_results = (
             db.query(
                 extract('month', ChatMessage.created_at).label('month'),
                 func.count(ChatMessage.id).label('total_messages')
@@ -368,21 +428,61 @@ async def get_total_messages(db: Session = Depends(get_db)):
             .all()
         )
 
-        # Convert month numbers to names
         month_names = [
             "Jan", "Feb", "Mar", "Apr", "May", "Jun",
             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
         ]
 
-        response = [
+        monthly_data = [
             {"month": month_names[int(month) - 1], "totalMessages": total}
-            for month, total in results
+            for month, total in monthly_results
         ]
 
-        return {"status": "success", "data": response}
-        print("----------",response)
+        # 2. Weekly Data (Grouped by week number)
+        weekly_results = (
+            db.query(
+                extract('week', ChatMessage.created_at).label('week'),
+                func.count(ChatMessage.id).label('total_messages')
+            )
+            .group_by('week')
+            .order_by('week')
+            .all()
+        )
+
+        weekly_data = [
+            {"week": f"Week {int(week)}", "totalMessages": total}
+            for week, total in weekly_results
+        ]
+
+        # 3. Last 10 days (daily)
+        today = datetime.utcnow()
+        ten_days_ago = today - timedelta(days=10)
+
+        last_10_days_results = (
+            db.query(
+                func.date(ChatMessage.created_at).label('date'),
+                func.count(ChatMessage.id).label('total_messages')
+            )
+            .filter(ChatMessage.created_at >= ten_days_ago)
+            .group_by(func.date(ChatMessage.created_at))
+            .order_by(func.date(ChatMessage.created_at))
+            .all()
+        )
+
+        last_10_days_data = [
+            {"date": str(date), "totalMessages": total}
+            for date, total in last_10_days_results
+        ]
+
+        # Combine all in response
+        return {
+            "status": "success",
+            "data": {
+                "monthly": monthly_data,
+                "weekly": weekly_data,
+                "last_10_days": last_10_days_data
+            }
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching total messages: {str(e)}")
-
-
-        
