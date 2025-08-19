@@ -23,6 +23,10 @@ from models.chatModel.chatModel import (
     ChatMessage
 )
 
+from sqlalchemy import func, extract  
+
+
+
 from routes.auth.auth import get_current_user
 
 router = APIRouter()
@@ -347,16 +351,35 @@ def get_country_list(request: Request, db: Session = Depends(get_db)):
 
 
 
-
 @router.get("/total-messages")
 async def get_total_messages(db: Session = Depends(get_db)):
     """
-    Returns the total number of messages in the chat_messages table.
+    Returns the total number of messages grouped by month.
     """
     try:
-        # Count all records in ChatMessage table
-        total = db.query(func.count(ChatMessage.id)).scalar()
-        return {"status": "success", "total_messages": total}
+        # Query to get message count grouped by month
+        results = (
+            db.query(
+                extract('month', ChatMessage.created_at).label('month'),
+                func.count(ChatMessage.id).label('total_messages')
+            )
+            .group_by('month')
+            .order_by('month')
+            .all()
+        )
+
+        # Convert month numbers to names
+        month_names = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+        ]
+
+        response = [
+            {"month": month_names[int(month) - 1], "totalMessages": total}
+            for month, total in results
+        ]
+
+        return {"status": "success", "data": response}
+        print("----------",response)
     except Exception as e:
-        # Return HTTP 500 on any unexpected error
         raise HTTPException(status_code=500, detail=f"Error fetching total messages: {str(e)}")
