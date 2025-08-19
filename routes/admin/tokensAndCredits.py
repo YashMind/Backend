@@ -383,3 +383,6 @@ async def get_total_messages(db: Session = Depends(get_db)):
         print("----------",response)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching total messages: {str(e)}")
+
+
+        
