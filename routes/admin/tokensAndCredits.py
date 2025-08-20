@@ -392,50 +392,113 @@ def get_country_list(request: Request, db: Session = Depends(get_db)):
 
  # assumes you have a SQLAlchemy session helper
 
+# @router.get("/usersPlans")
+# def get_users_count(
+#     request: Request,
+#     filter: Optional[str] = Query(None, description="Filter by , 'monthly', 'quarterly', 'bi-annual', 'yearly', '15days' or leave empty for all time"),
+#     db=Depends(get_db)
+# ):
+#     # Build dynamic WHERE clause
+#     where_clause = ""
+#     if filter == "daily":
+#         where_clause = "WHERE DATE(u.created_at) = CURDATE()"
+#     elif filter == "monthly":
+#         where_clause = "WHERE MONTH(u.created_at) = MONTH(CURDATE()) AND YEAR(u.created_at) = YEAR(CURDATE())"
+#     elif filter == "quarterly":
+#         # Current quarter: 1-3, 4-6, 7-9, 10-12
+#         current_quarter = (datetime.now().month - 1) // 3 + 1
+#         where_clause = f"WHERE QUARTER(u.created_at) = {current_quarter} AND YEAR(u.created_at) = YEAR(CURDATE())"
+#     elif filter == "bi-annual":
+#         # First half (1-6) or second half (7-12)
+#         current_month = datetime.now().month
+#         half_year = 1 if current_month <= 6 else 2
+#         where_clause = f"WHERE (MONTH(u.created_at) <= 6 AND {half_year} = 1) OR (MONTH(u.created_at) >= 7 AND {half_year} = 2) AND YEAR(u.created_at) = YEAR(CURDATE())"
+#     elif filter == "yearly":
+#         where_clause = "WHERE YEAR(u.created_at) = YEAR(CURDATE())"
+#     elif filter == "15days":
+#         where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 15 DAY)"
+
+#     # Final query - ensure your subscription_plans table has these plan types
+#     query = text(f"""
+#         SELECT 
+#             sp.name AS plan_name,
+#             COUNT(u.id) AS user_count
+#         FROM users u
+#         JOIN subscription_plans sp ON u.plan = sp.id
+#         {where_clause}
+#         GROUP BY sp.name
+#         ORDER BY sp.name
+#     """)
+
+#     result = db.execute(query).fetchall()
+
+#     # Return clean result
+#     return {
+#         "data": [
+#             {"plan": row.plan_name, "user_count": row.user_count}
+#             for row in result
+#         ]
+#     }
 @router.get("/usersPlans")
 def get_users_count(
     request: Request,
-    filter: Optional[str] = Query(None, description="Filter by 'daily', 'monthly', 'quarterly', 'bi-annual', 'yearly', '15days' or leave empty for all time"),
+    filter: Optional[str] = Query(None, description="Filter by , 'monthly', 'quarterly', 'bi-annual', 'yearly', '15days'"),
     db=Depends(get_db)
 ):
-    # Build dynamic WHERE clause
+    group_by = ""
     where_clause = ""
-    if filter == "daily":
-        where_clause = "WHERE DATE(u.created_at) = CURDATE()"
-    elif filter == "monthly":
-        where_clause = "WHERE MONTH(u.created_at) = MONTH(CURDATE()) AND YEAR(u.created_at) = YEAR(CURDATE())"
+    
+    if filter == "monthly":
+        # Last 6 months
+        where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)"
+        group_by = "DATE_FORMAT(u.created_at, '%Y-%m')"  # YYYY-MM
     elif filter == "quarterly":
-        # Current quarter: 1-3, 4-6, 7-9, 10-12
-        current_quarter = (datetime.now().month - 1) // 3 + 1
-        where_clause = f"WHERE QUARTER(u.created_at) = {current_quarter} AND YEAR(u.created_at) = YEAR(CURDATE())"
+        # Last 4 quarters
+        where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)"
+        group_by = "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))"
     elif filter == "bi-annual":
-        # First half (1-6) or second half (7-12)
-        current_month = datetime.now().month
-        half_year = 1 if current_month <= 6 else 2
-        where_clause = f"WHERE (MONTH(u.created_at) <= 6 AND {half_year} = 1) OR (MONTH(u.created_at) >= 7 AND {half_year} = 2) AND YEAR(u.created_at) = YEAR(CURDATE())"
+        # Last 2 years (to cover 4 biannual periods)
+        where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 2 YEAR)"
+        group_by = """
+            CONCAT(YEAR(u.created_at), '-H',
+            CASE
+                WHEN MONTH(u.created_at) <= 6 THEN 1
+                ELSE 2
+            END)
+        """
     elif filter == "yearly":
-        where_clause = "WHERE YEAR(u.created_at) = YEAR(CURDATE())"
+        # Last 5 years
+        where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 5 YEAR)"
+        group_by = "YEAR(u.created_at)"
     elif filter == "15days":
         where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 15 DAY)"
+        group_by = "DATE(u.created_at)"
+    else:
+        # Default: all time monthly
+        where_clause = ""
+        group_by = "DATE_FORMAT(u.created_at, '%Y-%m')"
 
-    # Final query - ensure your subscription_plans table has these plan types
     query = text(f"""
         SELECT 
+            {group_by} AS period,
             sp.name AS plan_name,
             COUNT(u.id) AS user_count
         FROM users u
         JOIN subscription_plans sp ON u.plan = sp.id
         {where_clause}
-        GROUP BY sp.name
-        ORDER BY sp.name
+        GROUP BY period, sp.name
+        ORDER BY period ASC, sp.name;
     """)
 
     result = db.execute(query).fetchall()
 
-    # Return clean result
     return {
         "data": [
-            {"plan": row.plan_name, "user_count": row.user_count}
+            {
+                "period": row.period,
+                "plan": row.plan_name,
+                "user_count": row.user_count
+            }
             for row in result
         ]
     }

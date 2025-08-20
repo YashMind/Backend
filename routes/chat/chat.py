@@ -486,7 +486,12 @@ ALLOWED_FILE_TYPES = [
     "audio/ogg",  # .ogg
     "audio/mp4",  # .m4a, .mp4 audio
     "audio/x-m4a",
-    "application/vnd.ms-excel"# alternative .m4a
+    "application/vnd.ms-excel"
+    "application/vnd.ms-excel.sheet.macroEnabled.12", 
+    "application/vnd.ms-excel.sheet.macroenabled.12", 
+    "application/vnd.ms-excel.template.macroenabled.12",  
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.template",  
+    "application/vnd.ms-excel.addin.macroenabled.12", 
 ]
 
 
