@@ -71,6 +71,10 @@ async def create_transaction(
         )
 
 
+import json
+from datetime import datetime, timezone
+from fastapi import HTTPException
+
 async def update_transaction(
     db: Session,
     # Identification parameters (at least one required)
@@ -88,15 +92,14 @@ async def update_transaction(
     refund_id: str = None,
     country_code: str = None,
 ):
-    # Find transaction using available identifiers
     transaction = None
     try:
-        print("FINDING transaction from order id")
+        print("🔍 FINDING transaction...")
         if order_id:
             transaction = (
                 db.query(Transaction).filter(Transaction.order_id == order_id).first()
             )
-            print("Transaction found from order_id", transaction)
+            print(f"✅ Transaction found by order_id={order_id}: {transaction}")
 
         if not transaction and provider_payment_id:
             transaction = (
@@ -104,56 +107,89 @@ async def update_transaction(
                 .filter_by(provider_payment_id=provider_payment_id)
                 .first()
             )
+            print(f"✅ Transaction found by provider_payment_id={provider_payment_id}: {transaction}")
+
         if not transaction and provider_transaction_id:
             transaction = (
                 db.query(Transaction)
                 .filter_by(provider_transaction_id=provider_transaction_id)
                 .first()
             )
+            print(f"✅ Transaction found by provider_transaction_id={provider_transaction_id}: {transaction}")
 
         if not transaction:
+            print("❌ No transaction found")
             raise HTTPException(status_code=404, detail="Transaction not found")
 
-        # Update provider if needed
+        # Provider update
         if provider and transaction.provider != provider:
+            print(f"➡ Updating provider: {transaction.provider} -> {provider}")
             transaction.provider = provider
 
-        # Update status if provided
+        # Status update
         terminal_states = ["success", "failed", "refunded", "cancelled"]
         if status and status != transaction.status:
+            print(f"➡ Updating status: {transaction.status} -> {status}")
             transaction.status = status
-            # Set completion time for terminal states
             if status in terminal_states:
                 transaction.completed_at = datetime.now(timezone.utc)
+                print(f"⏱ Completion time set: {transaction.completed_at}")
 
-        # Update payment details
+        # Payment details update
         if payment_method:
+            print(f"➡ Updating payment_method: {transaction.payment_method} -> {payment_method}")
             transaction.payment_method = payment_method
+
         if payment_method_details is not None:
+            print(f"➡ Updating payment_method_details with type={type(payment_method_details)} value={payment_method_details}")
             transaction.payment_method_details = payment_method_details
+
         if fees is not None:
-            transaction.fees = fees
+            print(f"➡ Received fees (dict)={fees}")
+            if isinstance(fees, dict):
+                # store the total (or pick one value)
+                total_fee = (
+                    fees.get("payment_surcharge_service_charge", 0)
+                    + fees.get("payment_surcharge_service_tax", 0)
+                )
+                print(f"➡ Storing total fees={total_fee}")
+                transaction.fees = total_fee
+            else:
+                transaction.fees = fees
+
         if tax is not None:
+            print(f"➡ Updating tax: {transaction.tax} -> {tax}")
             transaction.tax = tax
+
         if raw_data is not None:
+            print(f"➡ Updating raw_data with type={type(raw_data)} value={raw_data}")
             transaction.provider_data = raw_data
+
         if country_code:
+            print(f"➡ Updating country_code: {transaction.country_code} -> {country_code}")
             transaction.country_code = country_code
+
         if refund_id:
+            print(f"➡ Updating refund_id: {transaction.refund_id} -> {refund_id}")
             transaction.refund_id = refund_id
 
-        # Update provider IDs if missing
+        # Provider IDs
         if provider_transaction_id and not transaction.provider_transaction_id:
+            print(f"➡ Setting provider_transaction_id: {provider_transaction_id}")
             transaction.provider_transaction_id = provider_transaction_id
         if provider_payment_id and not transaction.provider_payment_id:
+            print(f"➡ Setting provider_payment_id: {provider_payment_id}")
             transaction.provider_payment_id = provider_payment_id
 
+        print("💾 Committing transaction update...")
         db.commit()
         db.refresh(transaction)
+        print("✅ Transaction successfully updated:", transaction)
         return transaction
+
     except Exception as e:
         db.rollback()
-        print(f"Transaction update failed: {str(e)}")
+        print(f"❌ Transaction update failed: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Transaction update failed: {str(e)}"
         )

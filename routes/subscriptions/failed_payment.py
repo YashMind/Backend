@@ -4,12 +4,24 @@ from models.authModel.authModel import AuthUser
 from models.subscriptions.transactionModel import Transaction
 from models.supportTickets.models import SupportTicket
 from send_email import send_email
-
-
-def handle_failed_payment(transaction_id: int, order_id: str, raw_data, db: Session):
+from fastapi import APIRouter, Depends, HTTPException, Request,Query
+from config import get_db
+from datetime import datetime
+import json
+from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, status
+from config import get_db
+from pydantic import BaseModel
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from models.paymentModel.paymentFailedModel import Settings, SettingsCreate, SettingsUpdate, SettingsRead
+from config import get_db
+def handle_failed_payment(transaction_id: int, raw_data, db: Session, order_id: str=None):
     print(
         f"[DEBUG] Starting failed payment handler for transaction_id={transaction_id}"
     )
+    
 
     transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
     print(f"[DEBUG] Fetched transaction using id: {transaction}")
@@ -149,12 +161,73 @@ def handle_failed_payment(transaction_id: int, order_id: str, raw_data, db: Sess
     db.add(log_entry)
     db.flush()
     print(f"[DEBUG] Logged activity with ID: {log_entry.id}")
+    # ✅ Fetch current settings
+    settings = db.query(Settings).first()
+
+    # ✅ Determine who should receive the email
+    admin_email = None
+    if settings and settings.push_notification_admin_email:
+        admin_email = settings.push_notification_admin_email
+
+    recipients = [user.email]
+
+    # ✅ Only add admin if toggle is ON
+    if settings and settings.toggle_push_notifications and admin_email:
+        recipients.append(admin_email)
+
+    # ✅ Send email
     send_email(
         subject=subject,
         html_content=message,
-        recipients=[user.email, "gurdeep@devexhub.in"],
+        recipients=recipients,
     )
+    print(f"[DEBUG] Email sent to: {recipients}")
+
     print("[DEBUG] Email sent")
 
     db.commit()
     print("[DEBUG] DB commit successful")
+
+
+
+
+router = APIRouter(prefix="/settings", tags=["Settings"])
+
+# Get current settings
+@router.get("/", response_model=SettingsRead)
+def get_settings(db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    if not settings:
+        raise HTTPException(status_code=404, detail="Settings not found")
+    return settings
+
+# Create or update settings
+@router.post("/", response_model=SettingsRead)
+def upsert_settings(data: SettingsCreate, db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    if not settings:
+        settings = Settings(**data.dict())
+        db.add(settings)
+    else:
+        settings.push_notification_admin_email = data.push_notification_admin_email
+        settings.toggle_push_notifications = data.toggle_push_notifications
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+# Optional: PATCH endpoint for partial update
+@router.patch("/", response_model=SettingsRead)
+def update_settings(data: SettingsUpdate, db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    if not settings:
+        raise HTTPException(status_code=404, detail="Settings not found")
+    
+    if data.push_notification_admin_email is not None:
+        settings.push_notification_admin_email = data.push_notification_admin_email
+    
+    if data.toggle_push_notifications is not None:
+        settings.toggle_push_notifications = data.toggle_push_notifications
+    
+    db.commit()
+    db.refresh(settings)
+    return settings

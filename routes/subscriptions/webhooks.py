@@ -120,6 +120,22 @@ async def verify_paypal_webhook(
         )
 
 
+    try:
+        # update transaction status
+        transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+        if transaction:
+            transaction.status = "failed"
+            db.commit()
+
+        # Instead of saving to another table, just log it
+        print(f"Payment failed for transaction {transaction_id}, order {order_id}")
+        print(f"Reason: {raw_data}")
+
+    except Exception as e:
+        db.rollback()
+        print(f"Error handling failed payment: {str(e)}")
+   
+
 async def process_cashfree_payload(payload: dict, db: Session):
     # Extract data from Cashfree payload
     data = payload.get("data", {})
@@ -207,7 +223,7 @@ async def process_cashfree_payload(payload: dict, db: Session):
         }, 200
     if payload.get("type") == "PAYMENT_FAILED_WEBHOOK":
         # Add payment failed entry in activity logs and support tickets
-        handle_failed_payment(transaction_id=transaction.id, raw_data=raw_data, db=db)
+        handle_failed_payment(transaction_id=transaction.id,order_id=order_id, raw_data=raw_data, db=db)
 
 
 async def process_paypal_payload(payload: dict, db: Session):
@@ -415,6 +431,7 @@ async def cashfree_webhook(request: Request, db: Session = Depends(get_db)):
         payload = await verify_cashfree_webhook(request=request)
         return await process_cashfree_payload(payload, db)
     except Exception as e:
+        print("----------")
         print("Error processing CashFree webhook: ", e)
         raise HTTPException(status_code=400, detail=str(e))
 

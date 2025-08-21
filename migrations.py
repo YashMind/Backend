@@ -5,6 +5,7 @@ from config import SessionLocal, Base
 from models.adminModel.adminModel import SubscriptionPlans
 from models.authModel.authModel import AuthUser
 from models.subscriptions.userCredits import HistoryUserCredits, UserCredits
+from models.paymentModel.paymentFailedModel import FailedPaymentNotification
 
 
 def ensure_tables_exist(db: Session):
@@ -508,27 +509,114 @@ def add_columns_for_messages_tracking_token_usage(db: Session):
         db.rollback()
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
+def create_settings_table(db: Session):
+    try:
+        print("📦 Creating table: settings ...")
+        
+        # Optional: Drop old table if it exists
+        db.execute(text("DROP TABLE IF EXISTS failed_payment_notifications"))
+        db.execute(text("DROP TABLE IF EXISTS settings"))
 
+        # Create new `settings` table
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS settings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                push_notification_admin_email VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """))
+
+        db.commit()
+        print("✅ Table created successfully!")
+
+        # Verify table exists
+        result = db.execute(text("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = DATABASE() 
+            AND table_name = 'settings'
+        """)).scalar()
+
+        if result > 0:
+            print("✅ Table verified in database!")
+        else:
+            print("❌ Table created but not found in database!")
+
+    except Exception as e:
+        print(f"❌ Failed to create table: {str(e)}")
+        db.rollback()
+        raise
+    try:
+        print("📦 Creating table: failed_payment_notifications ...")
+        
+        # Create the table using SQL
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS failed_payment_notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                payment_id VARCHAR(255) NOT NULL,
+                user_id INT NOT NULL,
+                user_email VARCHAR(255) NOT NULL,
+                admin_email VARCHAR(255) NOT NULL,
+                toggle_button BOOLEAN DEFAULT FALSE,
+                email_sent BOOLEAN DEFAULT FALSE,
+                email_sent_time DATETIME NULL,
+                email_status ENUM('PENDING', 'SENT', 'FAILED') DEFAULT 'PENDING',
+                amount DECIMAL(10, 2) NULL,
+                currency VARCHAR(10) DEFAULT 'USD',
+                payment_method VARCHAR(100) NULL,
+                failure_reason TEXT NULL,
+                error_code VARCHAR(100) NULL,
+                raw_data TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_payment_id (payment_id)
+            )
+        """))
+            
+        db.commit()
+        print("✅ Table created successfully!")
+        
+        # Verify table exists
+        result = db.execute(text("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = DATABASE() 
+            AND table_name = 'failed_payment_notifications'
+        """)).scalar()
+        
+        if result > 0:
+            print("✅ Table verified in database!")
+        else:
+            print("❌ Table created but not found in database!")
+            
+    except Exception as e:
+        print(f"❌ Failed to create table: {str(e)}")
+        db.rollback()
+        raise
 
 def main():
     db = SessionLocal()
     try:
         print("🚀 Starting migrations...")
         
+        create_settings_table(db)
+
+
         # Run all migrations
-        user_country_tracking(db)
+        # user_country_tracking(db)
         # upgrade_subscription_plans(db)
         # update_user_credits(db)
         # update_history_user_credits(db)
         # update_chat_settings(db)
         # update_chat_bots(db)
-        add_message_per_unit_subscription(db)
-        users_messageUsed_tracking(db)
-        add_column_message_limit_combined_message_consumption_token_usage(db)
-        add_column_message_limit_combined_message_consumption_history_token_usage(db)
-        add_column_message_per_unit_user_credits(db)
-        add_column_message_per_unit_history_user_credits(db)
-        add_columns_for_messages_tracking_token_usage(db)
+        # add_message_per_unit_subscription(db)
+        # users_messageUsed_tracking(db)
+        # add_column_message_limit_combined_message_consumption_token_usage(db)
+        # add_column_message_limit_combined_message_consumption_history_token_usage(db)
+        # add_column_message_per_unit_user_credits(db)
+        # add_column_message_per_unit_history_user_credits(db)
+        # add_columns_for_messages_tracking_token_usage(db)
         
         print("🎉 All migrations completed successfully!")
         
