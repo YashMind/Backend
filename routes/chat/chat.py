@@ -703,7 +703,7 @@ async def chat_message(
 
     try:
 
-        # raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error dsdsds   ")
 
         # Get user_id from access token
         token = request.cookies.get("access_token")
@@ -828,14 +828,16 @@ async def chat_message(
         return bot_message
 
     except Exception as e:
+        error_detail = str(e)
         # Log failed user message as SupportTicket
         if user_msg and bot_id:
             try:
                 ticket = SupportTicket(
                     user_id=user_id,
                     subject=f"ChatBot Exception (chat_id={chat_id}, bot_id={bot_id})",
-                    message=user_msg,
-                    status=Status.issue_bug
+                    message=f"User Message: {user_msg}\nError Message: {error_detail}",
+                    status=Status.issue_bug,
+                    # error=f"User Message: {user_msg}\nError Message: {error_detail}"
                 )
                 db.add(ticket)
                 db.commit()

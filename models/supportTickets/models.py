@@ -18,6 +18,7 @@ class SupportTicket(Base):
     user_id= Column(Integer, ForeignKey("users.id"))
     subject = Column(String(255))
     message = Column(String(1000))
+    # error = Column(String(1000))
     status = Column(Enum(Status), default=Status.pending)
     handled_by = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
