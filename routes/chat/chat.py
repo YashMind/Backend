@@ -703,7 +703,7 @@ async def chat_message(
 
     try:
 
-        # raise HTTPException(status_code=500, detail="Internal server error dsdsds   ")
+        raise HTTPException(status_code=500, detail="Internal server error dsdsds   ")
 
         # Get user_id from access token
         token = request.cookies.get("access_token")
@@ -835,7 +835,7 @@ async def chat_message(
                 ticket = SupportTicket(
                     user_id=user_id,
                     subject=f"ChatBot Exception (chat_id={chat_id}, bot_id={bot_id})",
-                    message=f"User Message: {user_msg}\nError Message: {error_detail}",
+                    message=f"User Message: {user_msg}\n {"  "} Error Message: {error_detail}",
                     status=Status.issue_bug,
                     # error=f"User Message: {user_msg}\nError Message: {error_detail}"
                 )
