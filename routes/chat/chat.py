@@ -703,7 +703,7 @@ async def chat_message(
 
     try:
 
-        raise HTTPException(status_code=500, detail="Internal server error dsdsds   ")
+        # raise HTTPException(status_code=500, detail="Internal server error dsdsds   ")
 
         # Get user_id from access token
         token = request.cookies.get("access_token")
