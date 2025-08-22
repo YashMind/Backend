@@ -24,7 +24,7 @@ from routes.payment.paypal_payment import router as paypal_router
 from routes.payment.razor_payment import router as razor_router
 from routes.subscriptions.webhooks import router as subscription_router
 from routes.admin.tokensAndCredits import router as token_credits_router
-
+from routes.subscriptions.failed_payment import router as faile_payment
 app = FastAPI()
 # init_orm_db()
 
@@ -42,6 +42,7 @@ app.add_middleware(
 
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
+        
 
 @app.get("/")
 async def root():
@@ -76,7 +77,7 @@ app.include_router(paypal_router, prefix="/api/payment/paypal")
 app.include_router(razor_router,prefix="/api/payment/razorpay")
 app.include_router(token_credits_router, prefix="/api/admin")
 app.include_router(subscription_router, prefix="/api/webhook/payments")
-
+app.include_router(faile_payment,prefix="/api/admin")
 if __name__ == "__main__":
     import uvicorn
 
