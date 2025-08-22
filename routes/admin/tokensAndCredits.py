@@ -442,30 +442,24 @@ def get_country_list(request: Request, db: Session = Depends(get_db)):
 @router.get("/usersPlans")
 def get_users_count(
     request: Request,
-    filter: Optional[str] = Query(None, description="Filter by 'daily', 'monthly', 'quarterly', 'bi-annual', 'yearly', '15days'"),
-    filter: Optional[str] = Query(None, description="Filter by , 'monthly', 'quarterly', 'bi-annual', 'yearly', '15days'"),
+    filter: Optional[str] = Query(None, description="Filter by 'monthly', 'quarterly', 'bi-annual', 'yearly', '15days'"),
     db=Depends(get_db)
 ):
-    group_by_period = ""
-    period_select = ""
-    
     # Determine group by period and label
     if filter == "monthly":
         group_by_period = "DATE_FORMAT(u.created_at, '%Y-%m')"
         period_select = "DATE_FORMAT(u.created_at, '%Y-%m') AS period"
-    group_by = ""
-    where_clause = ""
-    
-    if filter == "monthly":
         # Last 6 months
         where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)"
         group_by = "DATE_FORMAT(u.created_at, '%Y-%m')"  # YYYY-MM
+        
     elif filter == "quarterly":
         group_by_period = "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))"
         period_select = "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at)) AS period"
         # Last 4 quarters
         where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)"
         group_by = "CONCAT(YEAR(u.created_at), '-Q', QUARTER(u.created_at))"
+        
     elif filter == "bi-annual":
         group_by_period = "CONCAT(YEAR(u.created_at), '-H', IF(MONTH(u.created_at) <= 6, 1, 2))"
         period_select = "CONCAT(YEAR(u.created_at), '-H', IF(MONTH(u.created_at) <= 6, 1, 2)) AS period"
@@ -478,20 +472,23 @@ def get_users_count(
                 ELSE 2
             END)
         """
+        
     elif filter == "yearly":
         group_by_period = "YEAR(u.created_at)"
         period_select = "YEAR(u.created_at) AS period"
-    else:  # fallback
-        group_by_period = "DATE_FORMAT(u.created_at, '%Y-%m')"
-        period_select = "DATE_FORMAT(u.created_at, '%Y-%m') AS period"
-        # Last 5 years
+        # Add appropriate time constraint for yearly
         where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 5 YEAR)"
         group_by = "YEAR(u.created_at)"
+        
     elif filter == "15days":
+        group_by_period = "DATE(u.created_at)"
+        period_select = "DATE(u.created_at) AS period"
         where_clause = "WHERE u.created_at >= DATE_SUB(CURDATE(), INTERVAL 15 DAY)"
         group_by = "DATE(u.created_at)"
-    else:
-        # Default: all time monthly
+        
+    else:  # fallback - default to monthly with all time data
+        group_by_period = "DATE_FORMAT(u.created_at, '%Y-%m')"
+        period_select = "DATE_FORMAT(u.created_at, '%Y-%m') AS period"
         where_clause = ""
         group_by = "DATE_FORMAT(u.created_at, '%Y-%m')"
 
@@ -500,15 +497,11 @@ def get_users_count(
         SELECT 
             {period_select},
             sp.name AS plan,
-            {group_by} AS period,
-            sp.name AS plan_name,
             COUNT(u.id) AS user_count
         FROM users u
         JOIN subscription_plans sp ON u.plan = sp.id
-        GROUP BY {group_by_period}, sp.name
-        ORDER BY period ASC
         {where_clause}
-        GROUP BY period, sp.name
+        GROUP BY {group_by_period}, sp.name
         ORDER BY period ASC, sp.name;
     """)
 
@@ -523,7 +516,6 @@ def get_users_count(
             } for row in result
         ]
     }
-
 
 # @router.get("/total-messages")
 # async def get_total_messages(db: Session = Depends(get_db)):
@@ -746,11 +738,4 @@ async def get_total_messages(db: Session = Depends(get_db)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching total messages: {str(e)}")
-            {
-                "period": row.period,
-                "plan": row.plan_name,
-                "user_count": row.user_count
-            }
-            for row in result
-        ]
-    }
+
