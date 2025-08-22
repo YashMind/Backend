@@ -18,11 +18,19 @@ from config import get_db
 from decorators.product_status import check_product_status
 from utils.utils import decode_access_token
 from fastapi import HTTPException, Depends
-from datetime import datetime
+
 from collections import defaultdict
 from fastapi import APIRouter, Request, Depends, Query
-from sqlalchemy import text
+from sqlalchemy import text,extract
 from typing import Optional
+from datetime import datetime ,timedelta
+from models.chatModel.chatModel import (
+    ChatMessage
+)
+
+ 
+
+
 
 from routes.auth.auth import get_current_user
 
@@ -439,3 +447,88 @@ def get_users_count(
             for row in result
         ]
     }
+
+
+
+@router.get("/total-messages")
+async def get_total_messages(db: Session = Depends(get_db)):
+    """
+    Returns message counts grouped by:
+    - Month
+    - Week (showing start date of each week)
+    - Last 10 days (daily)
+    """
+    try:
+        # 1. Monthly Data
+        monthly_results = (
+            db.query(
+                extract('month', ChatMessage.created_at).label('month'),
+                func.count(ChatMessage.id).label('total_messages')
+            )
+            .group_by('month')
+            .order_by('month')
+            .all()
+        )
+
+        month_names = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+        ]
+
+        monthly_data = [
+            {"month": month_names[int(month) - 1], "totalMessages": total}
+            for month, total in monthly_results
+        ]
+
+        # 2. Weekly Data - MySQL compatible version
+        weekly_results = (
+            db.query(
+                func.DATE(
+                    func.SUBDATE(
+                        ChatMessage.created_at,
+                        func.DAYOFWEEK(ChatMessage.created_at) - 2
+                    )
+                ).label('week_start'),
+                func.count(ChatMessage.id).label('total_messages')
+            )
+            .group_by('week_start')
+            .order_by('week_start')
+            .all()
+        )
+
+        weekly_data = [
+            {"week": week_start.strftime('%d-%m-%Y'), "totalMessages": total}
+            for week_start, total in weekly_results
+        ]
+
+        # 3. Last 10 days (daily)
+        today = datetime.utcnow()
+        ten_days_ago = today - timedelta(days=10)
+
+        last_10_days_results = (
+            db.query(
+                func.date(ChatMessage.created_at).label('date'),
+                func.count(ChatMessage.id).label('total_messages')
+            )
+            .filter(ChatMessage.created_at >= ten_days_ago)
+            .group_by(func.date(ChatMessage.created_at))
+            .order_by(func.date(ChatMessage.created_at))
+            .all()
+        )
+
+        last_10_days_data = [
+            {"date": date.strftime('%d-%m-%Y'), "totalMessages": total}
+            for date, total in last_10_days_results
+        ]
+
+        return {
+            "status": "success",
+            "data": {
+                "monthly": monthly_data,
+                "weekly": weekly_data,
+                "last_10_days": last_10_days_data
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching total messages: {str(e)}")

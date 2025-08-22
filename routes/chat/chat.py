@@ -93,6 +93,8 @@ import smtplib
 from models.authModel.authModel import AuthUser
 from email.utils import formataddr
 
+from models.supportTickets.models import SupportTicket, Status
+
 router = APIRouter()
 
 
@@ -695,134 +697,85 @@ async def create_chat_token_session(
 async def chat_message(
     chat_id: int, data: dict, request: Request, db: Session = Depends(get_db)
 ):
+    user_id = None
+    user_msg = data.get("message")
+    bot_id = data.get("bot_id")
+
     try:
+
+        # raise HTTPException(status_code=500, detail="Internal server error dsdsds   ")
+
+        # Get user_id from access token
         token = request.cookies.get("access_token")
-        user_id = None
         if token:
             payload = decode_access_token(token)
             user_id = int(payload.get("user_id"))
-        user_msg = data.get("message")
-        bot_id = data.get("bot_id")
+
         if not user_msg:
             raise HTTPException(status_code=400, detail="Message required")
 
+        # Get chatbot
         chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
         if not chatbot:
             raise HTTPException(status_code=404, detail="ChatBot not found")
 
-        token_limit_availabe, message = verify_token_limit_available(
-            bot_id=bot_id, db=db
-        )
-        if not token_limit_availabe:
-            raise HTTPException(
-                # status_code=400, detail=f"Token limit exceeded: {message}"
-                status_code=400, detail=f"Message limit exceeded: {message}"
-            )
+        # Verify token limit
+        token_limit_available, message = verify_token_limit_available(bot_id=bot_id, db=db)
+        if not token_limit_available:
+            raise HTTPException(status_code=400, detail=f"Message limit exceeded: {message}")
 
-        # Verify chat belongs to user
+        # Verify chat session
         chat = db.query(ChatSession).filter(ChatSession.id == chat_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
 
         message_history = get_recent_chat_history(chat_id=chat_id, db=db)
-        (
-            request_tokens,
-            response_tokens,
-            openai_request_tokens,
-            openai_response_tokens,
-        ) = (0, 0, 0, 0)
         response_from_faqs = get_response_from_faqs(user_msg, bot_id, db)
-        # # fallback to Pinecone if no FAQ match found
-        # final_answer = response_from_faqs.answer if response_from_faqs else retrieve_answers(user_msg, bot_id)
-
-        # # Set response_content
-        # if final_answer:
-        #     print("################# Got message from FAQ AND PINCONE ##################")
-        #     response_content = final_answer
-        # else:
-        #     print("################# Sending message request to open ai ##################")
-        #     # Get message history from DB
-        #     messages = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc()).all()
-        #     langchain_messages = [
-        #         HumanMessage(content=m.message) if m.sender == 'user' else AIMessage(content=m.message)
-        #         for m in messages
-        #     ]
-        #     langchain_messages.append(HumanMessage(content=user_msg))
-        #     response = llm.invoke(langchain_messages)
-        #     response_content = response.content if response and response.content else "No response"
-
         response_content = response_from_faqs.answer if response_from_faqs else None
 
         active_tool = db.query(ToolsUsed).filter_by(status=True).first()
-        if not response_content:
-            print("No response found from FAQ")
-            # Hybrid retrieval
-            context_texts, scores = hybrid_retrieval(
-                query=user_msg, bot_id=bot_id, db=db, tool=active_tool
-            )
 
-            instruction_prompts = (
-                db.query(DBInstructionPrompt)
-                .filter(DBInstructionPrompt.bot_id == bot_id)
-                .all()
-            )
-            dict_ins_prompt = [
-                {prompt.type: prompt.prompt} for prompt in instruction_prompts
-            ]
-            # print("DICT INSTRUCTION PROMPTS",dict_ins_prompt)
+        if not response_content:
+            # Hybrid retrieval
+            context_texts, scores = hybrid_retrieval(query=user_msg, bot_id=bot_id, db=db, tool=active_tool)
+
+            instruction_prompts = db.query(DBInstructionPrompt).filter(DBInstructionPrompt.bot_id == bot_id).all()
+            dict_ins_prompt = [{prompt.type: prompt.prompt} for prompt in instruction_prompts]
 
             creativity = chatbot.creativity
             text_content = chatbot.text_content
 
-            answer = None
-            print("Hybrid retrieval results: ", context_texts, scores)
-            # Determine answer source
-           
-
-
-            # if any(score > 0.0 for score in scores):
             if len(scores) > 0:
-                print("using openai with context")
-                use_openai = True
+                # OpenAI with context
                 generated_res = generate_response(
                     user_msg,
                     context=context_texts[:3],
-                    use_openai=use_openai,
+                    use_openai=True,
                     instruction_prompts=dict_ins_prompt,
                     creativity=creativity,
                     text_content=text_content,
                     message_history=message_history,
-                    active_tool=active_tool,
+                    active_tool=active_tool
                 )
-                answer = generated_res[0]
-                openai_request_tokens = generated_res[1]
-                openai_response_tokens = generated_res[2]
-                request_tokens = generated_res[3]
-                print("ANSWER", answer, openai_request_tokens)
-
             else:
-                print(
-                    "no direct scores from hybrid retrieval and using openai independently"
-                )
                 # Full OpenAI fallback
-                use_openai = True
                 generated_res = generate_response(
                     query=user_msg,
                     context=[],
-                    use_openai=use_openai,
+                    use_openai=True,
                     instruction_prompts=dict_ins_prompt,
                     creativity=creativity,
                     text_content=text_content,
                     active_tool=active_tool,
                     message_history=message_history,
                 )
-                answer = generated_res[0]
-                openai_request_tokens = generated_res[1]
-                openai_response_tokens = generated_res[2]
-                request_tokens = generated_res[3]
-                print("ANSWER", answer, openai_request_tokens)
 
-            response_content = answer
+            response_content = generated_res[0]
+            request_tokens = generated_res[3] if len(generated_res) > 3 else 0
+            openai_request_tokens = generated_res[1] if len(generated_res) > 1 else 0
+            openai_response_tokens = generated_res[2] if len(generated_res) > 2 else 0
+        else:
+            request_tokens = openai_request_tokens = openai_response_tokens = 0
 
         # Save user and bot messages
         user_message = ChatMessage(
@@ -843,50 +796,58 @@ async def chat_message(
         db.add_all([user_message, bot_message])
         db.commit()
         db.refresh(bot_message)
-        print("BOT MESSAGE SAVED")
-        print("hhhhhhhhhhhhhhhhhhhhhhhhhhh")
-        is_valid, reason = validate_response(answer)
+
+        # Validate response
+        is_valid, reason = validate_response(response_content)
         if not is_valid:
-            print(f"Invalid response detected: {reason}")
-            answer = handle_invalid_response(
+            response_content = handle_invalid_response(
                 question=user_msg,
-                response=answer,
+                response=response_content,
                 reason=reason,
                 user_id=user_id,
                 bot_id=bot_id,
                 db=db,
-                  
             )
-            response_content = answer
 
-        # Update Token consumption
-        bot_message.input_tokens = request_tokens
-        bot_message.output_tokens = openai_response_tokens
-        bot_message.open_ai_request_tokens = openai_request_tokens
-        bot_message.open_ai_response_tokens = openai_response_tokens
-        bot_message.input_message = 1
-        bot_message.output_message = 1
-
+        # Update token usage
         consumed_token = SimpleNamespace(
             request_token=request_tokens,
             response_token=openai_response_tokens,
             open_ai_request_token=openai_request_tokens,
             open_ai_response_token=openai_response_tokens,
-            request_message = 1,
-            response_message = 1
+            request_message=1,
+            response_message=1
         )
         update_token_usage_on_consumption(
             consumed_token=consumed_token,
             consumed_token_type="direct_bot",
             bot_id=bot_id,
-            db=db,
+            db=db
         )
 
         return bot_message
-    except HTTPException as http_exc:
-        raise http_exc
+
     except Exception as e:
+        error_detail = str(e)
+        # Log failed user message as SupportTicket
+        if user_msg and bot_id:
+            try:
+                ticket = SupportTicket(
+                    user_id=user_id,
+                    subject=f"ChatBot Exception (chat_id={chat_id}, bot_id={bot_id})",
+                    message=f"User Message: {user_msg}\n {"  "} Error Message: {error_detail}",
+                    status=Status.issue_bug,
+                    # error=f"User Message: {user_msg}\nError Message: {error_detail}"
+                )
+                db.add(ticket)
+                db.commit()
+            except Exception as db_exc:
+                print("Failed to log SupportTicket:", db_exc)
+
+        # Raise HTTP error
         raise HTTPException(status_code=500, detail=str(e))
+
+
 
 
 # get all charts
