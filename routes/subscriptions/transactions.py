@@ -75,6 +75,7 @@ import json
 from datetime import datetime, timezone
 from fastapi import HTTPException
 
+
 async def update_transaction(
     db: Session,
     # Identification parameters (at least one required)
@@ -107,7 +108,9 @@ async def update_transaction(
                 .filter_by(provider_payment_id=provider_payment_id)
                 .first()
             )
-            print(f"✅ Transaction found by provider_payment_id={provider_payment_id}: {transaction}")
+            print(
+                f"✅ Transaction found by provider_payment_id={provider_payment_id}: {transaction}"
+            )
 
         if not transaction and provider_transaction_id:
             transaction = (
@@ -115,7 +118,9 @@ async def update_transaction(
                 .filter_by(provider_transaction_id=provider_transaction_id)
                 .first()
             )
-            print(f"✅ Transaction found by provider_transaction_id={provider_transaction_id}: {transaction}")
+            print(
+                f"✅ Transaction found by provider_transaction_id={provider_transaction_id}: {transaction}"
+            )
 
         if not transaction:
             print("❌ No transaction found")
@@ -137,20 +142,23 @@ async def update_transaction(
 
         # Payment details update
         if payment_method:
-            print(f"➡ Updating payment_method: {transaction.payment_method} -> {payment_method}")
+            print(
+                f"➡ Updating payment_method: {transaction.payment_method} -> {payment_method}"
+            )
             transaction.payment_method = payment_method
 
         if payment_method_details is not None:
-            print(f"➡ Updating payment_method_details with type={type(payment_method_details)} value={payment_method_details}")
+            print(
+                f"➡ Updating payment_method_details with type={type(payment_method_details)} value={payment_method_details}"
+            )
             transaction.payment_method_details = payment_method_details
 
         if fees is not None:
             print(f"➡ Received fees (dict)={fees}")
             if isinstance(fees, dict):
                 # store the total (or pick one value)
-                total_fee = (
-                    fees.get("payment_surcharge_service_charge", 0)
-                    + fees.get("payment_surcharge_service_tax", 0)
+                total_fee = fees.get("payment_surcharge_service_charge", 0) + fees.get(
+                    "payment_surcharge_service_tax", 0
                 )
                 print(f"➡ Storing total fees={total_fee}")
                 transaction.fees = total_fee
@@ -166,7 +174,9 @@ async def update_transaction(
             transaction.provider_data = raw_data
 
         if country_code:
-            print(f"➡ Updating country_code: {transaction.country_code} -> {country_code}")
+            print(
+                f"➡ Updating country_code: {transaction.country_code} -> {country_code}"
+            )
             transaction.country_code = country_code
 
         if refund_id:

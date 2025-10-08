@@ -31,7 +31,13 @@ from schemas.chatSchema.tokensSchema import (
     ChatMessageTokensSummary,
     ChatMessageTokensToday,
 )
-from utils.utils import decode_access_token, get_current_user, get_recent_chat_history,validate_response, handle_invalid_response
+from utils.utils import (
+    decode_access_token,
+    get_current_user,
+    get_recent_chat_history,
+    validate_response,
+    handle_invalid_response,
+)
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
 import json
@@ -159,6 +165,7 @@ def generate_invite_token():
 #         return False
 
 from email.utils import formataddr
+
 
 async def send_invitation_email(
     recipient_email: str, invite_token: str, chatbot_name: str, owner_name: str
@@ -457,7 +464,9 @@ async def delete_chatbot(bot_id: int, request: Request, db: Session = Depends(ge
         db.query(WhatsAppUser).filter(WhatsAppUser.bot_id == bot_id).delete(
             synchronize_session=False
         )
-
+        db.query(ChatBotSharing).filter(ChatBotSharing.bot_id == bot_id).delete(
+            synchronize_session=False
+        )
         db.query(ChatBots).filter(
             ChatBots.id == bot_id, ChatBots.user_id == user_id
         ).delete(synchronize_session=False)
@@ -488,12 +497,11 @@ ALLOWED_FILE_TYPES = [
     "audio/ogg",  # .ogg
     "audio/mp4",  # .m4a, .mp4 audio
     "audio/x-m4a",
-    "application/vnd.ms-excel"
-    "application/vnd.ms-excel.sheet.macroEnabled.12", 
-    "application/vnd.ms-excel.sheet.macroenabled.12", 
-    "application/vnd.ms-excel.template.macroenabled.12",  
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.template",  
-    "application/vnd.ms-excel.addin.macroenabled.12", 
+    "application/vnd.ms-excel" "application/vnd.ms-excel.sheet.macroEnabled.12",
+    "application/vnd.ms-excel.sheet.macroenabled.12",
+    "application/vnd.ms-excel.template.macroenabled.12",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+    "application/vnd.ms-excel.addin.macroenabled.12",
 ]
 
 
@@ -725,9 +733,13 @@ async def chat_message(
             raise HTTPException(status_code=404, detail="ChatBot not found")
 
         # Verify token limit
-        token_limit_available, message = verify_token_limit_available(bot_id=bot_id, db=db)
+        token_limit_available, message = verify_token_limit_available(
+            bot_id=bot_id, db=db
+        )
         if not token_limit_available:
-            raise HTTPException(status_code=400, detail=f"Message limit exceeded: {message}")
+            raise HTTPException(
+                status_code=400, detail=f"Message limit exceeded: {message}"
+            )
 
         # Verify chat session
         chat = db.query(ChatSession).filter(ChatSession.id == chat_id).first()
@@ -742,10 +754,18 @@ async def chat_message(
 
         if not response_content:
             # Hybrid retrieval
-            context_texts, scores = hybrid_retrieval(query=user_msg, bot_id=bot_id, db=db, tool=active_tool)
+            context_texts, scores = hybrid_retrieval(
+                query=user_msg, bot_id=bot_id, db=db, tool=active_tool
+            )
 
-            instruction_prompts = db.query(DBInstructionPrompt).filter(DBInstructionPrompt.bot_id == bot_id).all()
-            dict_ins_prompt = [{prompt.type: prompt.prompt} for prompt in instruction_prompts]
+            instruction_prompts = (
+                db.query(DBInstructionPrompt)
+                .filter(DBInstructionPrompt.bot_id == bot_id)
+                .all()
+            )
+            dict_ins_prompt = [
+                {prompt.type: prompt.prompt} for prompt in instruction_prompts
+            ]
 
             creativity = chatbot.creativity
             text_content = chatbot.text_content
@@ -760,7 +780,7 @@ async def chat_message(
                     creativity=creativity,
                     text_content=text_content,
                     message_history=message_history,
-                    active_tool=active_tool
+                    active_tool=active_tool,
                 )
             else:
                 # Full OpenAI fallback
@@ -821,13 +841,13 @@ async def chat_message(
             open_ai_request_token=openai_request_tokens,
             open_ai_response_token=openai_response_tokens,
             request_message=1,
-            response_message=1
+            response_message=1,
         )
         update_token_usage_on_consumption(
             consumed_token=consumed_token,
             consumed_token_type="direct_bot",
             bot_id=bot_id,
-            db=db
+            db=db,
         )
 
         return bot_message
@@ -851,8 +871,6 @@ async def chat_message(
 
         # Raise HTTP error
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 
 # get all charts
@@ -1232,14 +1250,14 @@ async def get_chatbot_faqs(
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
         print(token)
-        
+
         chatbot_faqs = (
             db.query(ChatBotsFaqs)
             .filter_by(bot_id=bot_id)
             .order_by(ChatBotsFaqs.created_at.desc())
             .all()
         )
-        
+
         if not chatbot_faqs:
             print(f"No FAQs found for user_id {user_id} and bot_id {bot_id}")
             return []
@@ -1516,7 +1534,8 @@ async def get_bot_doc_links(
             db.query(func.sum(ChatBotsDocLinks.chars))
             .filter(
                 # ChatBotsDocLinks.user_id == user_id,
-                ChatBotsDocLinks.bot_id == bot_id,
+                ChatBotsDocLinks.bot_id
+                == bot_id,
             )
             .scalar()
             or 0
@@ -2123,7 +2142,6 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
 
         credits = db.query(UserCredits).filter_by(user_id=user_id).first()
         print(f"Fetched credits: {credits}")
-        
 
         if credits:
             token_usages = db.query(TokenUsage).filter_by(user_id=user_id).all()
@@ -2142,32 +2160,42 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
                 "token_usage": token_usages,
                 "total_token_consumption": total_token_consumption,
                 "total_message_consumption": total_message_consumption,
-                "has_shared_bots": False
+                "has_shared_bots": False,
             }
         else:
             # Check for shared bots
-            shared_records = db.query(ChatBotSharing.bot_id, ChatBotSharing.owner_id).filter(
-                ChatBotSharing.shared_user_id == user_id,
-                ChatBotSharing.status == "active"
-            ).all()
+            shared_records = (
+                db.query(ChatBotSharing.bot_id, ChatBotSharing.owner_id)
+                .filter(
+                    ChatBotSharing.shared_user_id == user_id,
+                    ChatBotSharing.status == "active",
+                )
+                .all()
+            )
             shared_bot_ids = [record.bot_id for record in shared_records]
             shared_owner_ids = [record.owner_id for record in shared_records]
             print(json.dumps(shared_owner_ids))
             if shared_owner_ids:
-                token_usages = db.query(TokenUsage).filter(TokenUsage.user_id.in_(shared_owner_ids)).all()
+                token_usages = (
+                    db.query(TokenUsage)
+                    .filter(TokenUsage.user_id.in_(shared_owner_ids))
+                    .all()
+                )
             if shared_bot_ids:
-                print("User has shared bots, returning empty credits info with has_shared_bots True")
+                print(
+                    "User has shared bots, returning empty credits info with has_shared_bots True"
+                )
                 return {
                     "credits": None,
                     "token_usage": token_usages or [],
                     "total_token_consumption": 0,
                     "total_message_consumption": 0,
-                    "has_shared_bots": True
+                    "has_shared_bots": True,
                 }
-                
+
             else:
                 print("No credits and no shared bots found")
-                raise HTTPException(status_code=204, detail="No Credit History Found")
+                raise HTTPException(status_code=404, detail="No Credit History Found")
 
     except HTTPException as http_exc:
         print(f"HTTPException: {http_exc.detail}")
@@ -2175,6 +2203,7 @@ async def chat_message_tokens(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         print("Unhandled exception in /tokens endpoint:", str(e))
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
@@ -2243,9 +2272,9 @@ async def chat_message_tokens_summary(
                 "response_tokens": response_tokens,
                 "users": len(user_ids),
                 "request_messages": request_messages,
-                "response_messages": response_messages
+                "response_messages": response_messages,
             }
-        
+
         # Get today's messages
         today_messages = (
             db.query(ChatMessage)
@@ -2276,13 +2305,25 @@ async def chat_message_tokens_summary(
         today_data = (
             process_messages(today_messages)
             if today_messages
-            else {"request_tokens": 0, "response_tokens": 0, "users": 0, "request_messages": 0, "response_messages": 0}
+            else {
+                "request_tokens": 0,
+                "response_tokens": 0,
+                "users": 0,
+                "request_messages": 0,
+                "response_messages": 0,
+            }
         )
 
         monthly_data = (
             process_messages(monthly_messages)
             if monthly_messages
-            else {"request_tokens": 0, "response_tokens": 0, "users": 0, "request_messages": 0, "response_messages": 0}
+            else {
+                "request_tokens": 0,
+                "response_tokens": 0,
+                "users": 0,
+                "request_messages": 0,
+                "response_messages": 0,
+            }
         )
         print(json.dumps(today_data))
         return {"today": today_data, "monthly": monthly_data}
@@ -2422,9 +2463,7 @@ async def accept_invite(token: str, request: Request, db: Session = Depends(get_
         # Find the invitation
         invitation = (
             db.query(ChatBotSharing)
-            .filter(
-                ChatBotSharing.invite_token == token
-            )
+            .filter(ChatBotSharing.invite_token == token)
             .first()
         )
 
@@ -2434,7 +2473,9 @@ async def accept_invite(token: str, request: Request, db: Session = Depends(get_
             if invitation.shared_user_id == user_id:
                 return {"message": "Invitation already accepted", "sharing": invitation}
             else:
-                raise HTTPException(status_code=403, detail="Invitation claimed by another user")   
+                raise HTTPException(
+                    status_code=403, detail="Invitation claimed by another user"
+                )
 
         # Check if the invitation matches the current user's email
         user = db.query(AuthUser).filter(AuthUser.id == user_id).first()

@@ -60,6 +60,7 @@ import httpx
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timedelta
 from utils.utils import get_country_from_ip, get_user_country
+
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -119,7 +120,6 @@ async def signup(user: User, db: Session = Depends(get_db)):
         existing_user = db.query(AuthUser).filter(AuthUser.email == email).first()
         if existing_user:
             raise HTTPException(status_code=400, detail="ERR_ALREADY_EXIST")
-        
 
         new_user = AuthUser(
             fullName=fullName,
@@ -129,7 +129,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
             status=status,
             role_permissions=role_permissions,
             base_rate_per_token=base_rate_per_token,
-            messageUsed = 0
+            messageUsed=0,
         )
         db.add(new_user)
         db.commit()
@@ -142,7 +142,9 @@ async def signup(user: User, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # 2. UPDATED SIGNIN API with country detection:
+
 
 @router.post("/signin")
 async def signin(
@@ -169,6 +171,11 @@ async def signin(
         if not db_user.fullName or not db_user.role:
             raise HTTPException(status_code=400, detail="Incomplete user data")
 
+        if not db_user.status == "Suspend":
+            raise HTTPException(
+                status_code=400, detail="User account has been suspended"
+            )
+
         access_token = create_access_token(
             data={
                 "sub": db_user.email,
@@ -179,13 +186,13 @@ async def signin(
         )
 
         client_ip = request.client.host
-        
+
         # Get timezone and country from IP (and save country to user)
         timezone = await get_timezone_from_ip(ip=client_ip)
         country = await get_user_country(
-            ip=client_ip, 
+            ip=client_ip,
         )
-   
+
         # Save to user record if user_id and db provided
         if country != "Unknown":
             try:
@@ -198,7 +205,7 @@ async def signin(
             except Exception as db_error:
                 print(f"❌ Database save error: {db_error}")
                 db.rollback()
-        
+
         print(f"User {db_user.id} signed in from {country} with timezone {timezone}")
 
         response.set_cookie(
@@ -231,10 +238,10 @@ async def signin(
         )
 
         return {
-            "access_token": access_token, 
+            "access_token": access_token,
             "token_type": "bearer",
-            "user_country": country,  
-            "timezone": timezone
+            "user_country": country,
+            "timezone": timezone,
         }
 
     except HTTPException as http_exc:
@@ -242,34 +249,30 @@ async def signin(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
+
 # 3. EXAMPLE: Updated subscription plans endpoint for authenticated users
 @router.get("/subscription-plans")
 async def get_subscription_plans_authenticated(
     request: Request,
     current_user: AuthUser = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     try:
         plans = (
             db.query(SubscriptionPlans)
             .filter(
-                SubscriptionPlans.is_active == True, 
-                SubscriptionPlans.is_trial == False
+                SubscriptionPlans.is_active == True, SubscriptionPlans.is_trial == False
             )
             .all()
         )
-        
+
         client_ip = request.client.host
-        
+
         # Use cached country from user or get from IP
-        country = await get_user_country(
-            ip=client_ip, 
-            user_id=current_user.id, 
-            db=db
-        )
-        
+        country = await get_user_country(ip=client_ip, user_id=current_user.id, db=db)
+
         print(f"Showing plans for user {current_user.id} in country {country}")
-        
+
         formatted_plans = []
         for plan in plans:
             # Apply country-specific pricing
@@ -278,7 +281,7 @@ async def get_subscription_plans_authenticated(
             if country == "IN":
                 pricing = plan.pricingInr
                 currency = "INR"
-            
+
             formatted_plan = {
                 "id": plan.id,
                 "name": plan.name,
@@ -298,16 +301,17 @@ async def get_subscription_plans_authenticated(
                 "message_per_unit": plan.message_per_unit,
             }
             formatted_plans.append(formatted_plan)
-        
+
         return {
             "success": True,
             "message": "Subscription plans fetched successfully.",
             "data": formatted_plans,
             "user_country": country,
-            "currency": currency
+            "currency": currency,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Something went wrong: {str(e)}")
+
 
 @router.get("/me")
 async def getme(request: Request, response: Response, db: Session = Depends(get_db)):
@@ -325,6 +329,13 @@ async def getme(request: Request, response: Response, db: Session = Depends(get_
             response.delete_cookie("access_token")
             response.delete_cookie("role")
             raise HTTPException(status_code=400, detail="User not found")
+
+        if user.status == "Suspend":
+            response.delete_cookie("access_token")
+            response.delete_cookie("role")
+            raise HTTPException(
+                status_code=400, detail="User account has been suspended"
+            )
 
         # Refresh cookie expiry to keep user logged in
         response.set_cookie(
@@ -363,7 +374,6 @@ async def getme(request: Request, response: Response, db: Session = Depends(get_
         return error_response
 
 
-
 @router.post("/forget-password")
 async def forget_password(
     request: PasswordResetRequest,
@@ -372,18 +382,23 @@ async def forget_password(
 ):
     try:
         user = db.query(AuthUser).filter(AuthUser.email == request.email).first()
-        print("user email id")
-        print(user)
         if not user:
             raise HTTPException(
                 status_code=404, detail="User with this email does not exist"
             )
-        userProvider=db.query(AuthUser).filter(AuthUser.provider==request.email).first()    
+        if user.status == "Suspend":
+            raise HTTPException(
+                status_code=400, detail="User account has been suspended"
+            )
+        userProvider = (
+            db.query(AuthUser).filter(AuthUser.provider == request.email).first()
+        )
         if userProvider:
             raise HTTPException(
-                status_code= 400 , detail=" user logged in with {userProvider.provider} provider"
+                status_code=400,
+                detail=" user logged in with {userProvider.provider} provider",
             )
-        print("user exist")    
+        print("user exist")
 
         reset_token = create_reset_token({"sub": str(user.id)})
         print(reset_token)
@@ -420,7 +435,7 @@ async def reset_password(data: PasswordReset, db: Session = Depends(get_db)):
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print("------------------------------------------------",e)
+        print("------------------------------------------------", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -438,6 +453,11 @@ async def reset_password(
         user = db.query(AuthUser).filter(AuthUser.id == payload.get("user_id")).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
+
+        if user.status == "Suspend":
+            raise HTTPException(
+                status_code=400, detail="User account has been suspended"
+            )
 
         old_password = data.old_password
         if not pwd_context.verify(old_password, user.password):
@@ -569,7 +589,7 @@ async def update_profile(
 # google login
 @router.post("/google-login")
 async def google_login(
- user: User,   request: Request, response: Response, db: Session = Depends(get_db)
+    user: User, request: Request, response: Response, db: Session = Depends(get_db)
 ):
     try:
         data = await request.json()
@@ -596,7 +616,6 @@ async def google_login(
                     status_code=400, detail="Email not found in Google response"
                 )
             user = db.query(AuthUser).filter(AuthUser.email == email).first()
-            print("user ", user)
             dummy_password = pwd_context.hash("GOOGLE_AUTH_NO_PASSWORD")
             if not user:
                 user = AuthUser(
@@ -607,22 +626,27 @@ async def google_login(
                     googleId=googleId,
                     picture=picture,
                     role=role,
-                    messageUsed=0
+                    messageUsed=0,
                 )
                 db.add(user)
                 db.commit()
                 db.refresh(user)
+
+            if user.status == "Suspend":
+                raise HTTPException(
+                    status_code=400, detail="User account has been suspended"
+                )
 
             access_token = create_access_token(
                 data={"sub": email, "user_id": str(user.id), "role": user.role}
             )
 
             client_ip = request.client.host
-            
+
             timezone = await get_timezone_from_ip(ip=client_ip)
             country = await get_user_country(
-            ip=client_ip, 
-        )
+                ip=client_ip,
+            )
             if country != "Unknown":
                 try:
                     if user:
@@ -634,7 +658,7 @@ async def google_login(
                 except Exception as db_error:
                     print(f"❌ Database save error: {db_error}")
                     db.rollback()
-        
+
             print(f"User {user.id} signed in from {country} with timezone {timezone}")
             # In google_login()
             response.set_cookie(
@@ -654,13 +678,13 @@ async def google_login(
                 max_age=60 * 60 * 24 * 30,
             )
             response.set_cookie(
-            key="timezone",
-            value=timezone,
-            httponly=False,
-            secure=False,
-            samesite="Lax",
-            max_age=60 * 60 * 24 * 30,
-        )
+                key="timezone",
+                value=timezone,
+                httponly=False,
+                secure=False,
+                samesite="Lax",
+                max_age=60 * 60 * 24 * 30,
+            )
 
             return {"access_token": access_token, "token_type": "bearer"}
     except HTTPException as http_exc:
@@ -672,11 +696,11 @@ async def google_login(
 
 @router.post("/facebook-login")
 async def facebook_login(
-  user: User,  request: Request, response: Response, db: Session = Depends(get_db)
+    user: User, request: Request, response: Response, db: Session = Depends(get_db)
 ):
-  
+
     try:
-       
+
         data = await request.json()
         token = data.get("token")
         role = user.role if user.role else "user"
@@ -689,7 +713,7 @@ async def facebook_login(
         print(params)
         async with httpx.AsyncClient() as client:
             res = await client.get(facebook_url, params=params)
-            print(res)   
+            print(res)
         if res.status_code != 200:
             print("Facebook error response:", res.text)
             raise HTTPException(
@@ -700,12 +724,12 @@ async def facebook_login(
         email = user_data.get("email")
         name = user_data.get("name")
         facebookId = user_data.get("id")
-        picture = user_data.get("picture", {}).get("data", {}).get("url", "") 
-        print("user_data",user_data)
-        print("email",email)
-        print("facebookid",facebookId)
-        print("picture",picture)
-        print("name",name)
+        picture = user_data.get("picture", {}).get("data", {}).get("url", "")
+        print("user_data", user_data)
+        print("email", email)
+        print("facebookid", facebookId)
+        print("picture", picture)
+        print("name", name)
         print("-----------------")
         if not email:
             raise HTTPException(
@@ -723,11 +747,16 @@ async def facebook_login(
                 provider="facebook",
                 facebookId=facebookId,
                 picture=picture,
-                role=role
+                role=role,
             )
             db.add(user)
             db.commit()
             db.refresh(user)
+
+        if user.status == "Suspend":
+            raise HTTPException(
+                status_code=400, detail="User account has been suspended"
+            )
         print("+++++++++++++++++++++++++")
         access_token = create_access_token(
             data={"sub": email, "user_id": str(user.id), "role": user.role}
@@ -747,16 +776,15 @@ async def facebook_login(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
-    
-
 
 
 # delete user from user management
 # FastAPI + SQLAlchemy example
 
-  # Your existing User model
+# Your existing User model
 
 # router = APIRouter(prefix="/api/users", tags=["Users"])
+
 
 @router.delete("/{user_id}")
 def delete_user(
@@ -764,17 +792,18 @@ def delete_user(
     db: Session = Depends(get_db),
 ):
 
-
-    db.query(ChatMessage).filter(ChatMessage.chat_id.in_(
-    db.query(ChatSession.id).filter(ChatSession.user_id == user_id)
-    )).delete()
+    db.query(ChatMessage).filter(
+        ChatMessage.chat_id.in_(
+            db.query(ChatSession.id).filter(ChatSession.user_id == user_id)
+        )
+    ).delete()
     db.query(ChatSession).filter(ChatSession.user_id == user_id).delete()
     db.query(ChatBotSharing).filter(ChatBotSharing.shared_user_id == user_id).delete()
-    db.query(ChatBotSharing).filter(ChatBotSharing.owner_id == user_id).delete() 
-    db.query(ChatBotsFaqs).filter(ChatBotsFaqs.user_id==user_id).delete()
-    db.query(ZapierIntegration).filter(ZapierIntegration.user_id==user_id).delete()
-    db.query(WhatsAppUser).filter(WhatsAppUser.user_id==user_id).delete()
-    chatbots_query =db.query(ChatBots).filter(ChatBots.user_id==user_id)
+    db.query(ChatBotSharing).filter(ChatBotSharing.owner_id == user_id).delete()
+    db.query(ChatBotsFaqs).filter(ChatBotsFaqs.user_id == user_id).delete()
+    db.query(ZapierIntegration).filter(ZapierIntegration.user_id == user_id).delete()
+    db.query(WhatsAppUser).filter(WhatsAppUser.user_id == user_id).delete()
+    chatbots_query = db.query(ChatBots).filter(ChatBots.user_id == user_id)
     bot_ids = [bot.id for bot in chatbots_query.all()]
     for bot_id in bot_ids:
         docs_to_delete = (
@@ -793,21 +822,25 @@ def delete_user(
 
         # Delete from Pinecone first
         delete_documents_from_pinecone(bot_id, doc_link_ids, db)
-    db.query( ChatBotsDocLinks).filter( ChatBotsDocLinks.user_id==user_id).delete()
-    db.query( ChatTotalToken).filter( ChatTotalToken.user_id==user_id).delete()
-    db.query(TokenUsageHistory).filter(TokenUsageHistory.user_id==user_id).delete()
-    db.query( TokenUsage).filter( TokenUsage.user_id==user_id).delete()
-    db.query( HistoryUserCredits).filter(HistoryUserCredits.user_id==user_id).delete()
-    db.query(UserCredits).filter(UserCredits.trans_id.in_(
-    db.query(Transaction.id).filter(Transaction.user_id == user_id)
-    )).delete()
-    db.query( Transaction).filter( Transaction. user_id==user_id).delete()
-    db.query( DBInstructionPrompt).filter( DBInstructionPrompt.user_id==user_id).delete()
-    
+    db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.user_id == user_id).delete()
+    db.query(ChatTotalToken).filter(ChatTotalToken.user_id == user_id).delete()
+    db.query(TokenUsageHistory).filter(TokenUsageHistory.user_id == user_id).delete()
+    db.query(TokenUsage).filter(TokenUsage.user_id == user_id).delete()
+    db.query(HistoryUserCredits).filter(HistoryUserCredits.user_id == user_id).delete()
+    db.query(UserCredits).filter(
+        UserCredits.trans_id.in_(
+            db.query(Transaction.id).filter(Transaction.user_id == user_id)
+        )
+    ).delete()
+    db.query(Transaction).filter(Transaction.user_id == user_id).delete()
+    db.query(DBInstructionPrompt).filter(
+        DBInstructionPrompt.user_id == user_id
+    ).delete()
+
     chatbots_query.delete()
-    
+
     user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
-    
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
