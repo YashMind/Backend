@@ -86,10 +86,10 @@ async def update_base_rate(
         },
     }
 
+
 @router.get("/get-all-users")
 @public_route()
 async def get_all_users(
-    
     request: Request,
     db: Session = Depends(get_db),
     search: Optional[str] = Query(None, description="Search by name or email"),
@@ -98,7 +98,8 @@ async def get_all_users(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
     plan: Optional[str] = Query(
-        None, description="Filter by plan: 1=Basic, 2=Pro, 3=Enterprise 4=Free 5=Team 6=cilent"
+        None,
+        description="Filter by plan: 1=Basic, 2=Pro, 3=Enterprise 4=Free 5=Team 6=cilent",
     ),
     status: Optional[str] = Query(
         None, description="Filter by status: active, inactive, suspended"
@@ -128,12 +129,11 @@ async def get_all_users(
         total_signups = (
             db.query(AuthUser).filter(AuthUser.created_at >= start_of_month).count()
         )
-        
+
         # Calculate total tokens consumed (all time)
         total_tokens_consumed = db.query(func.sum(AuthUser.tokenUsed)).scalar() or 0
         total_messages_consumed = db.query(func.sum(AuthUser.messageUsed)).scalar() or 0
-        
-        
+
         # Calculate total subscriptions (users with plan > 1 or active subscriptions)
         total_subscriptions = (
             db.query(AuthUser)
@@ -153,32 +153,28 @@ async def get_all_users(
             )
 
         # Apply plan filter
-        
+
         if plan:
-            if plan.lower() == "all":  
+            if plan.lower() == "all":
                 pass
-            if plan =="4":
-                query= query.filter(AuthUser.plan.is_(None))
-                
-            elif plan=="5":
+            if plan == "4":
+                query = query.filter(AuthUser.plan.is_(None))
+
+            elif plan == "5":
                 query = query.join(
-                ChatBotSharing,
-                ChatBotSharing.shared_user_id == AuthUser.id
-                ).filter(
-                ChatBotSharing.status == "active"
-                )
+                    ChatBotSharing, ChatBotSharing.shared_user_id == AuthUser.id
+                ).filter(ChatBotSharing.status == "active")
             elif plan == "6":
                 query = query.filter(
-                ~exists().where(
-                and_(
-                ChatBotSharing.shared_user_id == AuthUser.id,
-                ChatBotSharing.status == "active"
-            )
-            )
-            )    
+                    ~exists().where(
+                        and_(
+                            ChatBotSharing.shared_user_id == AuthUser.id,
+                            ChatBotSharing.status == "active",
+                        )
+                    )
+                )
             else:
                 query = query.filter(AuthUser.plan == int(plan))
-            
 
         # Apply status filter
         if status:
@@ -228,8 +224,8 @@ async def get_all_users(
             "data": results,
             "total_signups": total_signups,
             "total_tokens_consumed": total_tokens_consumed,  # NEW: Total tokens consumed (all time)
-            "total_subscriptions": total_subscriptions,  # NEW: Total subscriptions 
-            "total_messages_consumed": total_messages_consumed
+            "total_subscriptions": total_subscriptions,  # NEW: Total subscriptions
+            "total_messages_consumed": total_messages_consumed,
         }
 
     except HTTPException as http_exc:
@@ -239,18 +235,20 @@ async def get_all_users(
         raise HTTPException(status_code=400, detail=f"Invalid filter value: {str(ve)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
 # update user
 @router.put("/update-user-admin", response_model=User)
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
 async def update_chatbot(
-    request:Request,
+    request: Request,
     data: User,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     try:
         user = db.query(AuthUser).filter(AuthUser.id == int(data.id)).first()
-        if not user: 
+        if not user:
             raise HTTPException(status_code=404, detail="Chatbot not found")
 
         if data.status:
@@ -343,7 +341,7 @@ async def create_subscription_plans(
             existing_plan.name = data.name
             existing_plan.pricingInr = data.pricingInr
             existing_plan.pricingDollar = data.pricingDollar
-            existing_plan.token_per_unit = data.token_per_unit
+            existing_plan.token_per_unit = data.token_per_unit or 1000
             existing_plan.chatbots_allowed = data.chatbots_allowed
             existing_plan.duration_days = data.duration_days
             existing_plan.features = data.features
@@ -357,11 +355,12 @@ async def create_subscription_plans(
             db.refresh(existing_plan)
             return existing_plan
         else:
+            token_per_unit = data.token_per_unit or 1000
             new_plan = SubscriptionPlans(
                 name=data.name,
                 pricingInr=data.pricingInr,
                 pricingDollar=data.pricingDollar,
-                token_per_unit=data.token_per_unit,
+                token_per_unit=token_per_unit,
                 chatbots_allowed=data.chatbots_allowed,
                 duration_days=data.duration_days,
                 features=data.features,

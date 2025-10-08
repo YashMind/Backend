@@ -21,7 +21,7 @@ class Transaction(Base):
 
     # Relationships
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    plan_id = Column(Integer, ForeignKey("subscription_plans.id"), nullable=True)
+    plan_id = Column(Integer, nullable=True)
 
     # Transaction Type plan or topup
     transaction_type = Column(Enum("plan", "topup", "trial"), nullable=False)
@@ -32,7 +32,14 @@ class Transaction(Base):
 
     # Provider info
     provider = Column(
-        Enum("cashfree", "paypal", "stripe", "trial","razorpay", name="payment_providers"),
+        Enum(
+            "cashfree",
+            "paypal",
+            "stripe",
+            "trial",
+            "razorpay",
+            name="payment_providers",
+        ),
         nullable=False,
     )
     provider_transaction_id = Column(String(255))  # Gateway's transaction ID

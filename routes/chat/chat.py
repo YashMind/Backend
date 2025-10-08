@@ -15,6 +15,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 import httpx
 import tiktoken
+from models.adminModel.adminModel import SubscriptionPlans
 from models.adminModel.toolsModal import ToolsUsed
 from models.chatModel.integrations import WhatsAppUser, ZapierIntegration
 from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
@@ -2361,6 +2362,34 @@ async def invite_users(
         if not chatbot:
             raise HTTPException(
                 status_code=404, detail="Chatbot not found or you don't have permission"
+            )
+
+        # check is user has team limit available
+        owner = db.query(AuthUser).filter(AuthUser.id == owner_id).first()
+        if not owner:
+            raise HTTPException(
+                status_code=404,
+                detail="Owner account not found. Please try by loggin in again.",
+            )
+
+        user_credits = (
+            db.query(UserCredits).filter(UserCredits.user_id == owner.id).first()
+        )
+
+        if not user_credits:
+            raise HTTPException(
+                status_code=400,
+                detail="No active subscription plan found for the owner. Please activate a plan to continue.",
+            )
+
+        existing_shared = (
+            db.query(ChatBotSharing).filter(ChatBotSharing.owner_id == owner_id).count()
+        )
+
+        if existing_shared >= user_credits.team_strength:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Team limit exceeded. You can invite a maximum of {user_credits.team_strength} users.",
             )
 
         # Process each email

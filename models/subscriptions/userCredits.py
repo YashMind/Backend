@@ -20,7 +20,7 @@ class UserCredits(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     trans_id = Column(Integer, ForeignKey("transactions.id"))
-    plan_id = Column(Integer, ForeignKey("subscription_plans.id"))
+    plan_id = Column(Integer)
 
     start_date = Column(DateTime, default=func.now())
     expiry_date = Column(DateTime)
@@ -45,6 +45,7 @@ class UserCredits(Base):
     credits_consumed_messages = Column(Integer, default=0)
     credit_balance_messages = Column(Integer)
 
+
 user_credits_topups = Table(
     "user_credits_topups",
     Base.metadata,
@@ -59,7 +60,7 @@ class HistoryUserCredits(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     trans_id = Column(Integer, ForeignKey("transactions.id"))
-    plan_id = Column(Integer, ForeignKey("subscription_plans.id"))
+    plan_id = Column(Integer)
 
     start_date = Column(DateTime)
     expiry_date = Column(DateTime)

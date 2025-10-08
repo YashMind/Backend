@@ -44,7 +44,7 @@ def upgrade_subscription_plans(db: Session):
                 plan.webpages_allowed = 2000
                 plan.team_strength = 5
             elif plan.name == "Pro":
-                plan.chars_allowed = 20000000   
+                plan.chars_allowed = 20000000
                 plan.webpages_allowed = 10000
                 plan.team_strength = 10
             elif plan.name == "Enterprise":
@@ -269,7 +269,7 @@ def user_country_tracking(db: Session):
                 db.commit()
             except sa_exc.OperationalError as e:
                 if "Duplicate column name" in str(e):
-                    db.rollback() 
+                    db.rollback()
                 else:
                     raise
 
@@ -284,6 +284,7 @@ def user_country_tracking(db: Session):
         db.rollback()
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
+
 
 def add_message_per_unit_subscription(db: Session):
     try:
@@ -301,7 +302,7 @@ def add_message_per_unit_subscription(db: Session):
                 db.commit()
             except sa_exc.OperationalError as e:
                 if "Duplicate column name" in str(e):
-                    db.rollback() 
+                    db.rollback()
                 else:
                     raise
 
@@ -316,6 +317,7 @@ def add_message_per_unit_subscription(db: Session):
         db.rollback()
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
+
 
 def users_messageUsed_tracking(db: Session):
     try:
@@ -333,7 +335,7 @@ def users_messageUsed_tracking(db: Session):
                 db.commit()
             except sa_exc.OperationalError as e:
                 if "Duplicate column name" in str(e):
-                    db.rollback() 
+                    db.rollback()
                 else:
                     raise
 
@@ -348,6 +350,7 @@ def users_messageUsed_tracking(db: Session):
         db.rollback()
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
+
 
 def add_column_message_limit_combined_message_consumption_token_usage(db: Session):
     try:
@@ -365,7 +368,7 @@ def add_column_message_limit_combined_message_consumption_token_usage(db: Sessio
                 db.commit()
             except sa_exc.OperationalError as e:
                 if "Duplicate column name" in str(e):
-                    db.rollback() 
+                    db.rollback()
                 else:
                     raise
 
@@ -381,10 +384,26 @@ def add_column_message_limit_combined_message_consumption_token_usage(db: Sessio
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
 
-def add_column_message_limit_combined_message_consumption_history_token_usage(db: Session):
+
+def add_column_message_limit_combined_message_consumption_history_token_usage(
+    db: Session,
+):
     try:
         ensure_tables_exist(db)
-        for column in ["message_limit", "combined_message_consumption", "user_request_message","user_response_message", "whatsapp_request_messages", "whatsapp_response_messages", "slack_request_messages", "slack_response_messages", "wordpress_request_messages", "wordpress_response_messages", "zapier_request_messages", "zapier_response_messages"]:
+        for column in [
+            "message_limit",
+            "combined_message_consumption",
+            "user_request_message",
+            "user_response_message",
+            "whatsapp_request_messages",
+            "whatsapp_response_messages",
+            "slack_request_messages",
+            "slack_response_messages",
+            "wordpress_request_messages",
+            "wordpress_response_messages",
+            "zapier_request_messages",
+            "zapier_response_messages",
+        ]:
             try:
                 db.execute(
                     text(
@@ -397,7 +416,7 @@ def add_column_message_limit_combined_message_consumption_history_token_usage(db
                 db.commit()
             except sa_exc.OperationalError as e:
                 if "Duplicate column name" in str(e):
-                    db.rollback() 
+                    db.rollback()
                 else:
                     raise
 
@@ -413,10 +432,15 @@ def add_column_message_limit_combined_message_consumption_history_token_usage(db
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
 
+
 def add_column_message_per_unit_user_credits(db: Session):
     try:
         ensure_tables_exist(db)
-        for column in ["message_per_unit", "credit_balance_messages", "credits_consumed_messages"]:
+        for column in [
+            "message_per_unit",
+            "credit_balance_messages",
+            "credits_consumed_messages",
+        ]:
             try:
                 db.execute(
                     text(
@@ -429,7 +453,7 @@ def add_column_message_per_unit_user_credits(db: Session):
                 db.commit()
             except sa_exc.OperationalError as e:
                 if "Duplicate column name" in str(e):
-                    db.rollback() 
+                    db.rollback()
                 else:
                     raise
 
@@ -445,10 +469,15 @@ def add_column_message_per_unit_user_credits(db: Session):
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
 
+
 def add_column_message_per_unit_history_user_credits(db: Session):
     try:
         ensure_tables_exist(db)
-        for column in ["message_per_unit", "credit_balance_messages", "credits_consumed_messages"]:
+        for column in [
+            "message_per_unit",
+            "credit_balance_messages",
+            "credits_consumed_messages",
+        ]:
             try:
                 db.execute(
                     text(
@@ -461,7 +490,7 @@ def add_column_message_per_unit_history_user_credits(db: Session):
                 db.commit()
             except sa_exc.OperationalError as e:
                 if "Duplicate column name" in str(e):
-                    db.rollback() 
+                    db.rollback()
                 else:
                     raise
 
@@ -477,10 +506,22 @@ def add_column_message_per_unit_history_user_credits(db: Session):
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
 
+
 def add_columns_for_messages_tracking_token_usage(db: Session):
     try:
         ensure_tables_exist(db)
-        for column in ["user_request_message","user_response_message", "whatsapp_request_messages", "whatsapp_response_messages", "slack_request_messages", "slack_response_messages", "wordpress_request_messages", "wordpress_response_messages", "zapier_request_messages", "zapier_response_messages"]:
+        for column in [
+            "user_request_message",
+            "user_response_message",
+            "whatsapp_request_messages",
+            "whatsapp_response_messages",
+            "slack_request_messages",
+            "slack_response_messages",
+            "wordpress_request_messages",
+            "wordpress_response_messages",
+            "zapier_request_messages",
+            "zapier_response_messages",
+        ]:
             try:
                 db.execute(
                     text(
@@ -493,7 +534,7 @@ def add_columns_for_messages_tracking_token_usage(db: Session):
                 db.commit()
             except sa_exc.OperationalError as e:
                 if "Duplicate column name" in str(e):
-                    db.rollback() 
+                    db.rollback()
                 else:
                     raise
 
@@ -508,16 +549,20 @@ def add_columns_for_messages_tracking_token_usage(db: Session):
         db.rollback()
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
+
+
 def create_settings_table(db: Session):
     try:
         print("📦 Creating table: settings ...")
-        
+
         # Optional: Drop old table if it exists
         db.execute(text("DROP TABLE IF EXISTS failed_payment_notifications"))
         db.execute(text("DROP TABLE IF EXISTS settings"))
 
         # Create new `settings` table
-        db.execute(text("""
+        db.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS settings (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 push_notification_admin_email VARCHAR(255) NOT NULL,
@@ -525,18 +570,24 @@ def create_settings_table(db: Session):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
-        """))
+        """
+            )
+        )
 
         db.commit()
         print("✅ Table created successfully!")
 
         # Verify table exists
-        result = db.execute(text("""
+        result = db.execute(
+            text(
+                """
             SELECT COUNT(*) 
             FROM information_schema.tables 
             WHERE table_schema = DATABASE() 
             AND table_name = 'settings'
-        """)).scalar()
+        """
+            )
+        ).scalar()
 
         if result > 0:
             print("✅ Table verified in database!")
@@ -549,7 +600,7 @@ def create_settings_table(db: Session):
         raise
     # try:
     #     print("📦 Creating table: failed_payment_notifications ...")
-        
+
     #     # Create the table using SQL
     #     db.execute(text("""
     #         CREATE TABLE IF NOT EXISTS failed_payment_notifications (
@@ -573,35 +624,73 @@ def create_settings_table(db: Session):
     #             UNIQUE KEY unique_payment_id (payment_id)
     #         )
     #     """))
-            
+
     #     db.commit()
     #     print("✅ Table created successfully!")
-        
+
     #     # Verify table exists
     #     result = db.execute(text("""
-    #         SELECT COUNT(*) 
-    #         FROM information_schema.tables 
-    #         WHERE table_schema = DATABASE() 
+    #         SELECT COUNT(*)
+    #         FROM information_schema.tables
+    #         WHERE table_schema = DATABASE()
     #         AND table_name = 'failed_payment_notifications'
     #     """)).scalar()
-        
+
     #     if result > 0:
     #         print("✅ Table verified in database!")
     #     else:
     #         print("❌ Table created but not found in database!")
-            
+
     # except Exception as e:
     #     print(f"❌ Failed to create table: {str(e)}")
     #     db.rollback()
     #     raise
 
+
+from sqlalchemy import text
+
+
+def remove_foreign_key_from_user_credits(db):
+    try:
+        print(
+            "📦 Removing foreign key constraints from plan_id in user_credits, history_user_credits, and transactions..."
+        )
+
+        tables = ["user_credits", "history_user_credits", "transactions"]
+
+        for table in tables:
+            fk_name_query = text(
+                f"""
+                SELECT CONSTRAINT_NAME 
+                FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_NAME = '{table}' 
+                AND COLUMN_NAME = 'plan_id' 
+                AND REFERENCED_TABLE_NAME = 'subscription_plans';
+            """
+            )
+            fk_name = db.execute(fk_name_query).scalar()
+
+            if fk_name:
+                db.execute(text(f"ALTER TABLE {table} DROP FOREIGN KEY {fk_name};"))
+                print(f"✅ Dropped foreign key '{fk_name}' from {table}.plan_id")
+            else:
+                print(f"ℹ️ No foreign key found on {table}.plan_id — skipping.")
+
+        db.commit()
+        print("✅ All foreign keys removed successfully!")
+
+    except Exception as e:
+        print(f"❌ Failed to remove foreign keys: {str(e)}")
+        db.rollback()
+        raise
+
+
 def main():
     db = SessionLocal()
     try:
         print("🚀 Starting migrations...")
-        
-        create_settings_table(db)
 
+        # create_settings_table(db)
 
         # Run all migrations
         # user_country_tracking(db)
@@ -617,9 +706,10 @@ def main():
         # add_column_message_per_unit_user_credits(db)
         # add_column_message_per_unit_history_user_credits(db)
         # add_columns_for_messages_tracking_token_usage(db)
-        
+        remove_foreign_key_from_user_credits(db)
+
         print("🎉 All migrations completed successfully!")
-        
+
     except Exception as e:
         print(f"❌ Migration failed: {str(e)}")
         raise
