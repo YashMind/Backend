@@ -323,6 +323,9 @@ async def update_chatbot(data: CreateBot, db: Session = Depends(get_db)):
             chatbot.document_link = data.document_link
 
         if data.text_content:
+            await check_available_char_limit(
+                user_id=chatbot.user_id, db=db, new_chars=len(data.text_content)
+            )
             chatbot.text_content = data.text_content
 
         if data.creativity:
@@ -727,13 +730,13 @@ async def chat_message(
 
         if not user_msg:
             raise HTTPException(status_code=400, detail="Message required")
-
+        print("Geting Chatbot:", bot_id, "    :    ", token)
         # Get chatbot
         chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
         if not chatbot:
             raise HTTPException(status_code=404, detail="ChatBot not found")
-
-        # Verify token limit
+        print("verify Token Limit")
+        # Verify Message limit
         token_limit_available, message = verify_token_limit_available(
             bot_id=bot_id, db=db
         )
@@ -1207,7 +1210,62 @@ async def archive_all_chats(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# create new chatbot
+async def check_available_char_limit(
+    user_id: int,
+    db: Session = Depends(get_db),
+    new_chars: int = 0,  # characters being added in this operation
+):
+    # Get the user
+    user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get user's current active credit plan
+    current_plan = db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
+    if not current_plan or current_plan.expiry_date < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="No active user plan found")
+
+    # Sum of all used characters (from all chatbots)
+    total_chars_used = (
+        db.query(func.sum(ChatBotsDocLinks.chars))
+        .filter(ChatBotsDocLinks.user_id == user_id)
+        .scalar()
+        or 0
+    )
+
+    # Add chatbot `text_content` and FAQs characters to the total
+    chatbots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+    for chatbot in chatbots:
+        if chatbot.text_content:
+            total_chars_used += len(chatbot.text_content.strip())
+
+        faqs = db.query(ChatBotsFaqs).filter(ChatBotsFaqs.bot_id == chatbot.id).all()
+        for faq in faqs:
+            question = faq.question.strip() if faq.question else ""
+            answer = faq.answer.strip() if faq.answer else ""
+            total_chars_used += len(question) + len(answer)
+
+    # Add the characters the user is trying to save now
+    total_with_new = total_chars_used + new_chars
+
+    # Compare total used chars with allowed chars
+    if total_with_new > current_plan.chars_allowed:
+        remaining = max(0, current_plan.chars_allowed - total_chars_used)
+        raise HTTPException(
+            status_code=403,
+            detail=f"Character limit exceeded. Available: {remaining}, Trying to add: {new_chars}. Please upgrade your plan.",
+        )
+
+    # If under limit, return remaining characters
+    remaining = current_plan.chars_allowed - total_with_new
+    return {
+        "status": "ok",
+        "total_used": total_chars_used,
+        "allowed_limit": current_plan.chars_allowed,
+        "remaining": remaining,
+    }
+
+
 @router.post("/create-bot-faqs", response_model=CreateBotFaqs)
 @check_product_status("chatbot")
 async def create_chatbot_faqs(
@@ -1219,6 +1277,17 @@ async def create_chatbot_faqs(
         user_id = int(payload.get("user_id"))
         created_faqs = []
 
+        # Calculate total chars in the new FAQs
+        new_chars = 0
+        for qa in data.questions:
+            question = qa.question.strip() if qa.question else ""
+            answer = qa.answer.strip() if qa.answer else ""
+            new_chars += len(question) + len(answer)
+
+        # Check if adding these chars will exceed the limit
+        await check_available_char_limit(user_id=user_id, db=db, new_chars=new_chars)
+
+        # If within limit, proceed to save
         for qa in data.questions:
             new_chatbot_faq = ChatBotsFaqs(
                 user_id=user_id,
@@ -1230,7 +1299,6 @@ async def create_chatbot_faqs(
             db.commit()
             db.refresh(new_chatbot_faq)
             created_faqs.append(new_chatbot_faq)
-            # return new_chatbot_faq
 
         return {"bot_id": data.bot_id, "questions": created_faqs}
 
