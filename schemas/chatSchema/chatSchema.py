@@ -104,6 +104,15 @@ class CreateBotFaqs(BaseModel):
         orm_mode = True
 
 
+class UpdateFaqItem(BaseModel):
+    faq_id: int
+    question: str
+    answer: str
+
+class UpdateBotFaqs(BaseModel):
+    bot_id: int
+    questions: List[UpdateFaqItem]
+
 class FaqResponse(BaseModel):
     id: int
     user_id: int

@@ -65,6 +65,7 @@ from schemas.chatSchema.chatSchema import (
     DeleteDocLinksRequest,
     ChatbotLeads,
     DeleteChatbotLeadsRequest,
+    UpdateBotFaqs,
 )
 from schemas.chatSchema.sharingSchema import (
     DirectSharingRequest,
@@ -1307,6 +1308,46 @@ async def create_chatbot_faqs(
     except Exception as e:
         print("e ", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/update-bot-faqs", response_model=UpdateBotFaqs)
+@check_product_status("chatbot")
+async def update_chatbot_faqs(
+    data: UpdateBotFaqs, request: Request, db: Session = Depends(get_db)
+):
+    try:
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+        updated_faqs = []
+
+        for qa in data.questions:
+            existing_faq = db.query(ChatBotsFaqs).filter(
+                ChatBotsFaqs.id == qa.faq_id,
+                ChatBotsFaqs.user_id == user_id,
+                ChatBotsFaqs.bot_id == data.bot_id
+            ).first()
+            
+            if existing_faq:
+                existing_faq.question = qa.question
+                existing_faq.answer = qa.answer
+                db.commit()
+                db.refresh(existing_faq)
+                updated_faqs.append(existing_faq)
+
+        return {
+            "bot_id": data.bot_id,
+            "questions": [
+                {"faq_id": faq.id, "question": faq.question, "answer": faq.answer}
+                for faq in updated_faqs
+            ],
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print("e ", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.get("/get-bot-faqs/{bot_id}", response_model=List[FaqResponse])
