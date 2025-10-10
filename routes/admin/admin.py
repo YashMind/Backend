@@ -104,6 +104,9 @@ async def get_all_users(
     status: Optional[str] = Query(
         None, description="Filter by status: active, inactive, suspended"
     ),
+    role: Optional[str] = Query(
+        None, description="Filter by role: user, Super Admin, Billing Admin, Product Admin, Support Admin"
+    ),
     token_used: Optional[str] = Query(
         None, description="Filter by token range: 0-1000, 1001-5000, 5001+"
     ),
@@ -141,7 +144,11 @@ async def get_all_users(
             .count()
         )
 
-        query = db.query(AuthUser)
+        query = (
+            db.query(AuthUser, SubscriptionPlans.name.label("plan_name"))
+            .outerjoin(SubscriptionPlans, AuthUser.plan == SubscriptionPlans.id)
+        )
+
 
         # Apply search
         if search:
@@ -153,18 +160,16 @@ async def get_all_users(
             )
 
         # Apply plan filter
-
         if plan:
             if plan.lower() == "all":
                 pass
-            if plan == "4":
+            if plan == "free":
                 query = query.filter(AuthUser.plan.is_(None))
-
-            elif plan == "5":
+            elif plan.lower() == "invited":
                 query = query.join(
                     ChatBotSharing, ChatBotSharing.shared_user_id == AuthUser.id
                 ).filter(ChatBotSharing.status == "active")
-            elif plan == "6":
+            elif plan.lower() == "invited":
                 query = query.filter(
                     ~exists().where(
                         and_(
@@ -180,6 +185,10 @@ async def get_all_users(
         if status:
             query = query.filter(AuthUser.status == status)
 
+        # Apply role filter
+        if role:
+            query = query.filter(AuthUser.role == role)
+
         # Apply token used filter
         if token_used:
             if token_used == "0-1000":
@@ -189,12 +198,13 @@ async def get_all_users(
             elif token_used == "5001+":
                 query = query.filter(AuthUser.tokenUsed >= 5001)
 
+        # Apply message used filter
         if message_used:
-            if token_used == "0-100":
+            if message_used == "0-100":
                 query = query.filter(AuthUser.messageUsed.between(0, 100))
-            elif token_used == "101-500":
+            elif message_used == "101-500":
                 query = query.filter(AuthUser.messageUsed.between(101, 500))
-            elif token_used == "501+":
+            elif message_used == "501+":
                 query = query.filter(AuthUser.messageUsed >= 501)
 
         # Apply date range filter
@@ -207,6 +217,8 @@ async def get_all_users(
             )  # Include entire end day
             query = query.filter(AuthUser.created_at < end_date)
 
+
+
         # Sorting
         sort_column = getattr(AuthUser, sort_by, AuthUser.created_at)
         sort_column = desc(sort_column) if sort_order == "desc" else asc(sort_column)
@@ -217,11 +229,29 @@ async def get_all_users(
         total_pages = (total_count + limit - 1) // limit
         results = query.offset((page - 1) * limit).limit(limit).all()
 
+        # Format response data
+        formatted_results = []
+        for user, plan_name in results:
+            print("User",user.plan)
+            user_data = {
+                "id": user.id,
+                "fullName": user.fullName,
+                "email": user.email,
+                "status": user.status,
+                "created_at": user.created_at,
+                "tokenUsed": user.tokenUsed,
+                "messageUsed": user.messageUsed,
+                "plan_id": user.plan,
+                "plan": plan_name or "Free",  # Default if None
+                "role":user.role,   
+                    }
+            formatted_results.append(user_data)
+
         return {
             "current_page": page,
             "total_pages": total_pages,
             "total_count": total_count,
-            "data": results,
+            "data": formatted_results,
             "total_signups": total_signups,
             "total_tokens_consumed": total_tokens_consumed,  # NEW: Total tokens consumed (all time)
             "total_subscriptions": total_subscriptions,  # NEW: Total subscriptions
