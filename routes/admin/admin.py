@@ -558,6 +558,53 @@ async def delete_subscription_plan(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/get-subscription-plan")
+async def get_subscription_plan_by_id(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        # Decode access token
+        token = request.cookies.get("access_token")
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Fetch the subscription plan by ID
+        plan = (
+            db.query(SubscriptionPlans)
+            .filter(SubscriptionPlans.id == user.plan)
+            .first()
+        )
+
+        # Handle plan not found
+        if not plan:
+            raise HTTPException(status_code=404, detail="Subscription plan not found")
+
+        # Return plan details
+        return {
+            "message": "Subscription plan retrieved successfully",
+            "data": {
+                "id": plan.id,
+                "name": plan.name,
+                "priceInr": plan.pricingInr,
+                "priceDollar": plan.pricingDollar,
+                "duration": plan.duration_days,
+                "features": plan.features,
+                "status": plan.is_active,
+                "created_at": plan.created_at,
+                "updated_at": plan.updated_at,
+            },
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # create new subscription plan
 @router.post("/create-token-bots", response_model=TokenBotsSchema)

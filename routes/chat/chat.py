@@ -15,7 +15,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 import httpx
 import tiktoken
-from models.adminModel.adminModel import SubscriptionPlans
 from models.adminModel.toolsModal import ToolsUsed
 from models.chatModel.integrations import WhatsAppUser, ZapierIntegration
 from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
@@ -1590,7 +1589,7 @@ async def get_bot_doc_links(
         total_target_links = (
             db.query(ChatBotsDocLinks)
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 ChatBotsDocLinks.train_from != "full website",
                 and_(
@@ -1604,7 +1603,7 @@ async def get_bot_doc_links(
         user_target_links = (
             db.query(ChatBotsDocLinks)
             .filter(
-                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.user_id == user_id,
                 ChatBotsDocLinks.bot_id == bot_id,
                 and_(
                     ChatBotsDocLinks.target_link.isnot(None),
@@ -2715,3 +2714,5 @@ async def revoke_sharing(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
