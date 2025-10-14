@@ -705,7 +705,7 @@ def update_all_users_role_to_user(db):
         query = text('''
             UPDATE users
             SET role = 'User'
-            WHERE status IS NULL OR TRIM(status) = '';
+            WHERE role IS NULL OR TRIM(status) = '';
         ''')
         db.execute(query)
         db.commit()
