@@ -738,6 +738,7 @@ def main():
         # add_columns_for_messages_tracking_token_usage(db)
         # remove_foreign_key_from_user_credits(db)
         update_all_users_status_to_active(db)
+        update_all_users_role_to_user(db)
 
         print("🎉 All migrations completed successfully!")
 
