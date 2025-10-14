@@ -685,6 +685,21 @@ def remove_foreign_key_from_user_credits(db):
         raise
 
 
+def update_all_users_status_to_active(db):
+    try:
+        query = text('''
+            UPDATE users
+            SET status = 'Active'
+            WHERE status IS NULL OR TRIM(status) = '';
+        ''')
+        db.execute(query)
+        db.commit()
+        print("✅ All users with empty or null status updated to Active.")
+    except Exception as e:
+        print(f"❌ Failed to update users: {str(e)}")
+        db.rollback()
+        raise
+
 def main():
     db = SessionLocal()
     try:
@@ -706,7 +721,8 @@ def main():
         # add_column_message_per_unit_user_credits(db)
         # add_column_message_per_unit_history_user_credits(db)
         # add_columns_for_messages_tracking_token_usage(db)
-        remove_foreign_key_from_user_credits(db)
+        # remove_foreign_key_from_user_credits(db)
+        update_all_users_status_to_active(db)
 
         print("🎉 All migrations completed successfully!")
 

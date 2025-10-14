@@ -154,7 +154,7 @@ def update_status(
     db.refresh(ticket)
 
     # Send status notification
-    if ticket.user.email:
+    if ticket.user and ticket.user.email:
         try:
             html_content = f"""
             <html>

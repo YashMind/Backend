@@ -23,7 +23,6 @@ def public_route(return_user: bool = False):
                 # Get token from cookies or headers
                 token = request.cookies.get("access_token") or request.headers.get("Authorization")
                 db = kwargs.get('db')
-                print("++++++++++++++++++++++++++++++")
                 if not db or not isinstance(db, Session):
                     raise HTTPException(status_code=500, detail="Database session not available")
                 

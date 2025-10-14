@@ -107,7 +107,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
         email = user.email
         password = user.password
         role = user.role if user.role else "user"
-        status = user.status if user.status else None
+        status = user.status if user.status else "Active"
         role_permissions = user.role_permissions if user.role_permissions else None
         base_rate_per_token = (
             user.base_rate_per_token if user.base_rate_per_token else None
@@ -626,6 +626,7 @@ async def google_login(
                     googleId=googleId,
                     picture=picture,
                     role=role,
+                    status="Active",
                     messageUsed=0,
                 )
                 db.add(user)
@@ -748,6 +749,7 @@ async def facebook_login(
                 facebookId=facebookId,
                 picture=picture,
                 role=role,
+                status="Active"
             )
             db.add(user)
             db.commit()
@@ -791,6 +793,10 @@ def delete_user(
     user_id: int,  # or use email if your identifier is different
     db: Session = Depends(get_db),
 ):
+    user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
     db.query(ChatMessage).filter(
         ChatMessage.chat_id.in_(
@@ -838,11 +844,6 @@ def delete_user(
     ).delete()
 
     chatbots_query.delete()
-
-    user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
 
     db.delete(user)  # Hard delete
     db.commit()

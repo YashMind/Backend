@@ -13,6 +13,12 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from models.activityLogModel.activityLogModel import ActivityLog
+from models.chatModel.integrations import WhatsAppUser, ZapierIntegration
+from models.chatModel.tuning import DBInstructionPrompt
+from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
+from models.subscriptions.transactionModel import Transaction
+from models.subscriptions.userCredits import HistoryUserCredits, UserCredits
+from routes.chat.pinecone import delete_documents_from_pinecone
 from utils.utils import decode_access_token, get_country_from_ip, get_current_user
 from jose import JWTError, jwt
 from uuid import uuid4
@@ -28,7 +34,7 @@ from models.adminModel.roles_and_permission import RolePermission
 from sqlalchemy.exc import SQLAlchemyError
 from models.activityLogModel.activityLogModel import ActivityLog
 from models.chatModel.sharing import ChatBotSharing
-from models.chatModel.chatModel import ChatBots
+from models.chatModel.chatModel import ChatBots, ChatBotsDocLinks, ChatBotsFaqs, ChatMessage, ChatSession, ChatTotalToken
 
 from schemas.authSchema.authSchema import User, UserUpdate
 from schemas.adminSchema.adminSchema import (
@@ -731,8 +737,9 @@ async def get_top_consumption_users(request: Request, db: Session = Depends(get_
         # get top 10 most token consumption users
         top_users = (
             db.query(AuthUser)
-            .filter(AuthUser.tokenUsed != None)
-            .order_by(desc(AuthUser.tokenUsed))
+            .filter(AuthUser.messageUsed != None)
+            .filter( AuthUser.messageUsed > 0)
+            .order_by(desc(AuthUser.messageUsed))
             .limit(10)
             .all()
         )
@@ -744,8 +751,19 @@ async def get_top_consumption_users(request: Request, db: Session = Depends(get_
                 .filter(SubscriptionPlans.id == user.plan)
                 .first()
             )
-
-        return top_users
+        
+        user_list = [
+            {
+                "name": u.fullName,
+                "email": u.email,
+                "messageUsed": u.messageUsed,
+                "plan":{
+                    "name": user.plan.name if user.plan else "Free",
+                }
+            }
+            for u in top_users
+        ]
+        return user_list
 
     except HTTPException as http_exc:
         raise http_exc
@@ -1206,7 +1224,7 @@ async def update_admin_user(
             raise HTTPException(status_code=401, detail="Invalid or expired token")
 
         user_id = int(payload.get("user_id"))
-        username = payload.get("username")
+        username = payload.get("sub")
         role = payload.get("role")
 
         if not username or not role:
@@ -1307,6 +1325,53 @@ async def delete_admin_user(
 
         adminUser = db.query(AuthUser).filter(AuthUser.id == id).first()
         if adminUser:
+            db.query(ChatMessage).filter(
+                ChatMessage.chat_id.in_(
+                    db.query(ChatSession.id).filter(ChatSession.user_id == adminUser.id)
+                )
+            ).delete()
+            db.query(ChatSession).filter(ChatSession.user_id ==adminUser.id).delete()
+            db.query(ChatBotSharing).filter(ChatBotSharing.shared_user_id ==adminUser.id).delete()
+            db.query(ChatBotSharing).filter(ChatBotSharing.owner_id ==adminUser.id).delete()
+            db.query(ChatBotsFaqs).filter(ChatBotsFaqs.user_id ==adminUser.id).delete()
+            db.query(ZapierIntegration).filter(ZapierIntegration.user_id ==adminUser.id).delete()
+            db.query(WhatsAppUser).filter(WhatsAppUser.user_id ==adminUser.id).delete()
+            chatbots_query = db.query(ChatBots).filter(ChatBots.user_id ==adminUser.id)
+            bot_ids = [bot.id for bot in chatbots_query.all()]
+            for bot_id in bot_ids:
+                docs_to_delete = (
+                    db.query(ChatBotsDocLinks)
+                    .filter(
+                        ChatBotsDocLinks.bot_id == bot_id,
+                    )
+                    .all()
+                )
+
+                if not docs_to_delete:
+                    print({"message": "No documents found to delete"})
+
+                # Get the source links for Pinecone deletion
+                doc_link_ids = [doc.id for doc in docs_to_delete]
+
+                # Delete from Pinecone first
+                delete_documents_from_pinecone(bot_id, doc_link_ids, db)
+            db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.user_id == adminUser.id).delete()
+            db.query(ChatTotalToken).filter(ChatTotalToken.user_id == adminUser.id).delete()
+            db.query(TokenUsageHistory).filter(TokenUsageHistory.user_id == adminUser.id).delete()
+            db.query(TokenUsage).filter(TokenUsage.user_id == adminUser.id).delete()
+            db.query(HistoryUserCredits).filter(HistoryUserCredits.user_id == adminUser.id).delete()
+            db.query(UserCredits).filter(
+                UserCredits.trans_id.in_(
+                    db.query(Transaction.id).filter(Transaction.user_id == adminUser.id)
+                )
+            ).delete()
+            db.query(Transaction).filter(Transaction.user_id == adminUser.id).delete()
+            db.query(DBInstructionPrompt).filter(
+                DBInstructionPrompt.user_id == adminUser.id
+            ).delete()
+
+            chatbots_query.delete()
+
             db.delete(adminUser)
             db.commit()
 
