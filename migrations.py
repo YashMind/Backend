@@ -700,6 +700,21 @@ def update_all_users_status_to_active(db):
         db.rollback()
         raise
 
+def update_all_users_role_to_user(db):
+    try:
+        query = text('''
+            UPDATE users
+            SET role = 'User'
+            WHERE status IS NULL OR TRIM(status) = '';
+        ''')
+        db.execute(query)
+        db.commit()
+        print("✅ All users with empty or null status updated to Active.")
+    except Exception as e:
+        print(f"❌ Failed to update users: {str(e)}")
+        db.rollback()
+        raise
+
 def main():
     db = SessionLocal()
     try:
