@@ -35,9 +35,9 @@ CASHFREE_BASE_URL = (
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 notify_url = (
-    "https://yashraa.ai/api/webhook/payments/cashfree"
+    "https://ed569c2175de.ngrok-free.app/api/webhook/payments/cashfree"
     if CASHFREE_ENV == "TEST"
-    else "https://yashraa.ai/webhook/payments/cashfree"
+    else "https://ed569c2175de.ngrok-free.app/webhook/payments/cashfree"
 )
 
 

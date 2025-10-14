@@ -1541,8 +1541,12 @@ async def get_bot_doc_links(
         chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
         if not chatbot:
             raise HTTPException(404, detail="Chatbot not found")
+        
+        user_bots = db.query(ChatBots).filter(ChatBots.user_id == user_id).all()
+
 
         bot_faqs = db.query(ChatBotsFaqs).filter(ChatBotsFaqs.bot_id == bot_id).all()
+        user_faqs = db.query(ChatBotsFaqs).filter(ChatBotsFaqs.user_id == user_id).all()
 
         # Group website links by parent_link_id
         website_groups = {}
@@ -1603,8 +1607,8 @@ async def get_bot_doc_links(
         user_target_links = (
             db.query(ChatBotsDocLinks)
             .filter(
-                # ChatBotsDocLinks.user_id == user_id,
-                ChatBotsDocLinks.bot_id == bot_id,
+                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.bot_id == bot_id,
                 and_(
                     ChatBotsDocLinks.target_link.isnot(None),
                     ChatBotsDocLinks.target_link != "",
@@ -1642,19 +1646,25 @@ async def get_bot_doc_links(
         user_total_chars = (
             db.query(func.sum(ChatBotsDocLinks.chars))
             .filter(
-                # ChatBotsDocLinks.user_id == user_id,
-                ChatBotsDocLinks.bot_id
-                == bot_id,
+                ChatBotsDocLinks.user_id == user_id,
+                # ChatBotsDocLinks.bot_id== bot_id,
             )
             .scalar()
             or 0
         )
 
-        # First trim the text_content and count its characters
-        trimmed_text_content = (
+        # # First trim the text_content and count its characters
+        # trimmed_text_content_bot = (
+        #     chatbot.text_content.strip() if chatbot.text_content else ""
+        # )
+        # text_content_chars = len(trimmed_text_content_bot)
+
+        trimmed_text_content_user = " ".join(
             chatbot.text_content.strip() if chatbot.text_content else ""
+            for chatbot in user_bots
         )
-        text_content_chars = len(trimmed_text_content)
+        user_text_content_chars = len(trimmed_text_content_user)
+
 
         # Calculate characters from FAQs
         faqs_chars = 0
@@ -1665,8 +1675,16 @@ async def get_bot_doc_links(
                 answer = faq.answer.strip() if faq.answer else ""
                 faqs_chars += len(question) + len(answer)
 
+        user_faq_chars = 0
+        if user_faqs:  # Assuming bot_faqs is a list of FAQ objects
+            for faq in user_faqs:
+                # Trim and count characters for both question and answer
+                question = faq.question.strip() if faq.question else ""
+                answer = faq.answer.strip() if faq.answer else ""
+                user_faq_chars += len(question) + len(answer)
+
         # Total character count
-        user_total_chars += text_content_chars + faqs_chars
+        user_total_chars += user_text_content_chars + user_faq_chars
 
         pending_count = (
             db.query(func.count(ChatBotsDocLinks.id))
