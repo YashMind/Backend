@@ -969,6 +969,15 @@ def process_and_store_docs(data, db: Session) -> dict:
 
         if not documents:
             raise ValueError("No data loaded from link or file")
+        
+        user_credit = db.query(UserCredits).filter(UserCredits.user_id == data.user_id).first()
+        current_links_count = db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.user_id == data.user_id).filter(ChatBotsDocLinks.id != data.id).count()
+        available_links_quota = user_credit.webpages_allowed - current_links_count
+
+        if available_links_quota > 0:
+            documents = documents[:available_links_quota]
+        else:
+            raise ValueError("Webpages limit exceeded")
 
         # Pre-process documents (clean, normalize)
         print("Preprocessing documents...")

@@ -1573,8 +1573,8 @@ async def get_bot_doc_links(
                 for link in links
                 if link.status == "Pending" or link.status == "training"
             )
-            group_failed_count = sum(1 for link in links if link.status == "Failed")
-            group_indexed_count = sum(1 for link in links if link.status == "Indexed")
+            group_failed_count = sum(1 for link in links if link.status == "failed")
+            group_indexed_count = sum(1 for link in links if link.status == "indexed")
 
             group_total_chars = sum(link.chars or 0 for link in links)
 
