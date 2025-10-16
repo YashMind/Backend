@@ -33,13 +33,12 @@ def send_post_to_users(
         if not payload.recipients or len(payload.recipients) == 0:
             raise HTTPException(status_code=400, detail="At least one recipient is required.")
         
-        content = f"<h3>{payload.title}</h3><p>{payload.description}</p>"
+        content = f"<h3>{payload.title or ''}</h3><p>{payload.description or ''}</p>"
 
         ticket_ids = []
         for recipient in payload.recipients:
             user = db.query(AuthUser).filter(AuthUser.email == recipient).first()
-            
-            soup = BeautifulSoup(payload.html_content, "html.parser")
+            soup = BeautifulSoup(payload.html_content or '', "html.parser")
             plain_text = soup.get_text(separator="\n", strip=True)
 
   
@@ -49,6 +48,7 @@ def send_post_to_users(
                 f"--- User Details Extracted ---\n"
                 f"{plain_text}"
             )   
+            print("saving support ticket in DB")
             db_ticket = SupportTicket(
                 subject=payload.title,
                 message=combined_message, 
@@ -64,11 +64,12 @@ def send_post_to_users(
             db.refresh(db_ticket)
             ticket_ids.append(db_ticket.id)
 
+
         # queue background task for email sending
         background_tasks.add_task(
             send_emails_in_batches,
-            payload.title,
-            content,
+            payload.title or '',
+            content or '',
             payload.recipients
         )
 
