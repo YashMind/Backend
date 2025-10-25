@@ -1443,7 +1443,7 @@ async def create_chatbot_docs(
         user_credit = db.query(UserCredits).filter(UserCredits.user_id == data.user_id).first()
         current_links_count = db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.user_id == data.user_id, ChatBotsDocLinks.status != 'failed').filter(ChatBotsDocLinks.id != data.id).count()
         available_links_quota = user_credit.webpages_allowed - current_links_count
-        check_available_char_limit(user_id=user_id,db=db,new_chars=500)
+        await check_available_char_limit(user_id=user_id,db=db,new_chars=500)
 
         if available_links_quota <= 0:
             raise HTTPException(status_code=403,detail=f"Webpages limit Exceed. Upgrade your plan to continue")
