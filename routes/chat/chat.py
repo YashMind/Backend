@@ -1440,12 +1440,21 @@ async def create_chatbot_docs(
         new_chatbot_doc_links.user_id = user_id
 
         exsiting = None
+        user_credit = db.query(UserCredits).filter(UserCredits.user_id == data.user_id).first()
+        current_links_count = db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.user_id == data.user_id, ChatBotsDocLinks.status != 'failed').filter(ChatBotsDocLinks.id != data.id).count()
+        available_links_quota = user_credit.webpages_allowed - current_links_count
+        check_available_char_limit(user_id=user_id,db=db,new_chars=500)
+
+        if available_links_quota <= 0:
+            raise HTTPException(status_code=403,detail=f"Webpages limit Exceed. Upgrade your plan to continue")
+
         if data.target_link:
             exsiting = (
                 db.query(ChatBotsDocLinks)
                 .filter(
                     ChatBotsDocLinks.bot_id == int(data.bot_id),
                     ChatBotsDocLinks.target_link == data.target_link,
+                    ChatBotsDocLinks.status != 'failed'
                 )
                 .first()
             )
@@ -1455,6 +1464,7 @@ async def create_chatbot_docs(
                 .filter(
                     ChatBotsDocLinks.bot_id == int(data.bot_id),
                     ChatBotsDocLinks.document_link == data.document_link,
+                    ChatBotsDocLinks.status != 'failed'
                 )
                 .first()
             )
@@ -1803,6 +1813,11 @@ async def get_bot_doc_links(
             "allowed_total_chars": (
                 user_credit.chars_allowed
                 if user_credit and user_credit.chars_allowed
+                else 0
+            ),
+            "allowed_total_webpages": (
+                user_credit.webpages_allowed
+                if user_credit and user_credit.webpages_allowed
                 else 0
             ),
         }

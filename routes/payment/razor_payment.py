@@ -180,7 +180,6 @@ async def create_razorpay_order(
     # Convert amount to paise (smallest currency unit) for INR
     # Razorpay expects amount in paise for INR and cents for USD
     razorpay_amount = int(amount * 100)
-    print("this part is also working")
     # Generate unique receipt/order ID
     receipt_id = generate_order_id()
 
@@ -203,9 +202,6 @@ async def create_razorpay_order(
     print("Creating Razorpay order with payload:", json.dumps(payload, indent=2))
 
     headers = generate_razorpay_headers()
-    print(headers)
-    print("RAZORPAY_KEY_ID:", RAZORPAY_KEY_ID)
-    print("RAZORPAY_KEY_SECRET:", RAZORPAY_KEY_SECRET)
 
     try:
         response = requests.post(url, json=payload, headers=headers)

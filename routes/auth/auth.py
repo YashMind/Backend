@@ -363,6 +363,10 @@ async def getme(request: Request, response: Response, db: Session = Depends(get_
         del user.googleId
         del user.password
 
+        user_credit = db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
+        if not user_credit or user_credit.expiry_date < datetime.now():
+            return {"user": user, "status": 402, "detail":"Plan Expired. Upgrade your plan to continue"}
+
         return {"user": user, "status": 200}
 
     except HTTPException as http_exc:
