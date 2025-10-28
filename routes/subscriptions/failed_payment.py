@@ -11,7 +11,7 @@ import json
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException, status
 from config import get_db
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -131,6 +131,25 @@ def handle_failed_payment(transaction_id: int, raw_data, db: Session, order_id: 
                     </div>
                 </body>
                 </html>"""
+    
+    
+    ticket_message = f"""
+        ⚠️ Payment Transaction Failed
+
+        Subject: {transaction.order_id}: Payment failed (Transaction ID: {transaction.provider_transaction_id})
+
+        User Details:
+        - Name: {user.fullName}
+        - Email: {user.email}
+
+        Order Details:
+        - Order ID: {transaction.order_id}
+        - Transaction ID (Provider): {transaction.provider_transaction_id}
+        - Payment ID (Provider): {transaction.provider_payment_id}
+        - Payment Method: {transaction.payment_method}
+
+        This is an automated system note. Please investigate this failed transaction.
+        """
     exsiting_support_ticket = (
         db.query(SupportTicket)
         .filter(
@@ -145,7 +164,7 @@ def handle_failed_payment(transaction_id: int, raw_data, db: Session, order_id: 
     support_ticket = SupportTicket(
         user_id=user.id,
         subject=subject,
-        message=message,
+        message=ticket_message,
     )
     db.add(support_ticket)
     db.flush()
@@ -164,16 +183,19 @@ def handle_failed_payment(transaction_id: int, raw_data, db: Session, order_id: 
     # ✅ Fetch current settings
     settings = db.query(Settings).first()
 
-    # ✅ Determine who should receive the email
-    admin_email = None
-    if settings and settings.push_notification_admin_email:
-        admin_email = settings.push_notification_admin_email
-
     recipients = [user.email]
 
-    # ✅ Only add admin if toggle is ON
-    if settings and settings.toggle_push_notifications and admin_email:
-        recipients.append(admin_email)
+    # ✅ Add all admin emails if toggle is ON and emails exist
+    if settings and settings.toggle_push_notifications:
+        admin_emails = (
+            settings.push_notification_admin_emails
+            if settings.push_notification_admin_emails
+            else []
+        )
+        # Ensure only valid, non-empty emails are used
+        admin_emails = [e.strip() for e in admin_emails if e and e.strip()]
+        if admin_emails:
+            recipients.extend(admin_emails)
 
     # ✅ Send email
     send_email(
@@ -193,7 +215,9 @@ def handle_failed_payment(transaction_id: int, raw_data, db: Session, order_id: 
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
-# Get current settings
+# -----------------------------
+# get settings
+# -----------------------------
 @router.get("/", response_model=SettingsRead)
 def get_settings(db: Session = Depends(get_db)):
     settings = db.query(Settings).first()
@@ -201,33 +225,159 @@ def get_settings(db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Settings not found")
     return settings
 
-# Create or update settings
+# -----------------------------
+# Add new settings
+# -----------------------------
 @router.post("/", response_model=SettingsRead)
 def upsert_settings(data: SettingsCreate, db: Session = Depends(get_db)):
     settings = db.query(Settings).first()
+
     if not settings:
         settings = Settings(**data.dict())
         db.add(settings)
     else:
-        settings.push_notification_admin_email = data.push_notification_admin_email
-        settings.toggle_push_notifications = data.toggle_push_notifications
+        for field, value in data.dict().items():
+            setattr(settings, field, value)
+
     db.commit()
     db.refresh(settings)
     return settings
 
-# Optional: PATCH endpoint for partial update
+# -----------------------------
+# Update settings
+# -----------------------------
 @router.patch("/", response_model=SettingsRead)
 def update_settings(data: SettingsUpdate, db: Session = Depends(get_db)):
     settings = db.query(Settings).first()
     if not settings:
         raise HTTPException(status_code=404, detail="Settings not found")
-    
-    if data.push_notification_admin_email is not None:
-        settings.push_notification_admin_email = data.push_notification_admin_email
-    
-    if data.toggle_push_notifications is not None:
-        settings.toggle_push_notifications = data.toggle_push_notifications
-    
+
+    update_data = data.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(settings, field, value)
+
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+# -----------------------------
+# Add an email
+# -----------------------------
+@router.post("/add-email", response_model=SettingsRead)
+def add_email(email: EmailStr, db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    if not settings:
+        raise HTTPException(status_code=404, detail="Settings not found")
+
+    # Initialize list if None
+    if not settings.push_notification_admin_emails:
+        settings.push_notification_admin_emails = []
+
+    normalized_email = email.strip().lower()
+    existing_emails = [e.lower() for e in settings.push_notification_admin_emails]
+
+    if normalized_email in existing_emails:
+        raise HTTPException(status_code=400, detail="Email already exists")
+
+    # ✅ Reassign JSON field (so SQLAlchemy tracks change)
+    updated_emails = settings.push_notification_admin_emails.copy()
+    updated_emails.append(normalized_email)
+    settings.push_notification_admin_emails = updated_emails
+
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+
+# -----------------------------
+# Remove an email
+# -----------------------------
+@router.delete("/remove-email", response_model=SettingsRead)
+def remove_email(email: EmailStr, db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    if not settings:
+        raise HTTPException(status_code=404, detail="Settings not found")
+
+    if not settings.push_notification_admin_emails:
+        raise HTTPException(status_code=400, detail="No admin emails found")
+
+    normalized_email = email.strip().lower()
+    existing_emails = [e.lower() for e in settings.push_notification_admin_emails]
+
+    if normalized_email not in existing_emails:
+        raise HTTPException(status_code=400, detail="Email not found")
+
+    # ✅ Remove by index to preserve original case if needed
+    index = existing_emails.index(normalized_email)
+    updated_emails = settings.push_notification_admin_emails.copy()
+    updated_emails.pop(index)
+    settings.push_notification_admin_emails = updated_emails
+
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+
+# -----------------------------
+# Edit an existing email
+# -----------------------------
+@router.put("/edit-email", response_model=SettingsRead)
+def edit_email(old_email: EmailStr, new_email: EmailStr, db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    if not settings:
+        raise HTTPException(status_code=404, detail="Settings not found")
+
+    if not settings.push_notification_admin_emails:
+        raise HTTPException(status_code=400, detail="No admin emails found")
+
+    normalized_old = old_email.strip().lower()
+    normalized_new = new_email.strip().lower()
+    existing_emails = [e.lower() for e in settings.push_notification_admin_emails]
+
+    if normalized_old not in existing_emails:
+        raise HTTPException(status_code=400, detail="Old email not found")
+
+    if normalized_new in existing_emails:
+        raise HTTPException(status_code=400, detail="New email already exists")
+
+    # ✅ Replace old with new (case-insensitive)
+    index = existing_emails.index(normalized_old)
+    updated_emails = settings.push_notification_admin_emails.copy()
+    updated_emails[index] = normalized_new
+    settings.push_notification_admin_emails = updated_emails
+
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+# -----------------------------
+# Toggle push notifications
+# -----------------------------
+@router.patch("/toggle", response_model=SettingsRead)
+def toggle_push_notifications(db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    if not settings:
+        raise HTTPException(status_code=404, detail="Settings not found")
+
+    # ✅ Ensure toggle ON only if emails exist
+    if not settings.push_notification_admin_emails or len(settings.push_notification_admin_emails) == 0:
+        if settings.toggle_push_notifications:  # if already ON, allow turning OFF
+            settings.toggle_push_notifications = False
+            db.commit()
+            db.refresh(settings)
+            return settings
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot enable push notifications — no admin emails configured",
+            )
+
+    # ✅ Otherwise, toggle normally
+    settings.toggle_push_notifications = not settings.toggle_push_notifications
     db.commit()
     db.refresh(settings)
     return settings

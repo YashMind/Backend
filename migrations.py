@@ -506,7 +506,6 @@ def add_column_message_per_unit_history_user_credits(db: Session):
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
 
-
 def add_columns_for_messages_tracking_token_usage(db: Session):
     try:
         ensure_tables_exist(db)
@@ -549,7 +548,6 @@ def add_columns_for_messages_tracking_token_usage(db: Session):
         db.rollback()
         print(f"❌ Unexpected error during migration: {str(e)}")
         raise
-
 
 def create_settings_table(db: Session):
     try:
@@ -646,10 +644,6 @@ def create_settings_table(db: Session):
     #     db.rollback()
     #     raise
 
-
-from sqlalchemy import text
-
-
 def remove_foreign_key_from_user_credits(db):
     try:
         print(
@@ -684,7 +678,6 @@ def remove_foreign_key_from_user_credits(db):
         db.rollback()
         raise
 
-
 def update_all_users_status_to_active(db):
     try:
         query = text('''
@@ -715,6 +708,43 @@ def update_all_users_role_to_user(db):
         db.rollback()
         raise
 
+
+def migrate_push_notification_email_field(db):
+    try:
+        # 1. Check if old column exists
+        result = db.execute(text("SHOW COLUMNS FROM settings;")).fetchall()
+        column_names = [col[0] for col in result]
+
+        if "push_notification_admin_emails" not in column_names:
+            print("🆕 Adding new JSON column 'push_notification_admin_emails'...")
+            db.execute(text("ALTER TABLE settings ADD COLUMN push_notification_admin_emails JSON NULL;"))
+
+        if "push_notification_admin_email" in column_names:
+            print("📦 Migrating data from old column...")
+            db.execute(text("""
+                UPDATE settings
+                SET push_notification_admin_emails = 
+                    CASE 
+                        WHEN push_notification_admin_email IS NOT NULL 
+                             AND TRIM(push_notification_admin_email) <> ''
+                        THEN JSON_ARRAY(push_notification_admin_email)
+                        ELSE JSON_ARRAY()
+                    END;
+            """))
+
+            print("🧹 Dropping old column 'push_notification_admin_email'...")
+            db.execute(text("ALTER TABLE settings DROP COLUMN push_notification_admin_email;"))
+        else:
+            print("ℹ️ Old column not found; skipping data migration.")
+
+        db.commit()
+        print("✅ Migration completed successfully.")
+
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Migration failed: {str(e)}")
+        raise
+
 def main():
     db = SessionLocal()
     try:
@@ -737,8 +767,9 @@ def main():
         # add_column_message_per_unit_history_user_credits(db)
         # add_columns_for_messages_tracking_token_usage(db)
         # remove_foreign_key_from_user_credits(db)
-        update_all_users_status_to_active(db)
-        update_all_users_role_to_user(db)
+        # update_all_users_status_to_active(db)
+        # update_all_users_role_to_user(db)
+        migrate_push_notification_email_field(db)
 
         print("🎉 All migrations completed successfully!")
 
