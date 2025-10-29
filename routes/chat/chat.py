@@ -37,6 +37,7 @@ from utils.utils import (
     get_recent_chat_history,
     validate_response,
     handle_invalid_response,
+    verify_chatbot_ownership,
 )
 from uuid import uuid4
 from sqlalchemy import or_, desc, asc
@@ -1283,9 +1284,16 @@ async def create_chatbot_faqs(
             question = qa.question.strip() if qa.question else ""
             answer = qa.answer.strip() if qa.answer else ""
             new_chars += len(question) + len(answer)
+        
+        if not data.bot_id:
+            raise HTTPException(    status_code=400, detail="Chatbot id is required")
+        
+        bot = db.query(ChatBots).filter(ChatBots.id == data.bot_id).first()
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
 
         # Check if adding these chars will exceed the limit
-        await check_available_char_limit(user_id=user_id, db=db, new_chars=new_chars)
+        await check_available_char_limit(user_id=bot.user_id, db=db, new_chars=new_chars)
 
         # If within limit, proceed to save
         for qa in data.questions:
@@ -2221,15 +2229,24 @@ async def delete_doc_links(
         token = request.cookies.get("access_token")
         payload = decode_access_token(token)
         user_id = int(payload.get("user_id"))
-
+        
+        verified =await verify_chatbot_ownership(user_id=user_id, bot_id=bot_id,db=db)
+        if not verified:
+            raise HTTPException(status_code=402, detail="User not have authorization for this bot")
         for lead_id in request_data.lead_ids:
-            doc = (
-                db.query(ChatBotLeadsModel)
-                .filter_by(id=lead_id, user_id=user_id, bot_id=bot_id)
-                .first()
+
+            
+            lead = (
+                    db.query(ChatBotLeadsModel)
+                    .filter(
+                        ChatBotLeadsModel.id == lead_id,
+                        ChatBotLeadsModel.bot_id == bot_id
+                    )
+                    .first()
             )
-            if doc:
-                db.delete(doc)
+            if lead:
+                db.delete(lead)
+                
         db.commit()
         return {"message": "Chatbot leads deleted successfully"}
     except HTTPException as http_exc:

@@ -14,7 +14,7 @@ class User(BaseModel):
     tokenUsed: Optional[int] = None
     last_active: Optional[datetime] = None
     role_permissions: Optional[List[str]] = None
-    base_rate_per_token: Optional[float] = None
+    base_rate_per_message: Optional[float] = None
     messageUsed: Optional[int] = None
     
 class SignInUser(BaseModel):

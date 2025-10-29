@@ -253,8 +253,6 @@ def generate_response(
     # Convert context to list if it's a tuple
     context = list(context) if isinstance(context, tuple) else context
 
-    print("Context", context)
-
     if not use_openai:
         # Simple concatenation of best matches with improved formatting
         if not context:

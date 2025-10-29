@@ -78,7 +78,7 @@ async def update_base_rate(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.base_rate_per_token = data.base_rate_per_token
+    user.base_rate_per_message = data.base_rate_per_message
     db.commit()
     db.refresh(user)
 
@@ -88,7 +88,7 @@ async def update_base_rate(
         "data": {
             "id": user.id,
             "email": user.email,
-            "base_rate_per_token": str(user.base_rate_per_token),
+            "base_rate_per_message": str(user.base_rate_per_message),
         },
     }
 
@@ -386,6 +386,7 @@ async def create_subscription_plans(
             existing_plan.webpages_allowed = data.webpages_allowed
             existing_plan.team_strength = data.team_strength
             existing_plan.message_per_unit = data.message_per_unit
+            existing_plan.is_enterprise = data.is_enterprise
 
             db.commit()
             db.refresh(existing_plan)
@@ -405,6 +406,7 @@ async def create_subscription_plans(
                 webpages_allowed=data.webpages_allowed,
                 team_strength=data.team_strength,
                 message_per_unit=data.message_per_unit,
+                is_enterprise = data.is_enterprise
             )
             db.add(new_plan)
             db.commit()
@@ -465,6 +467,7 @@ async def get_all_subscription_plans_admin(
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at,
                 "message_per_unit": plan.message_per_unit,
+                "is_enterprise": plan.is_enterprise,
             }
             for plan in plans
         ]
@@ -526,6 +529,7 @@ async def get_all_subscription_plans_public(
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at,
                 "message_per_unit": plan.message_per_unit,
+                      "is_enterprise": plan.is_enterprise,
             }
             formatted_plans.append(formatted_plan)
 

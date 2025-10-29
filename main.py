@@ -18,13 +18,13 @@ from routes.admin.tools import router as tool_router
 from routes.admin.volumndiscount import router as volumn_router
 from config import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
-from routes.admin.apikeys import router as apikeys_router
 from routes.payment.cashfree_service import router as cashfree_router
 from routes.payment.paypal_payment import router as paypal_router
 from routes.payment.razor_payment import router as razor_router
 from routes.subscriptions.webhooks import router as subscription_router
 from routes.admin.tokensAndCredits import router as token_credits_router
-from routes.subscriptions.failed_payment import router as faile_payment
+from routes.subscriptions.failed_payment import router as failed_payment
+from routes.admin.enterprise import router as enterprise_users
 app = FastAPI()
 # init_orm_db()
 
@@ -71,13 +71,13 @@ app.include_router(product_router, prefix="/api/admin")
 app.include_router(tool_router, prefix="/api/admin")
 app.include_router(admin_support_router, prefix="/api/admin")  
 app.include_router(volumn_router, prefix="/api/admin")
-app.include_router(apikeys_router, prefix="/api/admin")
 app.include_router(cashfree_router, prefix="/api/payment/cashfree")
 app.include_router(paypal_router, prefix="/api/payment/paypal")
 app.include_router(razor_router,prefix="/api/payment/razorpay")
 app.include_router(token_credits_router, prefix="/api/admin")
 app.include_router(subscription_router, prefix="/api/webhook/payments")
-app.include_router(faile_payment,prefix="/api/admin")
+app.include_router(failed_payment,prefix="/api/admin")
+app.include_router(enterprise_users ,prefix='/api/admin')
 if __name__ == "__main__":
     import uvicorn
 

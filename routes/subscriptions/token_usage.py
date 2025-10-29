@@ -1,6 +1,7 @@
 from sqlalchemy.exc import SQLAlchemyError
 from typing import Tuple, Union
 from sqlalchemy.orm import Session
+from models.adminModel.adminModel import SubscriptionPlans
 from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBots
 from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
@@ -609,16 +610,24 @@ def update_token_usage_on_consumption(
             {AuthUser.tokenUsed: total_token_consumption, AuthUser.messageUsed: total_message_consumption}
         )
         print(f"Updated AuthUser.tokenUsed and AuthUsed.messageUsed for user_id={bot_token_usage.user_id}")
-
         credits_consumed = (total_token_consumption // credit.token_per_unit) + (
             1 if total_token_consumption % credit.token_per_unit > 0 else 0
         )
 
         print(f"Total token consumption: {total_message_consumption}")
 
-        credits_consumed_messages = (total_message_consumption // credit.message_per_unit) + (
+        # check user plan here if plan is enterprise, then use entity base_rate_per_message from user table not message_per_unit from user credit
+        
+        user = db.query(AuthUser).filter(AuthUser.id == bot_token_usage.user_id).first()
+        user_plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id == user.plan).filter(SubscriptionPlans.is_enterprise == True).first()
+        if user_plan and user.base_rate_per_message:
+            credits_consumed_messages = (total_message_consumption // user.base_rate_per_message) + (
             1 if total_message_consumption % credit.message_per_unit > 0 else 0
-        )
+            )
+        else:
+            credits_consumed_messages = (total_message_consumption // credit.message_per_unit) + (
+                1 if total_message_consumption % credit.message_per_unit > 0 else 0
+            )
         balance_credits = credit.credits_purchased - credits_consumed
         balance_credits_messages = credit.credits_purchased - credits_consumed_messages
 

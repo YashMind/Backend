@@ -361,7 +361,7 @@ def edit_email(old_email: EmailStr, new_email: EmailStr, db: Session = Depends(g
 def toggle_push_notifications(db: Session = Depends(get_db)):
     settings = db.query(Settings).first()
     if not settings:
-        raise HTTPException(status_code=404, detail="Settings not found")
+        raise HTTPException(status_code=404, detail="Add an email first. to activiate notifications")
 
     # ✅ Ensure toggle ON only if emails exist
     if not settings.push_notification_admin_emails or len(settings.push_notification_admin_emails) == 0:

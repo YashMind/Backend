@@ -9,6 +9,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from config import get_db
 from models.adminModel.toolsModal import ToolsUsed
+from models.chatModel.sharing import ChatBotSharing
 from models.chatModel.tuning import DBInstructionPrompt
 from routes.chat.pinecone import (
     generate_response,
@@ -577,3 +578,27 @@ def handle_invalid_response(question, user_id, bot_id, db, response=None, reason
         print(f"Error saving to FAQ database: {e}")
         return None
 
+
+async def verify_chatbot_ownership(user_id:int, bot_id:int, db:Session = Depends(get_db)):
+    try:
+        bot = db.query(ChatBots).filter(ChatBots.id==bot_id).first()
+        if not bot:
+            raise HTTPException(status_code=404, detail="bot not found")
+        
+        user = db.query(AuthUser).filter(AuthUser.id ==user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="bot not found")
+        
+        if bot.user_id != user.id:
+            # check sharing bots
+            shared_bot= db.query(ChatBotSharing).filter(ChatBotSharing.shared_user_id==user.id).filter(ChatBotSharing.bot_id == bot_id).first()
+            if shared_bot:
+                return True, user, bot
+            
+        else:  
+            return True , user, bot
+        
+        return False, user, bot
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=e )

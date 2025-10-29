@@ -25,6 +25,7 @@ class PlansSchema(BaseModel):
     features: Optional[str] = None
     users_active: Optional[int] = None
     message_per_unit: Optional[int] = False
+    is_enterprise: Optional[bool]= False
 
 
 class TokenBotsSchema(BaseModel):

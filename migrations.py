@@ -744,6 +744,55 @@ def migrate_push_notification_email_field(db):
         db.rollback()
         print(f"❌ Migration failed: {str(e)}")
         raise
+    
+
+def migrate_add_is_enterprise_field(db):
+    """
+    Adds a new boolean column 'is_enterprise' to the 'subscription_plans' table if it does not exist.
+    """
+    try:
+        # 1. Check existing columns
+        result = db.execute(text("SHOW COLUMNS FROM subscription_plans;")).fetchall()
+        column_names = [col[0] for col in result]
+
+        if "is_enterprise" not in column_names:
+            print("🆕 Adding new column 'is_enterprise' to subscription_plans...")
+            db.execute(text("ALTER TABLE subscription_plans ADD COLUMN is_enterprise BOOLEAN DEFAULT FALSE;"))
+            db.commit()
+            print("✅ Column 'is_enterprise' added successfully.")
+        else:
+            print("ℹ️ Column 'is_enterprise' already exists. No action taken.")
+
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Migration failed: {str(e)}")
+        raise
+
+def migrate_rename_base_rate_column(db):
+    """
+    Renames column 'base_rate_per_token' to 'base_rate_per_message' in the 'users' table if it exists.
+    """
+    try:
+        # 1. Check existing columns
+        result = db.execute(text("SHOW COLUMNS FROM users;")).fetchall()
+        column_names = [col[0] for col in result]
+
+        # 2. Perform rename if applicable
+        if "base_rate_per_token" in column_names and "base_rate_per_message" not in column_names:
+            print("🆕 Renaming column 'base_rate_per_token' to 'base_rate_per_message' in 'users' table...")
+            db.execute(text("ALTER TABLE users CHANGE base_rate_per_token base_rate_per_message FLOAT DEFAULT 0.0;"))
+            db.commit()
+            print("✅ Column renamed successfully.")
+        elif "base_rate_per_message" in column_names:
+            print("ℹ️ Column 'base_rate_per_message' already exists. No action taken.")
+        else:
+            print("⚠️ Column 'base_rate_per_token' not found in 'users' table. No action taken.")
+
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Migration failed: {str(e)}")
+        raise
+
 
 def main():
     db = SessionLocal()
@@ -769,7 +818,9 @@ def main():
         # remove_foreign_key_from_user_credits(db)
         # update_all_users_status_to_active(db)
         # update_all_users_role_to_user(db)
-        migrate_push_notification_email_field(db)
+        # migrate_push_notification_email_field(db)
+        migrate_add_is_enterprise_field(db)
+        migrate_rename_base_rate_column(db)
 
         print("🎉 All migrations completed successfully!")
 

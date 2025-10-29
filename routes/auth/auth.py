@@ -109,8 +109,8 @@ async def signup(user: User, db: Session = Depends(get_db)):
         role = user.role if user.role else "user"
         status = user.status if user.status else "Active"
         role_permissions = user.role_permissions if user.role_permissions else None
-        base_rate_per_token = (
-            user.base_rate_per_token if user.base_rate_per_token else None
+        base_rate_per_message = (
+            user.base_rate_per_message if user.base_rate_per_message else None
         )
         if not fullName or not email or not password:
             raise HTTPException(
@@ -128,7 +128,7 @@ async def signup(user: User, db: Session = Depends(get_db)):
             role=role,
             status=status,
             role_permissions=role_permissions,
-            base_rate_per_token=base_rate_per_token,
+            base_rate_per_message=base_rate_per_message,
             messageUsed=0,
         )
         db.add(new_user)
@@ -171,9 +171,10 @@ async def signin(
         if not db_user.fullName or not db_user.role:
             raise HTTPException(status_code=400, detail="Incomplete user data")
 
-        if not db_user.status == "Suspend":
+
+        if db_user.status == "Suspend":
             raise HTTPException(
-                status_code=400, detail="User account has been suspended"
+                status_code=400, detail="Account has been suspended"
             )
 
         access_token = create_access_token(
@@ -364,8 +365,26 @@ async def getme(request: Request, response: Response, db: Session = Depends(get_
         del user.password
 
         user_credit = db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
-        if not user_credit or user_credit.expiry_date < datetime.now():
-            return {"user": user, "status": 402, "detail":"Plan Expired. Upgrade your plan to continue"}
+        if not user_credit:
+            # check for shared chatbots
+            shared_bots = db.query(ChatBotSharing).filter(ChatBotSharing.shared_user_id==user_id, ChatBotSharing.status == 'active').all()
+            if len(shared_bots)>0:
+                return {"user": user, "status": 200}
+            # No active subscription found
+            return {
+                "user": user,
+                "status": 404,  # NOT FOUND
+                "detail": "No plan found. Kindly subscribe to a plan to continue."
+            }
+
+        if user_credit.expiry_date < datetime.now():
+            # Subscription exists but is expired
+            return {
+                "user": user,
+                "status": 410,  # GONE
+                "detail": "Plan expired. Upgrade your plan to continue."
+            }
+
 
         return {"user": user, "status": 200}
 
