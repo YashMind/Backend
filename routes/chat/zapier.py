@@ -282,7 +282,7 @@ async def handle_zapier_message(
         )
 
     # Get bot response (reusing your core logic)
-    response = get_response_from_chatbot(
+    response = await get_response_from_chatbot(
         data={
             "message": body.message,
             "bot_id": integration.bot_id,

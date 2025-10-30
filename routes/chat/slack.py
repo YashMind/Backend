@@ -264,7 +264,7 @@ async def handle_slack_message(event, installation, db):
 
     # Get chatbot response
     try:
-        response = get_response_from_chatbot(
+        response = await get_response_from_chatbot(
             data={
                 "message": text,
                 "bot_id": installation.bot_id,
@@ -315,7 +315,7 @@ async def slack_commands(request: Request, db: Session = Depends(get_db)):
 
     if command == "/ask":
         try:
-            response = get_response_from_chatbot(
+            response = await get_response_from_chatbot(
                 data={
                     "message": text,
                     "bot_id": installation.bot_id,

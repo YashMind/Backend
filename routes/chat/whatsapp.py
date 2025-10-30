@@ -286,7 +286,7 @@ async def handle_incoming_message(request: Request, db: Session = Depends(get_db
 
         try:
             # Get bot response
-            response_text = get_response_from_chatbot(
+            response_text = await get_response_from_chatbot(
                 data={
                     "message": message_body,
                     "bot_id": user.bot_id,

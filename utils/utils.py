@@ -86,7 +86,7 @@ async def get_response_from_chatbot(data, platform, db: Session):
             # raise HTTPException(
             #     status_code=400, detail=f"Token limit exceeded: {message}"
             # )
-            return "Sorry can't reply you at the moment, Token Limit exceeded"
+            return "Sorry can't reply you at the moment, Message Limit exceeded"
 
         chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
         if not chatbot:
