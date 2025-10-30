@@ -250,7 +250,6 @@ def generate_response(
     text_content,
     active_tool,
 ) -> Tuple[str, int]:
-    
     print("IN: generate_response")
     # Convert context to list if it's a tuple
     context = list(context) if isinstance(context, tuple) else context
