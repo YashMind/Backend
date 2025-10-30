@@ -164,16 +164,19 @@ async def get_response_from_chatbot(data, platform, db: Session):
                 # Full OpenAI fallback
                 use_openai = True
                 print("CALLING: generate_response")
-                generated_res = generate_response(
-                    user_msg,
-                    [],
-                    use_openai,
-                    dict_ins_prompt,
-                    creativity,
-                    text_content,
-                    active_tool=active_tool,
-                    message_history=message_history,
-                )
+                try:
+                    generated_res = generate_response(
+                        user_msg,
+                        [],
+                        use_openai,
+                        dict_ins_prompt,
+                        creativity,
+                        text_content,
+                        active_tool=active_tool,
+                        message_history=message_history,
+                    )
+                except Exception as e:
+                    print(f"some exception in generate response occur:{e}")
                 answer = generated_res[0]
                 
                 print(f"Answer from generate_response: {answer}")
