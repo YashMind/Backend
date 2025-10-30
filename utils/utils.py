@@ -209,6 +209,8 @@ async def get_response_from_chatbot(data, platform, db: Session):
                 response_token=openai_response_tokens,
                 open_ai_request_token=openai_request_tokens,
                 open_ai_response_token=openai_response_tokens,
+                request_message=1,
+                response_message=1,
             )
             update_token_usage_on_consumption(
                 consumed_token=consumed_token,
