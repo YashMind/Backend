@@ -142,15 +142,15 @@ async def get_response_from_chatbot(data, platform, db: Session):
                 print("using openai with context")
                 use_openai = True
                 generated_res = generate_response(
-                    user_msg,
-                    context_texts[:3],
-                    use_openai,
-                    dict_ins_prompt,
-                    creativity,
-                    text_content,
-                    active_tool=active_tool,
-                    message_history=message_history,
-                )
+                        query=user_msg,
+                        context=context_texts[:3],
+                        use_openai=use_openai,
+                        instruction_prompts=dict_ins_prompt,
+                        creativity=creativity,
+                        text_content=text_content,
+                        active_tool=active_tool,
+                        message_history=message_history,
+                    )
                 answer = generated_res[0]
                 openai_request_tokens = generated_res[1]
                 openai_response_tokens = generated_res[2]
