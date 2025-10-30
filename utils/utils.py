@@ -166,12 +166,12 @@ async def get_response_from_chatbot(data, platform, db: Session):
                 print("CALLING: generate_response")
                 try:
                     generated_res = generate_response(
-                        user_msg,
-                        [],
-                        use_openai,
-                        dict_ins_prompt,
-                        creativity,
-                        text_content,
+                        query=user_msg,
+                        context=[],
+                        use_openai=use_openai,
+                        instruction_prompts=dict_ins_prompt,
+                        creativity=creativity,
+                        text_content=text_content,
                         active_tool=active_tool,
                         message_history=message_history,
                     )
