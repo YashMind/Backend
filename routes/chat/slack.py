@@ -325,9 +325,21 @@ async def slack_commands(request: Request, db: Session = Depends(get_db)):
                 db=db,
             )
 
-            await asyncio.to_thread(
-                client.chat_postMessage, channel=channel_id, text=response
-            )
+            try:
+                # Try to send message directly
+                await asyncio.to_thread(client.chat_postMessage, channel=channel_id, text=response)
+            except SlackApiError as e:
+                error = e.response.get("error")
+                if error == "not_in_channel":
+                    # Ask user to invite the bot instead of trying to join
+                    await asyncio.to_thread(
+                        client.chat_postEphemeral,
+                        channel=channel_id,
+                        user=user_id,
+                        text="👋 Please invite me to this channel using `/invite @yashraa test` first!"
+                    )
+                else:
+                    raise
         except Exception as e:
             logger.error(f"Error handling Slack command: {str(e)}")
 

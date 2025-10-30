@@ -135,7 +135,7 @@ async def get_response_from_chatbot(data, platform, db: Session):
             print("Hybrid retrieval results: ", context_texts, scores)
             # Determine answer source
 
-            if any(score > 0.6 for score in scores):
+            if any(score > 0 for score in scores):
                 print("using openai with context")
                 use_openai = True
                 generated_res = generate_response(
