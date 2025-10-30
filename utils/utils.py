@@ -71,6 +71,7 @@ def get_recent_chat_history(db: Session, chat_id: str):
 
 
 async def get_response_from_chatbot(data, platform, db: Session):
+    print(f"IN: get_response_from_chatbot from {platform}")
     try:
         user_msg = data.get("message")
         bot_id = data.get("bot_id")
@@ -82,10 +83,12 @@ async def get_response_from_chatbot(data, platform, db: Session):
         token_limit_availabe, message = verify_token_limit_available(
             bot_id=bot_id, db=db
         )
+        print("Checking Message limit:",token_limit_availabe, message)
         if not token_limit_availabe:
             # raise HTTPException(
             #     status_code=400, detail=f"Token limit exceeded: {message}"
             # )
+            print("Message limit exceeded")
             return "Sorry can't reply you at the moment, Message Limit exceeded"
 
         chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
@@ -160,6 +163,7 @@ async def get_response_from_chatbot(data, platform, db: Session):
                 )
                 # Full OpenAI fallback
                 use_openai = True
+                print("CALLING: generate_response")
                 generated_res = generate_response(
                     user_msg,
                     [],
@@ -171,6 +175,8 @@ async def get_response_from_chatbot(data, platform, db: Session):
                     message_history=message_history,
                 )
                 answer = generated_res[0]
+                
+                print(f"Answer from generate_response: {answer}")
                 openai_request_tokens = generated_res[1]
                 openai_response_tokens = generated_res[2]
                 request_tokens = generated_res[3]

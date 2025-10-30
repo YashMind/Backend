@@ -250,12 +250,17 @@ def generate_response(
     text_content,
     active_tool,
 ) -> Tuple[str, int]:
+    
+    print("IN: generate_response")
     # Convert context to list if it's a tuple
     context = list(context) if isinstance(context, tuple) else context
+    print(f"IN: generate_response: context is: {context}")
 
     if not use_openai:
+        print("Not using Openai")
         # Simple concatenation of best matches with improved formatting
         if not context:
+            print("not openai not context")
             return "I couldn't find relevant information in my knowledge base."
         return "Here's what I found:\n" + "\n\n".join([f"- {text}" for text in context])
 

@@ -295,15 +295,18 @@ async def slack_commands(request: Request, db: Session = Depends(get_db)):
     if not team_id:
         return Response(status_code=400)
 
+    # Retrieve installation
     installation = (
         db.query(SlackInstallation).filter_by(team_id=team_id, is_active=True).first()
     )
     if not installation:
         return Response(status_code=404)
 
+    # Get decrypted access token
     access_token = decrypt_data(installation.access_token)
     client = WebClient(token=access_token)
 
+    # Handle command
     command = form_data.get("command")
     text = form_data.get("text")
     user_id = form_data.get("user_id")
@@ -313,6 +316,7 @@ async def slack_commands(request: Request, db: Session = Depends(get_db)):
     if command == "/ask":
         try:
             # Get chatbot response
+            print("Calling: get_response_from_chatbot")
             response_text = await get_response_from_chatbot(
                 data={
                     "message": text,
