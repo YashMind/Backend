@@ -26,6 +26,8 @@ from utils.encryption import decrypt_data, encrypt_data
 from utils.utils import decode_access_token, get_response_from_chatbot
 from decorators.product_status import check_product_status
 from pydantic import BaseModel
+import requests
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -290,32 +292,28 @@ async def slack_commands(request: Request, db: Session = Depends(get_db)):
     form_data = await request.form()
     team_id = form_data.get("team_id")
 
-    print(form_data)
-
     if not team_id:
         return Response(status_code=400)
 
-    # Retrieve installation
     installation = (
         db.query(SlackInstallation).filter_by(team_id=team_id, is_active=True).first()
     )
-
     if not installation:
         return Response(status_code=404)
 
-    # Get decrypted access token
     access_token = decrypt_data(installation.access_token)
     client = WebClient(token=access_token)
 
-    # Handle command
     command = form_data.get("command")
     text = form_data.get("text")
     user_id = form_data.get("user_id")
     channel_id = form_data.get("channel_id")
+    response_url = form_data.get("response_url")
 
     if command == "/ask":
         try:
-            response = await get_response_from_chatbot(
+            # Get chatbot response
+            response_text = await get_response_from_chatbot(
                 data={
                     "message": text,
                     "bot_id": installation.bot_id,
@@ -325,21 +323,32 @@ async def slack_commands(request: Request, db: Session = Depends(get_db)):
                 db=db,
             )
 
+            # --- Try sending via response_url first (works everywhere)
             try:
-                # Try to send message directly
-                await asyncio.to_thread(client.chat_postMessage, channel=channel_id, text=response)
+                requests.post(response_url, json={"text": response_text})
+                return Response(status_code=200)
+            except Exception as e:
+                logger.warning(f"Failed to post via response_url: {str(e)}")
+
+            # --- If in a DM, open conversation and post
+            if channel_id.startswith("D"):
+                dm = await asyncio.to_thread(client.conversations_open, users=[user_id])
+                dm_channel = dm["channel"]["id"]
+                await asyncio.to_thread(client.chat_postMessage, channel=dm_channel, text=response_text)
+                return Response(status_code=200)
+
+            # --- If in a channel, try posting normally
+            try:
+                await asyncio.to_thread(client.chat_postMessage, channel=channel_id, text=response_text)
             except SlackApiError as e:
-                error = e.response.get("error")
-                if error == "not_in_channel":
-                    # Ask user to invite the bot instead of trying to join
-                    await asyncio.to_thread(
-                        client.chat_postEphemeral,
-                        channel=channel_id,
-                        user=user_id,
-                        text="👋 Please invite me to this channel using `/invite @yashraa test` first!"
-                    )
+                if e.response["error"] == "not_in_channel":
+                    # fallback: use response_url to send ephemeral message
+                    requests.post(response_url, json={
+                        "text": "👋 Please invite me to this channel first using `/invite @yashraa test`."
+                    })
                 else:
                     raise
+
         except Exception as e:
             logger.error(f"Error handling Slack command: {str(e)}")
 
