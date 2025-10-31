@@ -18,7 +18,6 @@ from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBots
 from models.chatModel.sharing import ChatBotSharing
 from models.subscriptions.userCredits import UserCredits
-from routes.chat.chat import generate_invite_token
 from schemas.chatSchema.sharingSchema import AcceptInviteResponse, BulkEmailInviteRequest, InviteResponse, SharingResponse
 from utils.utils import decode_access_token
 
