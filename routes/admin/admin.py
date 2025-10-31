@@ -235,6 +235,7 @@ async def get_all_users(
         total_pages = (total_count + limit - 1) // limit
         results = query.offset((page - 1) * limit).limit(limit).all()
 
+
         # Format response data
         formatted_results = []
         for user, plan_name in results:
@@ -242,6 +243,7 @@ async def get_all_users(
             user_data = {
                 "id": user.id,
                 "fullName": user.fullName,
+                "picture": user.picture,
                 "email": user.email,
                 "status": user.status,
                 "created_at": user.created_at,
@@ -761,6 +763,7 @@ async def get_top_consumption_users(request: Request, db: Session = Depends(get_
                 "name": u.fullName,
                 "email": u.email,
                 "messageUsed": u.messageUsed,
+                "picture":u.picture,
                 "plan":{
                     "name": user.plan.name if user.plan else "Free",
                 }
@@ -883,7 +886,7 @@ async def get_bot_products(
 
 
 @router.get("/get-admin-users", response_model=List[User])
-async def get_top_consumption_users(request: Request, db: Session = Depends(get_db)):
+async def get_admin_users(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         if not token:

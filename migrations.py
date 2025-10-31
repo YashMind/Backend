@@ -791,7 +791,6 @@ def migrate_rename_base_rate_column(db):
     except Exception as e:
         db.rollback()
         print(f"❌ Migration failed: {str(e)}")
-        raise
 
 
 def main():
@@ -819,8 +818,8 @@ def main():
         # update_all_users_status_to_active(db)
         # update_all_users_role_to_user(db)
         # migrate_push_notification_email_field(db)
-        migrate_add_is_enterprise_field(db)
-        migrate_rename_base_rate_column(db)
+        # migrate_add_is_enterprise_field(db)
+        # migrate_rename_base_rate_column(db)
 
         print("🎉 All migrations completed successfully!")
 

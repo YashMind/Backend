@@ -16,6 +16,7 @@ class User(BaseModel):
     role_permissions: Optional[List[str]] = None
     base_rate_per_message: Optional[float] = None
     messageUsed: Optional[int] = None
+    picture: Optional[str] = None
     
 class SignInUser(BaseModel):
     email: EmailStr

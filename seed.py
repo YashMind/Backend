@@ -173,9 +173,22 @@ def seed_roles_and_permissions(db: Session):
                 "support-communication",
             ],
         },
-        {"role": "Billing Admin", "permissions": []},
-        {"role": "Product Admin", "permissions": []},
-        {"role": "Support Admin", "permissions": []},
+        {"role": "Billing Admin", 
+         "permissions": [
+            "overview", 
+            "billing-settings"
+            ]
+        },
+        {"role": "Product Admin", "permissions": [
+            "overview", 
+            "product-monitoring"
+            ]
+         },
+        {"role": "Support Admin", "permissions": [
+            "overview", 
+            "support-communication"
+            ]
+        },
     ]
 
     for role in default_roles:
@@ -192,9 +205,9 @@ def main():
     # seed_products(db)
     # seed_tools(db)
     # seed_volume_discounts(db)
-    # seed_roles_and_permissions(db)
+    seed_roles_and_permissions(db)
     # seed_payment_gateways(db)
-    seed_ai_tools_used(db=db)
+    # seed_ai_tools_used(db=db)
     db.commit()
     db.close()
     print("✅ All seeds applied successfully.")
