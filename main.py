@@ -6,6 +6,7 @@ from routes.chat.leads import router as leads_router
 from routes.chat.links import router as links_router
 from routes.chat.faqs import router as faqs_router
 from routes.chat.chatbots import router as chatbots_router
+from routes.chat.credits_and_plans import router as credits_and_plans_router
 from routes.chat.chat_history import router as chat_history_router
 from routes.chat.tuning import router as tuning_router
 from routes.chat.appearance import router as appearance_router
@@ -65,10 +66,11 @@ app.include_router(auth_router, prefix="/api/auth")
 app.include_router(chat_router, prefix="/api/chatbot")
 app.include_router(teams_router, prefix="/api/chatbot")
 app.include_router(leads_router, prefix="/api/chatbot")
-app.include_router(links_router, prefix="/api/tuning")
-app.include_router(faqs_router, prefix="/api/tuning")
-app.include_router(chatbots_router, prefix="/api/tuning")
-app.include_router(chat_history_router, prefix="/api/tuning")
+app.include_router(links_router, prefix="/api/chatbot")
+app.include_router(faqs_router, prefix="/api/chatbot")
+app.include_router(chatbots_router, prefix="/api/chatbot")
+app.include_router(chat_history_router, prefix="/api/chatbot")
+app.include_router(credits_and_plans_router, prefix="/api/user")
 app.include_router(tuning_router, prefix="/api/tuning")
 app.include_router(appearance_router, prefix="/api/appearance")
 app.include_router(admin_router, prefix="/api/admin")

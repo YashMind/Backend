@@ -65,6 +65,7 @@ from decorators.allow_roles import allow_roles
 
 router = APIRouter()
 
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -570,8 +571,55 @@ async def delete_subscription_plan(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/subscription-plans/{plan_id}")
+@check_permissions(["subscription-plans"])
+async def get_subscription_plan_by_id(plan_id: int, request: Request, db: Session = Depends(get_db)):
+    """Get a subscription plan by its ID (admin).
+
+    Returns detailed plan information or 404 if not found.
+    """
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        # validate token and permissions via decorator (payload used for logging if needed)
+        payload = decode_access_token(token)
+
+        plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id == plan_id).first()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Subscription plan not found")
+
+        data = {
+            "id": plan.id,
+            "name": plan.name,
+            "pricingInr": plan.pricingInr,
+            "pricingDollar": plan.pricingDollar,
+            "token_per_unit": plan.token_per_unit,
+            "chatbots_allowed": plan.chatbots_allowed,
+            "chars_allowed": plan.chars_allowed,
+            "webpages_allowed": plan.webpages_allowed,
+            "team_strength": plan.team_strength,
+            "duration_days": plan.duration_days,
+            "features": plan.features,
+            "users_active": plan.users_active,
+            "is_active": plan.is_active,
+            "is_trial": getattr(plan, "is_trial", False),
+            "message_per_unit": getattr(plan, "message_per_unit", None),
+            "is_enterprise": getattr(plan, "is_enterprise", False),
+            "created_at": plan.created_at,
+            "updated_at": plan.updated_at,
+        }
+
+        return {"success": True, "message": "Subscription plan fetched", "data": data}
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/get-subscription-plan")
-async def get_subscription_plan_by_id(
+async def get_subscription_plan(
     request: Request,
     db: Session = Depends(get_db)
 ):
