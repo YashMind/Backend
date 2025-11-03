@@ -17,9 +17,7 @@ from routes.chat.pinecone import (
     hybrid_retrieval,
 )
 from models.authModel.authModel import AuthUser
-from langchain.chat_models import ChatOpenAI
 from models.chatModel.chatModel import ChatBots, ChatBotsFaqs, ChatSession, ChatMessage
-from langchain.schema import HumanMessage, AIMessage
 from email.mime.text import MIMEText
 import smtplib
 import httpx

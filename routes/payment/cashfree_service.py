@@ -65,6 +65,7 @@ async def create_payment_order(
 ):
     """Create a payment order in Cashfree"""
     url = f"{CASHFREE_BASE_URL}/orders"
+    print("Creating Cashfree order at URL:", url)
     client_ip = request.client.host
     # Validate environment variables
     if not CASHFREE_APP_ID or not CASHFREE_SECRET_KEY:
