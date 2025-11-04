@@ -67,11 +67,13 @@ class CreateBot(BaseModel):
     train_from: Optional[str] = None
     target_link: Optional[str] = None
     document_link: Optional[str] = None
-    public: Optional[bool] = False
+    public: Optional[bool] = None
     text_content: Optional[str] = None
     creativity: Optional[int] = None
     token: Optional[str] = None
     domains: Optional[str] = None
+    allow_domains: Optional[bool] = None
+    rate_limit_enabled: Optional[bool] = None
     lead_email: Optional[str] = None
     limit_to: Optional[int] = None
     every_minutes: Optional[int] = None

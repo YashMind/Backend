@@ -793,6 +793,37 @@ def migrate_rename_base_rate_column(db):
         print(f"❌ Migration failed: {str(e)}")
 
 
+def migrate_add_security_columns_to_chatbots(db):
+    """
+    Adds 'allow_domains' and 'rate_limit_enabled' columns to 'chat_bots' table if they don't exist.
+    """
+    try:
+        # 1. Check existing columns
+        result = db.execute(text("SHOW COLUMNS FROM chat_bots;")).fetchall()
+        column_names = [col[0] for col in result]
+
+        # 2. Add allow_domains column
+        if "allow_domains" not in column_names:
+            print("🆕 Adding column 'allow_domains' to 'chat_bots' table...")
+            db.execute(text("ALTER TABLE chat_bots ADD COLUMN allow_domains BOOLEAN DEFAULT FALSE;"))
+            db.commit()
+            print("✅ Column 'allow_domains' added successfully.")
+        else:
+            print("ℹ️ Column 'allow_domains' already exists. No action taken.")
+
+        # 3. Add rate_limit_enabled column
+        if "rate_limit_enabled" not in column_names:
+            print("🆕 Adding column 'rate_limit_enabled' to 'chat_bots' table...")
+            db.execute(text("ALTER TABLE chat_bots ADD COLUMN rate_limit_enabled BOOLEAN DEFAULT FALSE;"))
+            db.commit()
+            print("✅ Column 'rate_limit_enabled' added successfully.")
+        else:
+            print("ℹ️ Column 'rate_limit_enabled' already exists. No action taken.")
+
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Migration failed: {str(e)}")
+
 def main():
     db = SessionLocal()
     try:
@@ -820,6 +851,7 @@ def main():
         # migrate_push_notification_email_field(db)
         # migrate_add_is_enterprise_field(db)
         # migrate_rename_base_rate_column(db)
+        migrate_add_security_columns_to_chatbots(db)
 
         print("🎉 All migrations completed successfully!")
 

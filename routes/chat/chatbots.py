@@ -87,46 +87,61 @@ async def update_chatbot(data: CreateBot, db: Session = Depends(get_db)):
         chatbot = db.query(ChatBots).filter(ChatBots.id == int(data.id)).first()
         if not chatbot:
             raise HTTPException(status_code=404, detail="Chatbot not found")
-
-        if data.train_from:
+        
+        
+        if data.train_from is not None:
             chatbot.train_from = data.train_from
 
-        if data.target_link:
+        if data.target_link is not None:
             chatbot.target_link = data.target_link
 
-        if data.document_link:
+        if data.document_link is not None:
             chatbot.document_link = data.document_link
 
-        if data.text_content:
+        if data.text_content is not None:
             await check_available_char_limit(
-                user_id=chatbot.user_id, db=db, new_chars=len(data.text_content)
+                user_id=chatbot.user_id,
+                db=db,
+                new_chars=len(data.text_content),
             )
             chatbot.text_content = data.text_content
 
-        if data.creativity:
+        if data.creativity is not None:
             chatbot.creativity = data.creativity
 
-        if data.chatbot_name:
+        if data.chatbot_name is not None:
             chatbot.chatbot_name = data.chatbot_name
 
         if data.public is not None:
             chatbot.public = data.public
 
-        if data.domains:
+        # ✅ Security fields
+        if data.allow_domains is not None:
+            chatbot.allow_domains = data.allow_domains
+
+        if data.domains is not None:
             chatbot.domains = data.domains
-        if data.limit_to:
+
+        if data.rate_limit_enabled is not None:
+            chatbot.rate_limit_enabled = data.rate_limit_enabled
+
+        if data.limit_to is not None:
             chatbot.limit_to = data.limit_to
-        if data.every_minutes:
+
+        if data.every_minutes is not None:
             chatbot.every_minutes = data.every_minutes
 
+        # Save all updates
         db.commit()
         db.refresh(chatbot)
+
         return chatbot
 
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating chatbot: {str(e)}")
 
 
 # get chatbot

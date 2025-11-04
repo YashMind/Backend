@@ -52,6 +52,8 @@ class ChatBots(Base):
     creativity = Column(Integer, default=0, nullable=True)
     token = Column(String(255), nullable=True)
     domains = Column(Text, nullable=True)
+    allow_domains = Column(Boolean, default=False, nullable=True)  
+    rate_limit_enabled = Column(Boolean, default=False, nullable=True)  
     lead_email = Column(String(255), nullable=True)
     limit_to = Column(Integer, nullable=True)
     every_minutes = Column(Integer, nullable=True)
@@ -71,6 +73,8 @@ class ChatBots(Base):
             "creativity": self.creativity,
             "token": self.token,
             "domains": self.domains,
+            "allow_domains": self.allow_domains,  
+            "rate_limit_enabled": self.rate_limit_enabled,  
             "lead_email": self.lead_email,
             "limit_to": self.limit_to,
             "every_minutes": self.every_minutes,
