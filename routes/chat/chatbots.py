@@ -79,7 +79,7 @@ async def create_chatbot(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# update chatbot
+# update chatbotsw 
 @router.put("/update-bot", response_model=CreateBot)
 @check_product_status("chatbot")
 async def update_chatbot(data: CreateBot, db: Session = Depends(get_db)):

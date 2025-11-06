@@ -3,10 +3,13 @@ from typing import Tuple, Union
 from sqlalchemy.orm import Session
 from models.adminModel.adminModel import SubscriptionPlans
 from models.authModel.authModel import AuthUser
-from models.chatModel.chatModel import ChatBots
+from models.chatModel.chatModel import ChatBots, ChatMessage, ChatSession
 from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
 from models.subscriptions.transactionModel import Transaction
 from models.subscriptions.userCredits import UserCredits
+from datetime import datetime, timedelta
+from sqlalchemy import func, text
+from fastapi import HTTPException
 
 
 """When user purchased new susbscription"""
@@ -696,3 +699,127 @@ def generate_token_usage(bot_id, user_id, db: Session):
         return True, "Token usage entry created successfully"
     else:
         return False, "User not found, please activate plan"
+    
+    
+    
+# def check_rate_limit(bot_id: int, user_id: int, db, chatbot):
+#     """
+#     Enforces per-bot rate limit (X messages per Y minutes).
+#     Raises HTTPException if the limit is exceeded.
+#     """
+
+#     if not chatbot.rate_limit_enabled:
+#         return True
+
+#     limit_to = chatbot.limit_to or 0
+#     every_minutes = chatbot.every_minutes or 0
+
+#     if limit_to <= 0 or every_minutes <= 0:
+#         return True  # invalid config, skip limiting
+
+#     # Time window start
+#     time_threshold = datetime.utcnow() - timedelta(minutes=every_minutes)
+
+#     # Count messages sent by users (not bots) for this bot in the time window
+#     message_count = (
+#         db.query(func.count())
+#         .select_from(ChatMessage)
+#         .filter(
+#             ChatMessage.bot_id == bot_id,
+#             ChatMessage.sender == "user",
+#             ChatMessage.created_at >= time_threshold,
+#         )
+#         .scalar()
+#     )
+
+#     if message_count >= limit_to:
+#         raise HTTPException(
+#             status_code=429,
+#             detail=f"Rate limit exceeded: Only {limit_to} messages allowed every {every_minutes} minutes.",
+#         )
+
+#     return True
+
+
+
+def check_rate_limit(
+    bot_id: int,
+    user_id: int,
+    db,
+    chatbot,
+    *,
+    per_user: bool = True,
+    session_token: str | None = None,
+):
+    if not chatbot or not chatbot.rate_limit_enabled:
+        return True
+
+    limit_to = (chatbot.limit_to or 0)
+    every_minutes = (chatbot.every_minutes or 0)
+    if limit_to <= 0 or every_minutes <= 0:
+        return True
+
+    # figure DB dialect
+    try:
+        dialect = db.bind.dialect.name
+    except Exception:
+        dialect = None
+
+    # Build DB-side time expression
+    if dialect == "postgresql":
+        time_expr = func.now() - text(f"interval '{every_minutes} minutes'")
+    elif dialect in ("mysql", "mariadb"):
+        # MySQL: DATE_SUB(NOW(), INTERVAL X MINUTE)
+        time_expr = func.date_sub(func.now(), text(f"interval {every_minutes} minute"))
+    elif dialect == "sqlite":
+        # SQLite: datetime('now','-N minutes')
+        time_expr = func.datetime("now", f"-{every_minutes} minutes")
+    else:
+        # Unknown: fall back to Python UTC (best-effort)
+        time_expr = datetime.utcnow() - timedelta(minutes=every_minutes)
+
+    # If session_token given -> count by chat session
+    if session_token:
+        chat = db.query(ChatSession).filter_by(token=session_token).first()
+        if not chat:
+            return True
+
+        q = db.query(func.count()).select_from(ChatMessage).filter(
+            ChatMessage.chat_id == chat.id,
+            ChatMessage.sender == "user",
+        )
+        # use DB time_expr when possible
+        if isinstance(time_expr, datetime):
+            q = q.filter(ChatMessage.created_at >= time_expr)
+        else:
+            q = q.filter(ChatMessage.created_at >= time_expr)
+        message_count = q.scalar() or 0
+
+        if message_count >= limit_to:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded: Only {limit_to} messages allowed every {every_minutes} minutes.",
+            )
+        return True
+
+    # Fallback counting (per_user/per_bot)
+    q = db.query(func.count()).select_from(ChatMessage).filter(
+        ChatMessage.bot_id == bot_id,
+        ChatMessage.sender == "user",
+    )
+
+    if isinstance(time_expr, datetime):
+        q = q.filter(ChatMessage.created_at >= time_expr)
+    else:
+        q = q.filter(ChatMessage.created_at >= time_expr)
+
+    if per_user and user_id is not None:
+        q = q.filter(ChatMessage.user_id == user_id)
+
+    message_count = q.scalar() or 0
+    if message_count >= limit_to:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: Only {limit_to} messages allowed every {every_minutes} minutes.",
+        )
+    return True

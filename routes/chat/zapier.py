@@ -17,6 +17,7 @@ from models.authModel.authModel import AuthUser
 from models.chatModel.chatModel import ChatBots
 from models.chatModel.integrations import ZapierIntegration
 from routes.chat.pinecone import get_response_from_faqs
+from routes.subscriptions.token_usage import check_rate_limit
 from schemas.authSchema.authSchema import User
 from schemas.chatSchema.integrationsSchema import ZapierMessageRequest
 from utils.utils import get_current_user, get_response_from_chatbot
@@ -274,14 +275,25 @@ async def handle_zapier_message(
     api_token: str = Header(..., alias="X-API-Token"),
     db: Session = Depends(get_db),
 ):
-    # Verify token and get integration
+
     integration = db.query(ZapierIntegration).filter_by(api_token=api_token).first()
     if not integration:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API token"
         )
+        
+    chatbot = db.query(ChatBots).filter(ChatBots.id == integration.bot_id).first()
+    if not chatbot:
+        raise HTTPException(status_code=404, detail="ChatBot not found")
+    
+    check_rate_limit(
+        bot_id=integration.bot_id,
+        user_id=integration.user_id,   
+        db=db,
+        chatbot=chatbot,
+        per_user=True,
+    )
 
-    # Get bot response (reusing your core logic)
     response = await get_response_from_chatbot(
         data={
             "message": body.message,

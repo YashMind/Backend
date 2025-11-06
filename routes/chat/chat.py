@@ -18,6 +18,7 @@ from models.subscriptions.token_usage import TokenUsage, TokenUsageHistory
 from models.subscriptions.userCredits import UserCredits
 from routes.chat.tuning import seed_instruction_prompts_template
 from routes.subscriptions.token_usage import (
+    check_rate_limit,
     generate_token_usage,
     update_token_usage_on_consumption,
     verify_token_limit_available,
@@ -348,6 +349,7 @@ async def chat_message(
         chatbot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
         if not chatbot:
             raise HTTPException(status_code=404, detail="ChatBot not found")
+        check_rate_limit(bot_id=bot_id, user_id=user_id, db=db, chatbot=chatbot)
         print("verify Token Limit")
         # Verify Message limit
         token_limit_available, message = verify_token_limit_available(
