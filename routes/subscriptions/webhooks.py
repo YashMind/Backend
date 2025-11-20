@@ -637,47 +637,115 @@ async def verify_razorpay_payment(
             detail=f"Payment verification failed: {str(e)}"
         )
 
-@router.post("/razorpay")
-async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
-    """Handle Razorpay webhooks"""
-    print("web book ***********************************************************************************************")
-    try:
-        # Get raw body and signature
-        headers = dict(request.headers)
-        print("HEADERS:", json.dumps(headers, indent=2))
-        raw_body = await request.body()
-        print("RAW BODY:", raw_body.decode())
-        signature = request.headers.get("x-razorpay-signature")
-        print("raw_body",raw_body);
-        print("signature",signature);
-        if not signature:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing webhook signature"
-            )
+# @router.post("/razorpay")
+# async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
+#     """Handle Razorpay webhooks"""
+#     print("web book ***********************************************************************************************")
+#     try:
+#         # Get raw body and signature
+#         headers = dict(request.headers)
+#         print("HEADERS:", json.dumps(headers, indent=2))
+#         raw_body = await request.body()
+#         print("RAW BODY:", raw_body.decode())
+#         signature = request.headers.get("x-razorpay-signature")
+#         print("raw_body",raw_body);
+#         print("signature",signature);
+#         if not signature:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Missing webhook signature"
+#             )
 
-        # Verify webhook signature
-        if not verify_webhook_signature(raw_body, signature):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid webhook signature"
-            )
+#         # Verify webhook signature
+#         if not verify_webhook_signature(raw_body, signature):
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Invalid webhook signature"
+#             )
 
-        # Parse payload
-        payload = json.loads(raw_body.decode("utf-8"))
+#         # Parse payload
+#         payload = json.loads(raw_body.decode("utf-8"))
         
-        return await process_razorpay_webhook_payload(payload, db)
+#         return await process_razorpay_webhook_payload(payload, db)
 
-    except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid JSON payload"
+#     except json.JSONDecodeError:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Invalid JSON payload"
+#         )
+#     except Exception as e:
+#         print(f"Webhook processing error: {str(e)}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Webhook processing failed: {str(e)}"
+#         )
+
+
+@router.api_route("/razorpay", methods=["GET", "POST", "HEAD"])
+async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
+    """Handle Razorpay webhooks with support for GET, POST, and HEAD methods"""
+    print(f"Webhook {request.method} request received from {request.client.host}")
+    
+    # Handle GET/HEAD requests (webhook URL verification)
+    if request.method in ["GET", "HEAD"]:
+        print("Razorpay webhook verification request")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "active",
+                "message": "Webhook endpoint is ready and verified",
+                "timestamp": datetime.now().isoformat()
+            }
         )
-    except Exception as e:
-        print(f"Webhook processing error: {str(e)}")
+    
+    # Handle POST requests (actual webhook events)
+    elif request.method == "POST":
+        print("Razorpay webhook event received")
+        try:
+            # Get raw body and signature
+            headers = dict(request.headers)
+            print("HEADERS:", json.dumps(headers, indent=2))
+            raw_body = await request.body()
+            print("RAW BODY:", raw_body.decode())
+            signature = request.headers.get("x-razorpay-signature")
+            print("raw_body", raw_body)
+            print("signature", signature)
+            
+            if not signature:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Missing webhook signature"
+                )
+
+            # Verify webhook signature
+            if not verify_webhook_signature(raw_body, signature):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid webhook signature"
+                )
+
+            # Parse payload
+            payload = json.loads(raw_body.decode("utf-8"))
+            
+            return await process_razorpay_webhook_payload(payload, db)
+
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON payload"
+            )
+        except Exception as e:
+            print(f"Webhook processing error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Webhook processing failed: {str(e)}"
+            )
+    
+    # Handle any other methods
+    else:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Webhook processing failed: {str(e)}"
+            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+            detail="Method not allowed"
         )
 
 async def process_razorpay_webhook_payload(payload: Dict[str, Any], db: Session):
