@@ -720,15 +720,15 @@ def verify_webhook_signature(payload: bytes, signature: str) -> bool:
 #             detail=f"Webhook processing failed: {str(e)}"
 #         )
 
-
 @router.api_route("/razorpay", methods=["GET", "POST", "HEAD"])
 async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
     """Handle Razorpay webhooks with support for GET, POST, and HEAD methods"""
-    print(f"Webhook {request.method} request received from {request.client.host}")
+    client_ip = request.client.host if request.client else "unknown"
+    print(f"🌐 Webhook {request.method} request received from {client_ip}")
     
     # Handle GET/HEAD requests (webhook URL verification)
     if request.method in ["GET", "HEAD"]:
-        print("Razorpay webhook verification request")
+        print("🔍 Razorpay webhook verification request")
         return JSONResponse(
             status_code=200,
             content={
@@ -740,53 +740,70 @@ async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
     
     # Handle POST requests (actual webhook events)
     elif request.method == "POST":
-        print("Razorpay webhook event received")
+        print("📨 Razorpay webhook event received")
         try:
             # Get raw body and signature
             headers = dict(request.headers)
-            print("HEADERS:", json.dumps(headers, indent=2))
+            print("📧 HEADERS received:", json.dumps(headers, indent=2))
             raw_body = await request.body()
-            print("RAW BODY:", raw_body.decode())
-            signature = request.headers.get("x-razorpay-signature")
+            print(f"📦 RAW BODY length: {len(raw_body)} bytes")
             
+            signature = request.headers.get("x-razorpay-signature")
+            print(f"🔑 Signature header: {signature}")
+            
+            # Check if signature exists
             if not signature:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Missing webhook signature"
-                )
+                print("⚠️ No signature header found. Checking if webhook secret is configured...")
+                
+                # If no signature, check if webhook secret is configured
+                if not RAZORPAY_WEBHOOK_SECRET or RAZORPAY_WEBHOOK_SECRET == 'test_yashraa_secret':
+                    print("🔓 Webhook secret not configured or using default. Processing without signature verification.")
+                    # Process the payload without signature verification for testing
+                    payload = json.loads(raw_body.decode("utf-8"))
+                    return await process_razorpay_webhook_payload(payload, db)
+                else:
+                    print("❌ Webhook secret is configured but signature is missing")
+                    return JSONResponse(
+                        status_code=400,
+                        content={"error": "Missing webhook signature"}
+                    )
 
-            # Verify webhook signature
+            # If signature exists, verify it
+            print("🔐 Verifying webhook signature...")
             if not verify_webhook_signature(raw_body, signature):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid webhook signature"
+                print("❌ Webhook signature verification failed")
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "Invalid webhook signature"}
                 )
 
-            # Parse payload
+            # Parse and process payload
             payload = json.loads(raw_body.decode("utf-8"))
+            print(f"✅ Webhook signature verified successfully")
+            print(f"🎯 Event type: {payload.get('event')}")
             
             return await process_razorpay_webhook_payload(payload, db)
 
         except json.JSONDecodeError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid JSON payload"
+            print("❌ JSON decode error")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Invalid JSON payload"}
             )
         except Exception as e:
-            print(f"Webhook processing error: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Webhook processing failed: {str(e)}"
+            print(f"💥 Webhook processing error: {str(e)}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Webhook processing failed: {str(e)}"}
             )
     
     # Handle any other methods
     else:
-        raise HTTPException(
-            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-            detail="Method not allowed"
+        return JSONResponse(
+            status_code=405,
+            content={"error": "Method not allowed"}
         )
-
-
+    
 async def process_razorpay_webhook_payload(payload: Dict[str, Any], db: Session):
     """Process Razorpay webhook payload"""
     event_type = payload.get("event")
