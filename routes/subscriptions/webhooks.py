@@ -15,12 +15,19 @@ from models.paymentModel.paymentModel import (
     PaymentVerificationRequest,
     PaymentOrderRequest,
 )
-from routes.payment.razor_payment import verify_razorpay_signature ,generate_razorpay_headers,verify_webhook_signature
 from typing import Optional, Dict, Any
 import requests
 from dotenv import load_dotenv
-
-from routes.payment.razor_payment import handle_payment_success,handle_payment_failure,handle_failed_payment,handle_payment_authorized
+from routes.payment.razor_payment import (
+    verify_razorpay_signature, 
+    generate_razorpay_headers,
+    RAZORPAY_WEBHOOK_SECRET,  # Add this
+    RAZORPAY_KEY_ID,          # Add this  
+    RAZORPAY_KEY_SECRET,      # Add this
+    handle_payment_success,
+    handle_payment_failure, 
+    handle_payment_authorized
+)
 from routes.payment.trial_payment import (
     create_trial_order,
     has_activated_plan,
@@ -538,7 +545,17 @@ async def activate_trial_plan(
         print("Error processing trial activation: ", e)
         raise HTTPException(status_code=400, detail=str(e))
 
-
+@router.get("/debug-webhook-config")
+async def debug_webhook_config():
+    """Debug webhook configuration"""
+    return {
+        "webhook_secret_configured": bool(RAZORPAY_WEBHOOK_SECRET),
+        "webhook_secret_length": len(RAZORPAY_WEBHOOK_SECRET) if RAZORPAY_WEBHOOK_SECRET else 0,
+        "key_id": RAZORPAY_KEY_ID,
+        "key_secret_configured": bool(RAZORPAY_KEY_SECRET),
+        "environment": "LIVE",
+        "timestamp": datetime.now().isoformat()
+    }
 
 # razor pay 
 @router.post("/verify-payment")
@@ -637,6 +654,29 @@ async def verify_razorpay_payment(
             detail=f"Payment verification failed: {str(e)}"
         )
 
+def verify_webhook_signature(payload: bytes, signature: str) -> bool:
+    """Verify Razorpay webhook signature with better error handling"""
+    if not RAZORPAY_WEBHOOK_SECRET:
+        print("❌ Webhook secret not configured")
+        return False
+    
+    try:
+        generated_signature = hmac.new(
+            RAZORPAY_WEBHOOK_SECRET.encode('utf-8'),
+            payload,
+            hashlib.sha256
+        ).hexdigest()
+        
+        print(f"🔐 Generated signature: {generated_signature}")
+        print(f"🔐 Received signature: {signature}")
+        print(f"🔐 Match: {hmac.compare_digest(generated_signature, signature)}")
+        
+        return hmac.compare_digest(generated_signature, signature)
+    except Exception as e:
+        print(f"❌ Signature verification error: {str(e)}")
+        return False
+
+
 # @router.post("/razorpay")
 # async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
 #     """Handle Razorpay webhooks"""
@@ -708,8 +748,6 @@ async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
             raw_body = await request.body()
             print("RAW BODY:", raw_body.decode())
             signature = request.headers.get("x-razorpay-signature")
-            print("raw_body", raw_body)
-            print("signature", signature)
             
             if not signature:
                 raise HTTPException(
@@ -748,6 +786,7 @@ async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
             detail="Method not allowed"
         )
 
+
 async def process_razorpay_webhook_payload(payload: Dict[str, Any], db: Session):
     """Process Razorpay webhook payload"""
     event_type = payload.get("event")
@@ -758,11 +797,18 @@ async def process_razorpay_webhook_payload(payload: Dict[str, Any], db: Session)
 
     # Map event types to actions
     if event_type == "payment.captured":
+        print("Payment captured event received")
         return await handle_payment_success(entity, db)
     elif event_type == "payment.failed":
+        print("Payment failed event received")
         return await handle_payment_failure(entity, db)
     elif event_type == "payment.authorized":
+        print("Payment authorized event received")
         return await handle_payment_authorized(entity, db)
+    elif event_type == "order.paid":
+        print("Order paid event received")
+        return await handle_payment_success(entity, db)
     else:
         print(f"Unhandled webhook event: {event_type}")
+        print(f"Full payload: {json.dumps(payload, indent=2)}")
         return {"status": "unhandled_event", "event": event_type}
