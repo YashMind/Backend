@@ -31,10 +31,12 @@ from models.adminModel.adminModel import (
     BotProducts,
 )
 from models.adminModel.roles_and_permission import RolePermission
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError 
+from sqlalchemy import text
 from models.activityLogModel.activityLogModel import ActivityLog
 from models.chatModel.sharing import ChatBotSharing
 from models.chatModel.chatModel import ChatBots, ChatBotsDocLinks, ChatBotsFaqs, ChatMessage, ChatSession, ChatTotalToken
+from models.downgradeModel.downgradeModel import DowngradeSelections
 
 from schemas.authSchema.authSchema import User, UserUpdate
 from schemas.adminSchema.adminSchema import (
@@ -51,7 +53,7 @@ from sqlalchemy.sql import exists
 
 from sqlalchemy.orm import Session
 from config import get_db, settings
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List,Any  
 from sqlalchemy import func, or_, desc, asc
 import httpx
 from datetime import datetime, timedelta
@@ -62,12 +64,19 @@ import smtplib
 from decorators.rbac_admin import check_permissions
 from decorators.public import public_route
 from decorators.allow_roles import allow_roles
+from pydantic import BaseModel
 
 router = APIRouter()
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+class DowngradeSelectionCreate(BaseModel):
+    target_plan_id: int
+    selections: Dict[str, Any]
 
+class DowngradeSelectionProcess(BaseModel):
+    selection_id: str
+    payment_reference: Optional[str] = None 
 
 @router.put("/users/{user_id}/base-rate")
 @allow_roles(["Super Admin", "Billing Admin", "Product Admin", "Support Admin"])
@@ -94,6 +103,376 @@ async def update_base_rate(
     }
 
 
+@router.post("/downgrade/selections")
+async def save_downgrade_selections(
+    request: Request,
+    data: DowngradeSelectionCreate,
+    db: Session = Depends(get_db)
+):
+    """Save user's downgrade selections before payment"""
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Debug: Check if user exists
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Debug: Check if table exists
+        try:
+            # Try a simple query to see if table exists
+            test_result = db.execute(text("SELECT 1 FROM downgrade_selections LIMIT 1"))
+            print("✅ downgrade_selections table exists")
+        except Exception as table_error:
+            print(f"❌ Table access error: {table_error}")
+            # Try to create table if it doesn't exist
+            try:
+                # Import the Base and create all tables
+                from models.downgradeModel.downgradeModel import Base
+                Base.metadata.create_all(bind=db.get_bind())
+                print("✅ downgrade_selections table created")
+            except Exception as create_error:
+                print(f"❌ Table creation failed: {create_error}")
+                raise HTTPException(status_code=500, detail="Database table not available")
+
+        # Generate unique selection ID
+        selection_id = str(uuid4())
+
+        # Save to database
+        new_selection = DowngradeSelections(
+            id=selection_id,
+            user_id=user_id,
+            target_plan_id=data.target_plan_id,
+            selections=data.selections,
+            status="pending"
+        )
+        
+        db.add(new_selection)
+        db.commit()
+
+        return {
+            "success": True,
+            "selection_id": selection_id,
+            "status": "pending"
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        db.rollback()
+        print(f"Error saving downgrade selections: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/downgrade/process")
+async def process_downgrade_after_payment(
+    request: Request,
+    data: DowngradeSelectionProcess,
+    db: Session = Depends(get_db)
+):
+    """Process downgrade selections after successful payment"""
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        print(f"🔍 [DEBUG] Processing downgrade for user {user_id}, selection_id: {data.selection_id}")
+
+        # Retrieve selections from database
+        selection = db.query(DowngradeSelections).filter(
+            DowngradeSelections.id == data.selection_id,
+            DowngradeSelections.user_id == user_id,
+            DowngradeSelections.status == "pending"
+        ).first()
+
+        if not selection:
+            print(f"❌ [DEBUG] Selection not found: {data.selection_id} for user {user_id}")
+            raise HTTPException(status_code=404, detail="Downgrade selection not found")
+
+        print(f"✅ [DEBUG] Found selection: {selection.id}, status: {selection.status}")
+        print(f"📋 [DEBUG] Selections data: {selection.selections}")
+
+        selections = selection.selections
+        processed_items = {
+            "chatbots_deleted": [],
+            "docs_deleted": [],
+            "team_members_removed": []
+        }
+
+        # Process chatbot deletions
+        if selections.get("chatbots_to_delete"):
+            print(f"🗑️ [DEBUG] Processing chatbot deletions: {selections['chatbots_to_delete']}")
+            for bot_id in selections["chatbots_to_delete"]:
+                try:
+                    print(f"🔍 [DEBUG] Looking for chatbot {bot_id} for user {user_id}")
+                    bot = db.query(ChatBots).filter(
+                        ChatBots.id == bot_id, 
+                        ChatBots.user_id == user_id
+                    ).first()
+                    
+                    if bot:
+                        print(f"✅ [DEBUG] Found chatbot to delete: {bot.id} - {bot.chatbot_name}")
+                        
+                        # Check if bot has any dependencies first
+                        doc_count = db.query(ChatBotsDocLinks).filter(ChatBotsDocLinks.bot_id == bot_id).count()
+                        faq_count = db.query(ChatBotsFaqs).filter(ChatBotsFaqs.bot_id == bot_id).count()
+                        instruction_count = db.query(DBInstructionPrompt).filter(DBInstructionPrompt.bot_id == bot_id).count()
+                        token_usage_count = db.query(TokenUsage).filter(TokenUsage.bot_id == bot_id).count()
+                        
+                        print(f"📄 [DEBUG] Bot has {doc_count} documents, {faq_count} FAQs, {instruction_count} instruction prompts, and {token_usage_count} token usage records")
+                        
+                        # Delete associated documents from Pinecone first
+                        docs_to_delete = db.query(ChatBotsDocLinks).filter(
+                            ChatBotsDocLinks.bot_id == bot_id
+                        ).all()
+                        
+                        print(f"📄 [DEBUG] Found {len(docs_to_delete)} documents to delete from database")
+                        doc_link_ids = [doc.id for doc in docs_to_delete]
+                        
+                        # Delete from Pinecone
+                        if doc_link_ids:
+                            try:
+                                delete_documents_from_pinecone(bot_id, doc_link_ids, db)
+                                print(f"✅ [DEBUG] Deleted {len(doc_link_ids)} documents from Pinecone")
+                            except Exception as pinecone_error:
+                                print(f"⚠️ [DEBUG] Pinecone deletion error (continuing): {pinecone_error}")
+                        
+                        # Delete from database - ChatBotsDocLinks
+                        deleted_docs = db.query(ChatBotsDocLinks).filter(
+                            ChatBotsDocLinks.bot_id == bot_id
+                        ).delete()
+                        print(f"✅ [DEBUG] Deleted {deleted_docs} documents from database")
+                        
+                        # Delete from database - ChatBotsFaqs
+                        deleted_faqs = db.query(ChatBotsFaqs).filter(
+                            ChatBotsFaqs.bot_id == bot_id
+                        ).delete()
+                        print(f"✅ [DEBUG] Deleted {deleted_faqs} FAQs from database")
+                        
+                        # Delete instruction prompts
+                        deleted_instructions = db.query(DBInstructionPrompt).filter(
+                            DBInstructionPrompt.bot_id == bot_id
+                        ).delete()
+                        print(f"✅ [DEBUG] Deleted {deleted_instructions} instruction prompts from database")
+                        
+                        # NEW: Delete token usage records
+                        deleted_token_usage = db.query(TokenUsage).filter(
+                            TokenUsage.bot_id == bot_id
+                        ).delete()
+                        print(f"✅ [DEBUG] Deleted {deleted_token_usage} token usage records from database")
+                        
+                        # Also check and delete any chat sessions/messages
+                        try:
+                            # Get all chat sessions for this bot
+                            chat_sessions = db.query(ChatSession).filter(ChatSession.bot_id == bot_id).all()
+                            session_ids = [session.id for session in chat_sessions]
+                            
+                            if session_ids:
+                                # Delete chat messages
+                                deleted_messages = db.query(ChatMessage).filter(
+                                    ChatMessage.chat_id.in_(session_ids)
+                                ).delete()
+                                print(f"✅ [DEBUG] Deleted {deleted_messages} chat messages")
+                                
+                                # Delete chat sessions
+                                deleted_sessions = db.query(ChatSession).filter(
+                                    ChatSession.bot_id == bot_id
+                                ).delete()
+                                print(f"✅ [DEBUG] Deleted {deleted_sessions} chat sessions")
+                        except Exception as chat_error:
+                            print(f"⚠️ [DEBUG] Chat cleanup error (continuing): {chat_error}")
+                        
+                        # Delete any chatbot sharing records
+                        try:
+                            deleted_sharing = db.query(ChatBotSharing).filter(
+                                ChatBotSharing.bot_id == bot_id
+                            ).delete()
+                            print(f"✅ [DEBUG] Deleted {deleted_sharing} sharing records")
+                        except Exception as sharing_error:
+                            print(f"⚠️ [DEBUG] Sharing cleanup error (continuing): {sharing_error}")
+                        
+                        # Delete any chatbot settings
+                        try:
+                            from models.chatModel.chatModel import ChatSettings
+                            deleted_settings = db.query(ChatSettings).filter(
+                                ChatSettings.bot_id == bot_id
+                            ).delete()
+                            print(f"✅ [DEBUG] Deleted {deleted_settings} chat settings")
+                        except Exception as settings_error:
+                            print(f"⚠️ [DEBUG] Settings cleanup error (continuing): {settings_error}")
+                        
+                        # Delete any chat total tokens
+                        try:
+                            deleted_total_tokens = db.query(ChatTotalToken).filter(
+                                ChatTotalToken.bot_id == bot_id
+                            ).delete()
+                            print(f"✅ [DEBUG] Deleted {deleted_total_tokens} chat total tokens")
+                        except Exception as token_error:
+                            print(f"⚠️ [DEBUG] Token cleanup error (continuing): {token_error}")
+                        
+                        # Finally delete the bot itself
+                        db.delete(bot)
+                        processed_items["chatbots_deleted"].append(bot_id)
+                        print(f"✅ [DEBUG] Successfully deleted chatbot {bot_id}")
+                    else:
+                        print(f"❌ [DEBUG] Chatbot {bot_id} not found or doesn't belong to user {user_id}")
+                        # Let's check if the bot exists at all
+                        any_bot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
+                        if any_bot:
+                            print(f"🔍 [DEBUG] Bot {bot_id} exists but belongs to user {any_bot.user_id} (current user: {user_id})")
+                        else:
+                            print(f"🔍 [DEBUG] Bot {bot_id} doesn't exist in database")
+                        
+                except Exception as e:
+                    print(f"❌ [DEBUG] Error deleting chatbot {bot_id}: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        # Process document deletions
+        if selections.get("docs_to_delete"):
+            print(f"📄 [DEBUG] Processing document deletions: {selections['docs_to_delete']}")
+            for bot_id, doc_ids in selections["docs_to_delete"].items():
+                for doc_id in doc_ids:
+                    try:
+                        print(f"🔍 [DEBUG] Looking for document {doc_id} in bot {bot_id}")
+                        doc = db.query(ChatBotsDocLinks).filter(
+                            ChatBotsDocLinks.id == doc_id,
+                            ChatBotsDocLinks.bot_id == int(bot_id)
+                        ).first()
+                        
+                        if doc:
+                            print(f"✅ [DEBUG] Found document to delete: {doc.id} - {doc.document_link}")
+                            
+                            # Delete from Pinecone
+                            try:
+                                delete_documents_from_pinecone(int(bot_id), [doc_id], db)
+                                print(f"✅ [DEBUG] Deleted document {doc_id} from Pinecone")
+                            except Exception as pinecone_error:
+                                print(f"⚠️ [DEBUG] Pinecone deletion error for doc {doc_id}: {pinecone_error}")
+                            
+                            # Delete from database
+                            db.delete(doc)
+                            processed_items["docs_deleted"].append(doc_id)
+                            print(f"✅ [DEBUG] Successfully deleted document {doc_id}")
+                        else:
+                            print(f"❌ [DEBUG] Document {doc_id} not found in bot {bot_id}")
+                            
+                    except Exception as e:
+                        print(f"❌ [DEBUG] Error deleting doc {doc_id}: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+        # Process team member removals
+        if selections.get("team_members_to_remove"):
+            print(f"👥 [DEBUG] Processing team member removals: {selections['team_members_to_remove']}")
+            for sharing_id in selections["team_members_to_remove"]:
+                try:
+                    print(f"🔍 [DEBUG] Looking for sharing record {sharing_id}")
+                    sharing = db.query(ChatBotSharing).filter(
+                        ChatBotSharing.id == sharing_id,
+                        ChatBotSharing.owner_id == user_id
+                    ).first()
+                    
+                    if sharing:
+                        print(f"✅ [DEBUG] Found sharing to revoke: {sharing.id} - bot {sharing.bot_id}")
+                        sharing.status = "revoked"
+                        sharing.updated_at = datetime.utcnow()
+                        processed_items["team_members_removed"].append(sharing_id)
+                        print(f"✅ [DEBUG] Successfully revoked access {sharing_id}")
+                    else:
+                        print(f"❌ [DEBUG] Sharing record {sharing_id} not found or not owned by user")
+                        
+                except Exception as e:
+                    print(f"❌ [DEBUG] Error revoking access {sharing_id}: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        # Update selection status
+        selection.status = "processed"
+        selection.updated_at = datetime.utcnow()
+        
+        # Commit all changes
+        db.commit()
+        print(f"✅ [DEBUG] Database commit successful")
+
+        print(f"✅ [DEBUG] Downgrade processing completed successfully")
+        print(f"📊 [DEBUG] Processed items: {processed_items}")
+
+        return {
+            "success": True,
+            "message": "Downgrade processed successfully",
+            "processed_items": processed_items
+        }
+
+    except HTTPException as http_exc:
+        print(f"❌ [DEBUG] HTTP Exception: {http_exc.detail}")
+        db.rollback()
+        raise http_exc
+    except Exception as e:
+        print(f"❌ [DEBUG] General Exception: {e}")
+        db.rollback()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/downgrade/debug/{selection_id}")
+async def debug_downgrade_status(
+    selection_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Debug endpoint to check downgrade status"""
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        payload = decode_access_token(token)
+        user_id = int(payload.get("user_id"))
+
+        # Check selection status
+        selection = db.query(DowngradeSelections).filter(
+            DowngradeSelections.id == selection_id,
+            DowngradeSelections.user_id == user_id
+        ).first()
+
+        if not selection:
+            return {"error": "Selection not found"}
+
+        # Check if bots still exist
+        bots_status = {}
+        if selection.selections.get("chatbots_to_delete"):
+            for bot_id in selection.selections["chatbots_to_delete"]:
+                bot = db.query(ChatBots).filter(ChatBots.id == bot_id).first()
+                bots_status[bot_id] = {
+                    "exists": bot is not None,
+                    "name": bot.chatbot_name if bot else None,
+                    "user_id": bot.user_id if bot else None,
+                    "should_belong_to": user_id
+                }
+
+        return {
+            "selection": {
+                "id": selection.id,
+                "status": selection.status,
+                "target_plan_id": selection.target_plan_id,
+                "created_at": selection.created_at,
+                "updated_at": selection.updated_at
+            },
+            "selections": selection.selections,
+            "bots_status": bots_status
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+    
 @router.get("/get-all-users")
 @public_route()
 async def get_all_users(

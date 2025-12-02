@@ -823,7 +823,56 @@ def migrate_add_security_columns_to_chatbots(db):
     except Exception as e:
         db.rollback()
         print(f"❌ Migration failed: {str(e)}")
+def create_downgrade_selections_table(db: Session):
+    """
+    Creates the downgrade_selections table without foreign key first
+    """
+    try:
+        print("📦 Creating table: downgrade_selections...")
 
+        # First check if table exists
+        result = db.execute(text("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = DATABASE() 
+            AND table_name = 'downgrade_selections'
+        """)).scalar()
+
+        if result > 0:
+            print("ℹ️ downgrade_selections table already exists")
+            return
+
+        # Create table WITHOUT foreign key first
+        db.execute(text("""
+            CREATE TABLE downgrade_selections (
+                id VARCHAR(36) PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                target_plan_id INTEGER NOT NULL,
+                selections JSON NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """))
+
+        # Add indexes
+        try:
+            db.execute(text("CREATE INDEX idx_downgrade_user_id ON downgrade_selections(user_id)"))
+        except Exception as e:
+            print(f"ℹ️ Index already exists or couldn't be created: {e}")
+
+        try:
+            db.execute(text("CREATE INDEX idx_downgrade_status ON downgrade_selections(status)"))
+        except Exception as e:
+            print(f"ℹ️ Index already exists or couldn't be created: {e}")
+
+        db.commit()
+        print("✅ downgrade_selections table created successfully!")
+
+    except Exception as e:
+        print(f"❌ Failed to create downgrade_selections table: {str(e)}")
+        db.rollback()
+        raise
 def main():
     db = SessionLocal()
     try:
@@ -851,7 +900,8 @@ def main():
         # migrate_push_notification_email_field(db)
         # migrate_add_is_enterprise_field(db)
         # migrate_rename_base_rate_column(db)
-        migrate_add_security_columns_to_chatbots(db)
+        # migrate_add_security_columns_to_chatbots(db)
+        create_downgrade_selections_table(db)
 
         print("🎉 All migrations completed successfully!")
 
