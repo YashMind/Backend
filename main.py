@@ -32,6 +32,8 @@ from routes.subscriptions.webhooks import router as subscription_router
 from routes.admin.tokensAndCredits import router as token_credits_router
 from routes.subscriptions.failed_payment import router as failed_payment
 from routes.admin.enterprise import router as enterprise_users
+from models.downgradeModel.downgradeModel import DowngradeSelections
+
 app = FastAPI()
 # init_orm_db()
 

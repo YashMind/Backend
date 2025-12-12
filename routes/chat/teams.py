@@ -88,8 +88,6 @@ async def send_invitation_email(
 
 
 
-
-
 @router.post("/invite-users", response_model=InviteResponse)
 @check_product_status("chatbot")
 async def invite_users(
@@ -140,7 +138,12 @@ async def invite_users(
             )
 
         existing_shared = (
-            db.query(ChatBotSharing).filter(ChatBotSharing.owner_id == owner_id).count()
+            db.query(ChatBotSharing)
+            .filter(
+                ChatBotSharing.owner_id == owner_id,
+                ChatBotSharing.status.in_(["active", "pending"])
+            )
+            .count()
         )
 
         if existing_shared >= user_credits.team_strength:

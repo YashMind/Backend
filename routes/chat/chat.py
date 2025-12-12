@@ -159,11 +159,12 @@ async def upload_photo(file: UploadFile = File(...), db: Session = Depends(get_d
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-
 @router.get("/get-all")
 @check_product_status("chatbot")
 async def get_my_bots(
-    request: Request, db: Session = Depends(get_db), include_shared: bool = Query(True)
+    request: Request, 
+    db: Session = Depends(get_db), 
+    include_shared: bool = Query(True)
 ):
     try:
         token = request.cookies.get("access_token")
@@ -178,30 +179,51 @@ async def get_my_bots(
             .all()
         )
 
+        # Check credits limit for owned bots only (not shared bots)
         user_credits = (
             db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
         )
-        # Do NOT raise 404 if user_credits is None
         if user_credits is not None and user_credits.chatbots_allowed < len(owned_bots):
             owned_bots = owned_bots[: user_credits.chatbots_allowed]
 
         # Get shared bots if include_shared is True
         shared_bots = []
+        shared_bot_owners = {}  # Track who shared each bot
+        
         if include_shared:
-            # Get IDs of bots shared with the user
-            shared_bot_ids = (
-                db.query(ChatBotSharing.bot_id)
+            # Get IDs of bots shared with the user along with owner info
+            shared_bot_info = (
+                db.query(
+                    ChatBotSharing.bot_id,
+                    AuthUser.email.label("owner_email"),
+                    AuthUser.fullName.label("owner_full_name"),
+                    AuthUser.id.label("owner_id")
+                )
+                .join(ChatBots, ChatBotSharing.bot_id == ChatBots.id)
+                .join(AuthUser, ChatBots.user_id == AuthUser.id)
                 .filter(
                     ChatBotSharing.shared_user_id == user_id,
-                    ChatBotSharing.status == "active",
+                    ChatBotSharing.status == "active"
                 )
                 .all()
             )
-            shared_bot_ids = [bot_id for (bot_id,) in shared_bot_ids]
-
-            if shared_bot_ids:
+            
+            if shared_bot_info:
+                shared_bot_ids = [info.bot_id for info in shared_bot_info]
+                
+                # Store owner info for each bot
+                for info in shared_bot_info:
+                    shared_bot_owners[info.bot_id] = {
+                        "owner_email": info.owner_email,
+                        "owner_full_name": info.owner_full_name,
+                        "owner_id": info.owner_id
+                    }
+                
+                # Fetch the actual bot objects
                 shared_bots = (
-                    db.query(ChatBots).filter(ChatBots.id.in_(shared_bot_ids)).all()
+                    db.query(ChatBots)
+                    .filter(ChatBots.id.in_(shared_bot_ids))
+                    .all()
                 )
 
         # Combine all bot IDs (owned + shared)
@@ -218,27 +240,72 @@ async def get_my_bots(
         else:
             settings_dict = {}
 
-        # Attach images to owned bots
+        # Prepare response with clear distinction between owned and shared
+        response_bots = []
+        
+        # Process owned bots
         for bot in owned_bots:
-            bot.image = (
-                settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None
-            )
-
-        # Attach images to shared bots
+            bot_dict = {
+                "id": bot.id,
+                "chatbot_name": bot.chatbot_name,  # Changed from 'name' to 'chatbot_name'
+                # "description": bot.description,
+                # "is_active": bot.is_active,
+                "created_at": bot.created_at,
+                "updated_at": bot.updated_at,
+                "is_shared": False,  # This is owned
+                "owner_info": {
+                    "owner_id": user_id,
+                    "is_owner": True
+                },
+                "image": settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None,
+                "settings": settings_dict.get(bot.id).to_dict() if settings_dict.get(bot.id) else None
+            }
+            response_bots.append(bot_dict)
+        
+        # Process shared bots
         for bot in shared_bots:
-            bot.image = (
-                settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None
-            )
+            owner_info = shared_bot_owners.get(bot.id, {})
+            bot_dict = {
+                "id": bot.id,
+                "chatbot_name": bot.chatbot_name,  # Changed from 'name' to 'chatbot_name'
+                # "description": bot.description,
+                # "is_active": bot.is_active,
+                "created_at": bot.created_at,
+                "updated_at": bot.updated_at,
+                "is_shared": True,  # This is shared
+                "owner_info": {
+                    "owner_id": owner_info.get("owner_id"),
+                    "owner_email": owner_info.get("owner_email"),
+                    "owner_full_name": owner_info.get("owner_full_name"),
+                    "is_owner": False
+                },
+                "image": settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None,
+                "settings": settings_dict.get(bot.id).to_dict() if settings_dict.get(bot.id) else None
+            }
+            response_bots.append(bot_dict)
 
-        return owned_bots + shared_bots
+        # Sort by created_at descending
+        response_bots.sort(key=lambda x: x["created_at"], reverse=True)
+
+        return {
+            "success": True,
+            "data": response_bots,
+            "summary": {
+                "total_bots": len(response_bots),
+                "owned_bots_count": len(owned_bots),
+                "shared_bots_count": len(shared_bots),
+                "credits_limit": user_credits.chatbots_allowed if user_credits else None,
+                "credits_used": len(owned_bots)
+            }
+        }
 
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
 
 
-# create new chat
 @router.post("/chats-id", response_model=ChatSessionRead)
 @check_product_status("chatbot")
 async def create_chat(

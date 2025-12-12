@@ -360,17 +360,37 @@ async def getme(request: Request, response: Response, db: Session = Depends(get_
         db.commit()
         db.refresh(user)
 
-        del user.facebookId
-        del user.googleId
-        del user.password
+        # Remove sensitive fields
+        if hasattr(user, 'facebookId'):
+            del user.facebookId
+        if hasattr(user, 'googleId'):
+            del user.googleId
+        if hasattr(user, 'password'):
+            del user.password
+
+        # DEBUG: Check what's happening
+        print(f"🔍 [DEBUG] Checking user {user_id} - {user.email}")
+        
+        # Check for shared chatbots first
+        shared_bots_count = db.query(ChatBotSharing).filter(
+            ChatBotSharing.shared_user_id == user_id, 
+            ChatBotSharing.status == 'active'
+        ).count()
+        
+        print(f"🔍 [DEBUG] User has {shared_bots_count} shared chatbots")
+        
+        # If user has active shared chatbots, allow access regardless of plan
+        if shared_bots_count > 0:
+            print(f"✅ [DEBUG] Allowing access - user has shared chatbots")
+            return {"user": user, "status": 200}
 
         user_credit = db.query(UserCredits).filter(UserCredits.user_id == user_id).first()
+        print(f"🔍 [DEBUG] User credit found: {user_credit is not None}")
+        
+        # If no shared chatbots, then check for user's own plan
         if not user_credit:
-            # check for shared chatbots
-            shared_bots = db.query(ChatBotSharing).filter(ChatBotSharing.shared_user_id==user_id, ChatBotSharing.status == 'active').all()
-            if len(shared_bots)>0:
-                return {"user": user, "status": 200}
-            # No active subscription found
+            print(f"❌ [DEBUG] No plan and no shared chatbots")
+            # No active subscription found and no shared chatbots
             return {
                 "user": user,
                 "status": 404,  # NOT FOUND
@@ -378,14 +398,15 @@ async def getme(request: Request, response: Response, db: Session = Depends(get_
             }
 
         if user_credit.expiry_date < datetime.now():
-            # Subscription exists but is expired
+            print(f"⚠️ [DEBUG] Plan expired and no shared chatbots")
+            # Subscription exists but is expired and no shared chatbots
             return {
                 "user": user,
                 "status": 410,  # GONE
                 "detail": "Plan expired. Upgrade your plan to continue."
             }
 
-
+        print(f"✅ [DEBUG] Allowing access - user has valid plan")
         return {"user": user, "status": 200}
 
     except HTTPException as http_exc:
@@ -395,8 +416,12 @@ async def getme(request: Request, response: Response, db: Session = Depends(get_
         error_response.delete_cookie("access_token")
         error_response.delete_cookie("role")
         return error_response
-
-
+    except Exception as e:
+        print(f"❌ [DEBUG] Error in /me endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
 @router.post("/forget-password")
 async def forget_password(
     request: PasswordResetRequest,

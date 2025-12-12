@@ -1,5 +1,5 @@
 from sqlalchemy.exc import SQLAlchemyError
-from typing import Tuple, Union
+from typing import Tuple, Union,Optional
 from sqlalchemy.orm import Session
 from models.adminModel.adminModel import SubscriptionPlans
 from models.authModel.authModel import AuthUser
@@ -749,7 +749,7 @@ def check_rate_limit(
     chatbot,
     *,
     per_user: bool = True,
-    session_token: str | None = None,
+    session_token: Optional[str] = None,
 ):
     if not chatbot or not chatbot.rate_limit_enabled:
         return True
