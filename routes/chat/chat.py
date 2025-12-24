@@ -72,6 +72,18 @@ router = APIRouter()
 
 
 
+
+def settings_to_dict(settings):
+    if hasattr(settings, "to_dict"):
+        return settings.to_dict()
+    # Fallback if to_dict is missing but it's an SQLAlchemy model
+    if hasattr(settings, "__table__"):
+        return {c.name: getattr(settings, c.name) for c in settings.__table__.columns}
+    # Fallback for Pydantic
+    if hasattr(settings, "dict"):
+        return settings.dict()
+    return settings
+
 def has_chabot_limit(user_id: str, db: Session):
     try:
         user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
@@ -258,7 +270,7 @@ async def get_my_bots(
                     "is_owner": True
                 },
                 "image": settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None,
-                "settings": settings_dict.get(bot.id).to_dict() if settings_dict.get(bot.id) else None
+                "settings": settings_to_dict(settings_dict.get(bot.id)) if settings_dict.get(bot.id) else None
             }
             response_bots.append(bot_dict)
         
@@ -280,7 +292,7 @@ async def get_my_bots(
                     "is_owner": False
                 },
                 "image": settings_dict.get(bot.id).image if settings_dict.get(bot.id) else None,
-                "settings": settings_dict.get(bot.id).to_dict() if settings_dict.get(bot.id) else None
+                "settings": settings_to_dict(settings_dict.get(bot.id)) if settings_dict.get(bot.id) else None
             }
             response_bots.append(bot_dict)
 
